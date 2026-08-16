@@ -1,0 +1,34 @@
+[package]
+name = "solidlocker"
+version = "0.1.0"
+description = "Claim-first Git LFS lock manager for SolidWorks teams"
+edition = "2021"
+
+[lib]
+name = "solidlocker_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "SolidLocker"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-store = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["process", "time", "macros", "rt-multi-thread"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+cfb = "0.10"
+base64 = "0.22"
+tauri-plugin-notification = "2.3.3"
+tauri-plugin-window-state = "2.4.1"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-single-instance = "2"
