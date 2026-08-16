@@ -59,7 +59,7 @@ just uses your team's existing GitHub repo and your own GitHub sign in.
 
 ### Install
 
-1. Download the latest `SolidLocker_x64-setup.exe` from the Releases page
+1. Download the latest `SolidLocker_x64-setup.exe` from the [Releases](https://github.com/RU-Airborne/SolidLocker/releases) page
    and run it.
 2. Open SolidLocker and point it at your team's project folder (a local clone of
    the GitHub repository).
