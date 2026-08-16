@@ -204,7 +204,7 @@ export function SettingsPage({
           <div className="headerbtns">
           <button
             className="ghbtn"
-            onClick={() => openUrl("https://github.com")}
+            onClick={() => openUrl("https://github.com/RU-Airborne/SolidLocker")}
             title="Open GitHub"
           >
             <svg
