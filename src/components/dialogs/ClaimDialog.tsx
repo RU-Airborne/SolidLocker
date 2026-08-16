@@ -64,9 +64,19 @@ export function ClaimDialog({
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h2>Lock with parts</h2>
         <p className="muted">{startPath}</p>
-        <p>
-          SolidLocker has identified the following referenced parts through SolidWorks' API:
-        </p>
+        {refs && !refs.warning && (
+          <p>
+            SolidLocker has identified the following referenced parts through
+            SolidWorks' API:
+          </p>
+        )}
+        {refs && refs.warning && (
+          <p className="error">
+            SolidWorks isn't running. Open it and try again. While SolidWorks is
+            running, SolidLocker can read this file's referenced parts and select
+            them automatically. But you may still select manually below.
+          </p>
+        )}
 
         {error && <p className="error">{error}</p>}
         {!refs && !error && <p className="muted">Scanning references…</p>}
@@ -97,9 +107,6 @@ export function ClaimDialog({
                 );
               })}
 
-              {refs.warning && (
-                <p className="warn-inline">{refs.warning}</p>
-              )}
               {refs.suggestions.map((path) => {
                 const status = lockStatusByPath.get(path.toLowerCase());
                 const taken = status?.kind === "theirs" || status?.kind === "mine";
