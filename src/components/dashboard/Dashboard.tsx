@@ -12,6 +12,7 @@ import {
   listRepoBranches,
   openFile,
   pushNow,
+  quitApp,
   restoreFiles,
   selectExistingRepo,
   switchBranch,
@@ -601,7 +602,10 @@ export function Dashboard({ appState }: { appState: AppState }) {
           // processes exit, so sitting in the tray costs a fraction of the
           // memory. The tray icon rebuilds the window on demand.
           await hideToTray();
+          return;
         }
+        event.preventDefault();
+        await quitApp();
       })
       .then((u) => {
         unlisten = u;
@@ -1157,7 +1161,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
           onQuit={(remember) => {
             setExitPrompt(false);
             rememberExitChoice(false, remember);
-            getCurrentWindow().destroy();
+            quitApp();
           }}
         />
       )}

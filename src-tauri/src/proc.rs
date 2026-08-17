@@ -8,40 +8,65 @@ use crate::error::{AppError, AppResult};
 
 static GIT_PROGRAM: OnceLock<String> = OnceLock::new();
 
+const PROBE_SECS: u64 = 8;
 /// Which git to run. GitHub Desktop ships Git and Git LFS but deliberately
 /// keeps them off PATH, so a member who installed only GitHub Desktop still
 /// has a perfectly good Git sitting on disk. Look on PATH first, then inside
-/// GitHub Desktop, then the usual Git for Windows spots. Resolved once.
 pub fn git_program() -> &'static str {
-    GIT_PROGRAM.get_or_init(resolve_git).as_str()
+    if let Some(found) = GIT_PROGRAM.get() {
+        return found.as_str();
+    }
+    match resolve_git() {
+        Some(found) => GIT_PROGRAM.get_or_init(|| found).as_str(),
+        None => "git",
+    }
 }
 
 fn runs(program: &str) -> bool {
+    use std::process::Stdio;
+    use std::time::Instant;
     let mut cmd = std::process::Command::new(program);
-    cmd.arg("--version");
+    cmd.arg("--version")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x0800_0000);
     }
-    matches!(cmd.output(), Ok(out) if out.status.success())
+
+    let Ok(mut child) = cmd.spawn() else {
+        return false;
+    };
+    let deadline = Instant::now() + Duration::from_secs(PROBE_SECS);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return status.success(),
+            Ok(None) if Instant::now() >= deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return false;
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(20)),
+            Err(_) => return false,
+        }
+    }
 }
 
-fn resolve_git() -> String {
+fn resolve_git() -> Option<String> {
     if runs("git") {
-        return "git".to_string();
+        return Some("git".to_string());
     }
     for candidate in git_candidates() {
         if candidate.is_file() {
             let path = candidate.to_string_lossy().into_owned();
             if runs(&path) {
-                return path;
+                return Some(path);
             }
         }
     }
-    // Nothing found. Keep the bare name so preflight fails the same way it
-    // always did and the user gets the install screen.
-    "git".to_string()
+    None
 }
 
 fn git_candidates() -> Vec<PathBuf> {

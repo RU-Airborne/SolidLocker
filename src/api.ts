@@ -11,6 +11,8 @@ export const openRepoFolder = () => invoke<void>("open_repo_folder");
 /** Close to the tray. Destroys the window so the webview processes exit*/
 export const hideToTray = () => invoke<void>("hide_to_tray");
 
+export const quitApp = () => invoke<void>("quit_app");
+
 export const openFile = (path: string) => invoke<void>("open_file", { path });
 
 export const getSwIcon = () => invoke<string | null>("get_sw_icon");

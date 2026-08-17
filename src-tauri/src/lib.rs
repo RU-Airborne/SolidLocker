@@ -21,9 +21,6 @@ const KEY_REPO_PATH: &str = "repo_path";
 const KEY_USERNAME: &str = "lfs_username";
 const KEY_GH_USERNAME: &str = "github_username";
 
-/// Clean product-name folder for our data under %APPDATA% (settings) and
-/// %LOCALAPPDATA% (the WebView2 cache), instead of Tauri's default
-/// bundle-identifier folder (com.solidlocker.app).
 pub const PRODUCT_DIR: &str = "SolidLocker";
 
 fn current_repo(app: &AppHandle) -> AppResult<PathBuf> {
@@ -36,13 +33,19 @@ fn current_repo(app: &AppHandle) -> AppResult<PathBuf> {
     Ok(p)
 }
 
-/// Close to the tray. Destroys the window so the webview processes exit;
-/// the tray icon and the Rust side keep running.
+/// Close to the tray
 #[tauri::command]
 async fn hide_to_tray(app: AppHandle) -> AppResult<()> {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.destroy();
     }
+    Ok(())
+}
+
+
+#[tauri::command]
+async fn quit_app(app: AppHandle) -> AppResult<()> {
+    app.exit(0);
     Ok(())
 }
 
@@ -500,7 +503,11 @@ fn open_main_window(app: &tauri::AppHandle) {
     #[cfg(desktop)]
     {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            open_main_window(app);
+            let handle = app.clone();
+            std::thread::spawn(move || {
+                let window_handle = handle.clone();
+                let _ = handle.run_on_main_thread(move || open_main_window(&window_handle));
+            });
         }));
     }
 
@@ -580,7 +587,8 @@ fn open_main_window(app: &tauri::AppHandle) {
             restore_files,
             set_aside_files,
             locate_lock_paths,
-            hide_to_tray
+            hide_to_tray,
+            quit_app
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
