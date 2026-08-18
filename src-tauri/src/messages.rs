@@ -168,6 +168,18 @@ pub fn refs_unreadable(file: &str) -> String {
     )
 }
 
+// ---- Window ----
+
+pub const WINDOW_FAILED_TITLE: &str = "SolidLocker could not open its window";
+
+pub const WINDOW_CONFIG_MISSING: &str = "the main window is missing from the app configuration";
+
+pub fn window_failed_body(detail: &str) -> String {
+    format!(
+        "Your files are still protected and your locks are untouched. Quit SolidLocker from the tray icon, then start it again. ({detail})"
+    )
+}
+
 // ---- Files ----
 
 pub fn file_not_found(path: &str) -> String {

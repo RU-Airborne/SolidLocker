@@ -543,23 +543,34 @@ fn open_main_window(app: &tauri::AppHandle) {
         let _ = w.set_focus();
         return;
     }
-    if let Some(cfg) = app
+
+    let Some(cfg) = app
         .config()
         .app
         .windows
         .iter()
         .find(|w| w.label == "main")
         .cloned()
-    {
-        match tauri::WebviewWindowBuilder::from_config(app, &cfg) {
-            Ok(b) => {
-                if let Err(e) = b.build() {
-                    eprintln!("could not reopen the window: {e}");
-                }
-            }
-            Err(e) => eprintln!("could not reopen the window: {e}"),
-        }
+    else {
+        report_window_failure(app, messages::WINDOW_CONFIG_MISSING);
+        return;
+    };
+
+    if let Err(e) = tauri::WebviewWindowBuilder::from_config(app, &cfg).and_then(|b| b.build()) {
+        report_window_failure(app, &e.to_string());
     }
+}
+
+fn report_window_failure(app: &tauri::AppHandle, detail: &str) {
+    use tauri_plugin_notification::NotificationExt;
+
+    eprintln!("could not open the window: {detail}");
+    let _ = app
+        .notification()
+        .builder()
+        .title(messages::WINDOW_FAILED_TITLE)
+        .body(messages::window_failed_body(detail))
+        .show();
 }
 
     let mut builder = tauri::Builder::default();
