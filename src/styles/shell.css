@@ -1,0 +1,319 @@
+/* The window below the toolbar. File list on the left, panel on the
+   right, drag handle between. */
+
+.body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+.content {
+  flex: 1;
+  overflow: auto;
+  /* No top padding since it would sit above the sticky header and let rows show
+     through in the gap */
+  padding: 0 1rem 1rem;
+}
+
+.content > .treetoolbar:first-child {
+  padding-top: 1rem;
+}
+
+.branchpanel {
+  width: 280px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  padding: 1rem;
+  overflow: auto;
+}
+
+.panelresizer {
+  width: 5px;
+  margin-right: -5px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  position: relative;
+  z-index: 1;
+}
+
+.panelresizer:hover,
+.panelresizer:active {
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.paneltabs {
+  display: flex;
+  gap: 0.3rem;
+  margin-bottom: 0.8rem;
+}
+
+.paneltabs button {
+  flex: 1;
+  padding: 0.3rem 0.4rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.paneltabs button.active {
+  background: var(--accent);
+  border-color: transparent;
+  color: white;
+  font-weight: 600;
+}
+
+.activitylist {
+  margin: 0 -1rem;
+}
+
+.commit {
+  border-bottom: 1px solid var(--border);
+}
+
+.commithead {
+  display: block;
+  width: 100%;
+  padding: 0.5rem 1rem;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.commithead:hover {
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+.commitmsg {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.commitmsg.open {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.commitbody-text {
+  display: block;
+  margin-top: 0.2rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.commitmeta {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.35rem;
+  margin-top: 0.15rem;
+}
+
+/* Text block sits beside the avatar in its own column, so wrapped lines
+   align with the name rather than sliding under the picture */
+.commitmetatext {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.1rem 0.35rem;
+  min-width: 0;
+}
+
+/* Never break inside the name or inside the time; a long name pushes the
+   time block to its own line as a whole */
+.commitauthor,
+.commitwhen {
+  white-space: nowrap;
+}
+
+.commitfilelist {
+  list-style: none;
+  margin: 0;
+  padding: 0.2rem 1rem 0.5rem 1.6rem;
+}
+
+.commitfile {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.12rem 0;
+  font-size: 0.8rem;
+  overflow: hidden;
+}
+
+.commitfilename {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.commitfilejump {
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  flex: 1;
+  min-width: 0;
+  display: block;
+  overflow: hidden;
+}
+
+.commitfilejump:hover:not(:disabled) .commitfilename {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.commitfilejump:disabled {
+  cursor: default;
+}
+
+.st {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 3px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: white;
+}
+
+.st-m {
+  background: #bf8700;
+}
+
+.st-a {
+  background: var(--success);
+}
+
+.st-d {
+  background: var(--error);
+}
+
+.st-r,
+.st-c {
+  background: #8250df;
+}
+
+.avatar-img {
+  border-radius: 50%;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+.badge .avatar-img {
+  flex-shrink: 0;
+}
+
+.avatar-initials {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent);
+  color: white;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+}
+
+/* Mirrors the Activity tab, full width rows separated by hairlines */
+.lockslist {
+  margin: 0 -1rem;
+}
+
+.lockslist > .muted,
+.lockslist > .warn-inline {
+  padding: 0 1rem;
+}
+
+.personlocks {
+  border-bottom: 1px solid var(--border);
+  padding: 0.45rem 0 0.5rem;
+}
+
+.personhead {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0 1rem;
+  margin-bottom: 0.2rem;
+}
+
+.personhead strong {
+  font-size: 0.85rem;
+  font-weight: 500;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The file count never wraps or gets squeezed */
+.personhead > .muted {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.personfiles {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.8rem;
+}
+
+.personfiles li {
+  padding: 0.12rem 1rem 0.12rem 1.6rem;
+}
+
+.lockitem {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.3rem;
+}
+
+.personfiles li:hover {
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+.lockitem .forcebtn {
+  order: 2;
+  border: none;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.75rem;
+  padding: 0.1rem 0.25rem;
+  opacity: 0;
+  flex-shrink: 0;
+}
+
+.lockitem:hover .forcebtn {
+  opacity: 1;
+}
+
+.lockitem .forcebtn:hover {
+  color: var(--error);
+}
+
+.lockitem .lockjump {
+  flex: 1;
+  min-width: 0;
+}

@@ -10,7 +10,7 @@ const REF_EXTENSIONS: &[&str] = &[".sldprt", ".sldasm"];
 
 const INVALID_FILENAME_CHARS: &[char] = &['\\', '/', ':', '*', '?', '"', '<', '>', '|'];
 
-/// Extract candidate referenced CAD basenames from an arbitrary byte buffer
+/// works on any buffer, CFB container or not
 pub fn extract_names(buf: &[u8]) -> HashSet<String> {
     let mut names = HashSet::new();
     scan_text(&ascii_string(buf), &mut names);
@@ -79,19 +79,10 @@ fn scan_text(text: &str, names: &mut HashSet<String>) {
     }
 }
 
-/// Ask a running SolidWorks (COM, Windows only) for a document's full
-/// dependency tree.
+/// Attach to the running SolidWorks, and load its interop assembly if we can
+/// find it.
 #[cfg(windows)]
-pub async fn solidworks_dependencies(abs_path: &Path) -> AppResult<Vec<String>> {
-    use std::process::Stdio;
-
-    if solidworks_install_dir().is_none() {
-        return Err(AppError::new("SWCOM", messages::SW_NOT_INSTALLED));
-    }
-
-    // Late-bound IDispatch calls against SolidWorks fail with
-    // TYPE_E_ELEMENTNOTFOUND on some installs
-    const SCRIPT: &str = r#"
+const SW_ATTACH: &str = r#"
 $ErrorActionPreference = 'Stop'
 try {
   $sw = [Runtime.InteropServices.Marshal]::GetActiveObject('SldWorks.Application')
@@ -99,44 +90,92 @@ try {
   [Console]::Error.WriteLine('SW_NOT_RUNNING')
   exit 3
 }
-$deps = $null
-$earlyBound = $false
+$early = $false
 $proc = Get-Process SLDWORKS -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($proc) {
   $interop = Join-Path (Split-Path $proc.Path) 'api\redist\SolidWorks.Interop.sldworks.dll'
   if (Test-Path $interop) {
     try {
       Add-Type -Path $interop
-      $deps = [SolidWorks.Interop.sldworks.ISldWorks].InvokeMember(
-        'GetDocumentDependencies2', [Reflection.BindingFlags]::InvokeMethod,
-        $null, $sw, @($env:SOLIDLOCKER_DOC, $true, $true, $false))
-      $earlyBound = $true
+      $early = $true
     } catch {
-      [Console]::Error.WriteLine('early-bound lookup failed: ' + $_.Exception.Message)
+      [Console]::Error.WriteLine('interop load failed: ' + $_.Exception.Message)
     }
   }
 }
-if (-not $earlyBound) {
+"#;
+
+/// `doc` goes over in an environment variable rather than spliced into the
+/// script: a path holding a quote or a `$` would otherwise be read as code.
+#[cfg(windows)]
+async fn run_powershell(
+    script: &str,
+    doc: Option<&Path>,
+    timeout_secs: u64,
+) -> AppResult<std::process::Output> {
+    use std::process::Stdio;
+
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+    let mut cmd = tokio::process::Command::new("powershell.exe");
+    cmd.args(["-NoProfile", "-NonInteractive", "-Command", script])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    if let Some(path) = doc {
+        cmd.env("SOLIDLOCKER_DOC", path);
+    }
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), cmd.output())
+        .await
+        .map_err(|_| AppError::new("SWCOM", messages::SW_TOO_SLOW))?
+        .map_err(|e| AppError::new("SWCOM", format!("could not run PowerShell: {e}")))
+}
+
+#[cfg(windows)]
+fn nonempty_lines(bytes: &[u8]) -> Vec<String> {
+    String::from_utf8_lossy(bytes)
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect()
+}
+
+/// Ask a running solidworks for a document's full dependency tree
+#[cfg(windows)]
+pub async fn solidworks_dependencies(abs_path: &Path) -> AppResult<Vec<String>> {
+    if solidworks_install_dir().is_none() {
+        return Err(AppError::new("SWCOM", messages::SW_NOT_INSTALLED));
+    }
+
+    // GetDocumentDependencies2 returns a flat array of name, path, name,
+    // path. Only the odd entries are wanted.
+    let script = format!(
+        "{SW_ATTACH}{}",
+        r#"
+$deps = $null
+if ($early) {
+  try {
+    $deps = [SolidWorks.Interop.sldworks.ISldWorks].InvokeMember(
+      'GetDocumentDependencies2', [Reflection.BindingFlags]::InvokeMethod,
+      $null, $sw, @($env:SOLIDLOCKER_DOC, $true, $true, $false))
+  } catch {
+    [Console]::Error.WriteLine('early-bound lookup failed: ' + $_.Exception.Message)
+    $early = $false
+  }
+}
+if (-not $early) {
   $deps = $sw.GetDocumentDependencies2($env:SOLIDLOCKER_DOC, $true, $true, $false)
 }
 if ($null -ne $deps) {
   for ($i = 1; $i -lt $deps.Length; $i += 2) { $deps[$i] }
 }
-"#;
+"#
+    );
 
-    let mut cmd = tokio::process::Command::new("powershell.exe");
-    cmd.args(["-NoProfile", "-NonInteractive", "-Command", SCRIPT])
-        .env("SOLIDLOCKER_DOC", abs_path)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true);
-    cmd.creation_flags(0x0800_0000);
-
-    let out = tokio::time::timeout(std::time::Duration::from_secs(60), cmd.output())
-        .await
-        .map_err(|_| AppError::new("SWCOM", messages::SW_TOO_SLOW))?
-        .map_err(|e| AppError::new("SWCOM", format!("could not run PowerShell: {e}")))?;
+    let out = run_powershell(&script, Some(abs_path), 60).await?;
 
     let stderr = String::from_utf8_lossy(&out.stderr);
     if stderr.contains("SW_NOT_RUNNING") {
@@ -149,77 +188,57 @@ if ($null -ne $deps) {
         ));
     }
 
-    Ok(String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .map(|l| l.trim().to_string())
-        .filter(|l| !l.is_empty())
-        .collect())
+    Ok(nonempty_lines(&out.stdout))
 }
 
+/// Which documents SolidWorks currently has open. Best effort: anything that
+/// goes wrong means "cannot tell", and the callers treat that as "none".
 #[cfg(windows)]
 pub async fn solidworks_open_documents() -> Vec<String> {
-    use std::process::Stdio;
-
     // No SolidWorks, no open documents: skip the process spawn entirely.
     if solidworks_install_dir().is_none() {
         return Vec::new();
     }
 
-    const SCRIPT: &str = r#"
-$ErrorActionPreference = 'Stop'
-try {
-  $sw = [Runtime.InteropServices.Marshal]::GetActiveObject('SldWorks.Application')
-} catch {
-  exit 0
-}
-$done = $false
-$proc = Get-Process SLDWORKS -ErrorAction SilentlyContinue | Select-Object -First 1
-if ($proc) {
-  $interop = Join-Path (Split-Path $proc.Path) 'api\redist\SolidWorks.Interop.sldworks.dll'
-  if (Test-Path $interop) {
-    try {
-      Add-Type -Path $interop
-      $docs = [SolidWorks.Interop.sldworks.ISldWorks].InvokeMember(
-        'GetDocuments', [Reflection.BindingFlags]::InvokeMethod, $null, $sw, @())
-      if ($null -ne $docs) {
-        foreach ($d in $docs) {
-          [SolidWorks.Interop.sldworks.IModelDoc2].InvokeMember(
-            'GetPathName', [Reflection.BindingFlags]::InvokeMethod, $null, $d, @())
-        }
+    let script = format!(
+        "{SW_ATTACH}{}",
+        r#"
+$docs = $null
+if ($early) {
+  try {
+    $docs = [SolidWorks.Interop.sldworks.ISldWorks].InvokeMember(
+      'GetDocuments', [Reflection.BindingFlags]::InvokeMethod, $null, $sw, @())
+    if ($null -ne $docs) {
+      foreach ($d in $docs) {
+        [SolidWorks.Interop.sldworks.IModelDoc2].InvokeMember(
+          'GetPathName', [Reflection.BindingFlags]::InvokeMethod, $null, $d, @())
       }
-      $done = $true
-    } catch { }
+    }
+  } catch {
+    [Console]::Error.WriteLine('early-bound lookup failed: ' + $_.Exception.Message)
+    $early = $false
   }
 }
-if (-not $done) {
+if (-not $early) {
   $docs = $sw.GetDocuments
   if ($null -ne $docs) { foreach ($d in $docs) { $d.GetPathName } }
 }
-"#;
+"#
+    );
 
-    let mut cmd = tokio::process::Command::new("powershell.exe");
-    cmd.args(["-NoProfile", "-NonInteractive", "-Command", SCRIPT])
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .kill_on_drop(true);
-    cmd.creation_flags(0x0800_0000);
-
-    let out = match tokio::time::timeout(std::time::Duration::from_secs(20), cmd.output()).await {
-        Ok(Ok(out)) => out,
-        _ => return Vec::new(),
-    };
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .map(|l| l.trim().to_string())
-        .filter(|l| !l.is_empty())
-        .collect()
+    match run_powershell(&script, None, 20).await {
+        // Ok(out) => {
+        //     eprintln!("[swrefs] open docs: {}", String::from_utf8_lossy(&out.stderr));
+        //     nonempty_lines(&out.stdout)
+        // }
+        Ok(out) => nonempty_lines(&out.stdout),
+        Err(_) => Vec::new(),
+    }
 }
 
 #[cfg(windows)]
 pub async fn solidworks_icon() -> Option<String> {
-    use std::process::Stdio;
-
+    // This only needs the executable on disk, so it works whether or not SolidWorks is running
     const SCRIPT: &str = r#"
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
@@ -240,18 +259,7 @@ $bmp.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
 [Convert]::ToBase64String($ms.ToArray())
 "#;
 
-    let mut cmd = tokio::process::Command::new("powershell.exe");
-    cmd.args(["-NoProfile", "-NonInteractive", "-Command", SCRIPT])
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .kill_on_drop(true);
-    cmd.creation_flags(0x0800_0000);
-
-    let out = tokio::time::timeout(std::time::Duration::from_secs(15), cmd.output())
-        .await
-        .ok()?
-        .ok()?;
+    let out = run_powershell(SCRIPT, None, 15).await.ok()?;
     if !out.status.success() {
         return None;
     }
@@ -307,7 +315,6 @@ pub fn solidworks_sound(name: &str) -> Option<String> {
     Some(format!("data:audio/wav;base64,{b64}"))
 }
 
-/// Scan a SolidWorks file for referenced CAD basenames.
 pub fn scan_file(abs_path: &Path) -> AppResult<HashSet<String>> {
     let mut comp = cfb::open(abs_path).map_err(|e| {
         AppError::new(

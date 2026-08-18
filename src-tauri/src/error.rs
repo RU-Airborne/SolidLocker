@@ -56,8 +56,7 @@ pub fn looks_offline(text: &str) -> bool {
     .any(|needle| t.contains(needle))
 }
 
-/// Auth failures as git and git-lfs word them in stderr. Used to tell
-/// "you are signed out" apart from "you are offline". GIT_TERMINAL_PROMPT=0
+/// Auth failures as git and git-lfs word them in stderr. GIT_TERMINAL_PROMPT=0
 /// and GCM_INTERACTIVE=never mean a signed out user gets one of these rather
 /// than a hanging prompt.
 pub fn looks_signed_out(text: &str) -> bool {

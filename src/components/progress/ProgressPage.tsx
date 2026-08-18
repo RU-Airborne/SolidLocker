@@ -4,7 +4,7 @@ import { getActivityAll, getCommitStats } from "../../api";
 import type { FileRowData } from "../dashboard/Dashboard";
 import { UserAvatar } from "../common/UserAvatar";
 import { formatPerson, resolveCommitAuthors, useIdentities } from "../../identity";
-import { formatDate } from "../../dates";
+import { formatDate, useNow } from "../../dates";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WEEK_MS = 7 * DAY_MS;
@@ -28,8 +28,8 @@ interface AreaStat {
 }
 
 /** Top-level folders */
-function areaStats(rows: FileRowData[]): AreaStat[] {
-  const weekAgo = Date.now() - WEEK_MS;
+function areaStats(rows: FileRowData[], now: number): AreaStat[] {
+  const weekAgo = now - WEEK_MS;
   const byArea = new Map<string, AreaStat>();
   for (const row of rows) {
     const name = row.file.dir.split("/")[0] || "Loose files";
@@ -53,9 +53,9 @@ function areaStats(rows: FileRowData[]): AreaStat[] {
   return [...byArea.values()].sort((a, b) => b.lastTouched - a.lastTouched);
 }
 
-function quietFor(ms: number): string {
+function quietFor(ms: number, now: number): string {
   if (ms === 0) return "no shared changes yet";
-  const days = Math.floor((Date.now() - ms) / (24 * 60 * 60 * 1000));
+  const days = Math.floor((now - ms) / DAY_MS);
   if (days <= 0) return "touched today";
   if (days === 1) return "quiet for a day";
   if (days < 30) return `quiet for ${days} days`;
@@ -81,15 +81,17 @@ export function ProgressPage({
     staleTime: 60_000,
   });
   const identities = useIdentities();
+  // One clock for the whole page, ticking once a minute. Every bucket
+  // boundary and "quiet for N days" below is measured from it.
+  const now = useNow();
   const [range, setRange] = useState<RangeKey>("month");
   const [peopleRange, setPeopleRange] = useState<RangeKey>("month");
 
-  const areas = useMemo(() => areaStats(rows), [rows]);
+  const areas = useMemo(() => areaStats(rows, now), [rows, now]);
 
   // Shares per bucket for the chosen range, oldest first.
   const buckets = useMemo(() => {
     const { buckets: count, size } = RANGES[range];
-    const now = Date.now();
     const start = now - count * size;
     const out = Array.from({ length: count }, (_, i) => ({
       start: start + i * size,
@@ -104,14 +106,14 @@ export function ProgressPage({
       }
     }
     return out;
-  }, [stats.data, range]);
+  }, [stats.data, range, now]);
 
   const peakCommits = Math.max(1, ...buckets.map((b) => b.commits));
 
   // Who has shared work in the chosen window.
   const contributors = useMemo(() => {
     const { buckets: n, size } = RANGES[peopleRange];
-    const cutoff = Date.now() - n * size;
+    const cutoff = now - n * size;
     const recent = (stats.data ?? []).filter(
       (c) => new Date(c.date).getTime() > cutoff,
     );
@@ -140,7 +142,7 @@ export function ProgressPage({
       tally.set(key, entry);
     });
     return [...tally.values()].sort((a, b) => b.commits - a.commits);
-  }, [stats.data, identities.data, peopleRange]);
+  }, [stats.data, identities.data, peopleRange, now]);
 
   // Repeated edits
   const churn = useMemo(() => {
@@ -161,7 +163,7 @@ export function ProgressPage({
       .slice(0, 8);
   }, [activity.data]);
 
-  const weekAgo = Date.now() - WEEK_MS;
+  const weekAgo = now - WEEK_MS;
   const totalFiles = rows.length;
   const changedThisWeek = rows.filter((r) => r.file.modified > weekAgo).length;
   const lockedNow = rows.filter((r) => r.status.kind !== "unlocked").length;
@@ -299,7 +301,7 @@ export function ProgressPage({
                 <div className="areahead">
                   <strong>{a.name}</strong>
                   <span className="muted small">
-                    {a.total} file{a.total === 1 ? "" : "s"} · {quietFor(a.lastTouched)}
+                    {a.total} file{a.total === 1 ? "" : "s"} · {quietFor(a.lastTouched, now)}
                   </span>
                 </div>
                 <div className="areabar">

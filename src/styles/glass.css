@@ -1,0 +1,923 @@
+/* The glass pass.
+
+   This is a second coat over everything above: the frosted look was
+   added after the app already worked, and it repeats selectors on
+   purpose so the plain version stays readable on its own. Order is
+   load-bearing here. Nothing in this file may move above the rule it
+   is overriding. */
+
+.app {
+  position: relative;
+  background:
+    radial-gradient(
+      130% 80% at 4% -8%,
+      color-mix(in srgb, var(--accent) 30%, transparent),
+      transparent 58%
+    );
+}
+
+/* A lit edge under the toolbar, brightest under the logo and fading out. */
+.ghbar::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent) 85%, transparent),
+    color-mix(in srgb, var(--accent) 45%, transparent) 28%,
+    color-mix(in srgb, var(--accent) 12%, transparent) 70%,
+    transparent
+  );
+  box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+/* Toolbar buttons only light up when they are worth pressing. */
+.barbtn {
+  transition:
+    box-shadow 0.16s ease,
+    background-color 0.16s ease,
+    transform 0.16s ease;
+}
+
+.barbtn:hover:not(:disabled) {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent),
+    0 0 16px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.barbtn.attention {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent),
+    0 0 18px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.barbtn.attention:hover:not(:disabled) {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 70%, transparent),
+    0 0 26px color-mix(in srgb, var(--accent) 50%, transparent);
+}
+
+.avatarbtn:hover {
+  box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+/* Selected filter and panel tabs read as switched on, not just filled. */
+.typefilter button.active,
+.paneltabs button.active {
+  box-shadow:
+    0 0 14px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+/* Rows: a light bar on the left of whatever the pointer is over.
+   Excludes the header, whose position: sticky must not be overridden. */
+.filerow:not(.filehead) {
+  position: relative;
+  transition:
+    background-color 0.14s ease,
+    box-shadow 0.14s ease;
+}
+
+.filerow:hover {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--accent) 70%, transparent);
+}
+
+/* The header must not pick up the row treatment. */
+.filerow.filehead:hover {
+  box-shadow: none;
+}
+
+/* Files you hold are the one status worth glowing. */
+.badge-mine {
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+/* Search: focus is a light coming on. */
+.treesearch input:focus,
+.treesearch input:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent) 65%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+/* Who has what: each person's block lifts slightly under the pointer. */
+.lockitem {
+  border-radius: 6px;
+  transition:
+    background-color 0.14s ease,
+    box-shadow 0.14s ease;
+}
+
+.lockitem:hover {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+/* Keyboard users get the same accent, never a browser default outline. */
+:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Scrollbars in the app's own colours rather than stock grey. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--accent) 45%, transparent) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+  background-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--accent) 70%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .barbtn,
+  .filerow,
+  .lockitem {
+    transition: none;
+  }
+}
+
+/* --- Frosted overlay for the settings and progress pages ---------------
+   Both used to replace the file list. They now float above it so the work
+   underneath stays visible through the glass. */
+.stage {
+  position: relative;
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.stage > .body {
+  flex: 1;
+  min-width: 0;
+}
+
+.glasspage {
+  /* Fixed, so it covers the whole window including the toolbar. The toolbar
+     stays mounted and reads as frosted shapes behind the glass. Above the
+     toolbar's z-index 3, below dialogs at 100. */
+  position: fixed;
+  inset: 0;
+  z-index: 6;
+  display: flex;
+  overflow: hidden;
+  /* Blur softens what is behind; the tint is what hides it. Keep the tint
+     lighter so the file list stays visible, and lean on a heavier blur to
+     keep the page text readable over it. */
+  background: color-mix(in srgb, var(--headbg) calc(var(--glass-tint) * 0.87), transparent);
+  backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  animation: glassrise 0.18s ease-out;
+}
+
+.glasspage > * {
+  flex: 1;
+  min-width: 0;
+}
+
+@keyframes glassrise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glasspage {
+    animation: none;
+  }
+}
+
+/* Active filter and panel tabs: brighter, with a wider bloom. */
+.typefilter button.active,
+.paneltabs button.active {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent),
+    0 0 18px color-mix(in srgb, var(--accent) 70%, transparent),
+    0 0 40px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+/* Row buttons were only changing their border on hover, so the label
+   stayed grey and the button read as dead. */
+.filerow .actions button:hover:not(:disabled),
+.group-actions button:hover:not(:disabled) {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+/* Toolbar buttons: the label follows the border into the accent, so Sync
+   now and Progress read as live the way the row buttons do. */
+.barbtn:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 65%, var(--border));
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.barbtn.attention:hover:not(:disabled) {
+  color: var(--accent);
+}
+
+/* The avatar button holds a picture, not a label: leave its colour alone. */
+.avatarbtn:hover {
+  color: inherit;
+  background: transparent;
+}
+
+/* Sync now is a .minibtn, so it missed the toolbar treatment entirely. */
+.minibtn {
+  transition:
+    box-shadow 0.16s ease,
+    background-color 0.16s ease,
+    color 0.16s ease;
+}
+
+.minibtn:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 65%, var(--border));
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent),
+    0 0 16px color-mix(in srgb, var(--accent) 32%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .minibtn {
+    transition: none;
+  }
+}
+
+/* --- Glass pass -------------------------------------------------------
+   Surfaces become translucent and blur what sits behind them, so the app
+   reads as sheets of glass stacked over the accent wash. */
+
+/* The segmented filter clipped its own children, which is why the active
+   button had no glow at all. */
+.typefilter {
+  overflow: visible;
+  background: color-mix(in srgb, var(--headbg) calc(var(--glass-tint) * 0.64), transparent);
+  backdrop-filter: blur(calc(var(--glass-blur) * 0.35));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 0.35));
+}
+
+.typefilter button:first-child {
+  border-top-left-radius: 5px;
+  border-bottom-left-radius: 5px;
+}
+
+.typefilter button:last-child {
+  border-top-right-radius: 5px;
+  border-bottom-right-radius: 5px;
+}
+
+/* The side panel scrolls, so its overflow clips wide blooms. Keep the tab
+   glow tight and bright enough to survive inside the panel padding. */
+.paneltabs button.active {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 65%, transparent),
+    0 0 14px color-mix(in srgb, var(--accent) 85%, transparent);
+}
+
+/* The glass lives on a pseudo element, not on .ghbar itself. An element with
+   backdrop-filter clips its own painting to its box, which was cutting the
+   logo's glow off at the bottom of the bar instead of letting it fall across
+   the rows below. */
+.toolbar,
+.ghbar {
+  background: transparent;
+}
+
+.toolbar::before,
+.ghbar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--headbg) calc(var(--glass-tint) * 0.95), transparent);
+  backdrop-filter: blur(calc(var(--glass-blur) * 0.6)) saturate(130%);
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 0.6)) saturate(130%);
+}
+
+.branchpanel {
+  background: color-mix(in srgb, var(--headbg) calc(var(--glass-tint) * 0.76), transparent);
+  backdrop-filter: blur(calc(var(--glass-blur) * 0.55)) saturate(125%);
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 0.55)) saturate(125%);
+  border-left: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+}
+
+/* Rows scroll under the header, so give it a deeper frost. */
+.filehead {
+  backdrop-filter: blur(14px) saturate(130%);
+  -webkit-backdrop-filter: blur(14px) saturate(130%);
+}
+
+.treesearch input {
+  background: color-mix(in srgb, var(--headbg) calc(var(--glass-tint) * 0.64), transparent);
+  backdrop-filter: blur(calc(var(--glass-blur) * 0.35));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 0.35));
+}
+
+/* Dialogs: frosted sheet lifted off the page, with the accent in its rim. */
+.modal {
+  background: color-mix(
+    in srgb,
+    var(--headbg) clamp(72%, calc(var(--glass-tint) * 1.38), 92%),
+    transparent
+  );
+  backdrop-filter: blur(calc(var(--glass-blur) * 0.93)) saturate(140%);
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 0.93)) saturate(140%);
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--border));
+  border-radius: 14px;
+  box-shadow:
+    0 24px 70px rgba(0, 0, 0, 0.45),
+    0 0 46px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+/* No blur here. This is the dialog's parent, and an ancestor with
+   backdrop-filter becomes a backdrop root: the dialog could then only sample
+   this flat black wash, so its glass came out dead grey. */
+.modal-backdrop {
+  background: rgba(0, 0, 0, 0.42);
+}
+
+/* Inactive filter and panel tabs had almost no hover state: the filter only
+   shifted its background 8%, and the panel tabs had no rule at all. */
+.typefilter button,
+.paneltabs button {
+  transition:
+    box-shadow 0.16s ease,
+    background-color 0.16s ease,
+    color 0.16s ease;
+}
+
+.typefilter button:hover:not(.active):not(:disabled),
+.paneltabs button:hover:not(.active):not(:disabled) {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent),
+    0 0 14px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+/* The active one is already lit: brighten rather than restyle it. */
+.typefilter button.active:hover,
+.paneltabs button.active:hover {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 75%, transparent),
+    0 0 20px color-mix(in srgb, var(--accent) 95%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .typefilter button,
+  .paneltabs button {
+    transition: none;
+  }
+}
+
+/* "You hold N" fills solid accent on hover, so its label must stay white.
+   The generic .barbtn hover rule above would tint it accent on accent. */
+.claimchip:hover:not(:disabled),
+.claimchip.active,
+.claimchip.active:hover {
+  color: #ffffff;
+  background: var(--accent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 65%, transparent),
+    0 0 18px color-mix(in srgb, var(--accent) 70%, transparent),
+    inset 0 1px 0 color-mix(in srgb, white 26%, transparent);
+}
+
+/* At rest it is an outline chip: keep the accent label and a soft glow. */
+.claimchip:not(:hover):not(.active) {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+/* --- Settings and Progress: the same hover language as the main window ---
+   These pages have their own button classes and were never covered. */
+.settingspage button {
+  transition:
+    box-shadow 0.16s ease,
+    background-color 0.16s ease,
+    color 0.16s ease;
+}
+
+/* Outline buttons: accent label, tint and glow. Inline text links are not
+   pills, so they keep their plain underline hover instead. */
+.settingspage button:not(.primary):not(.setup-primary):not(.danger):not(.active):not(.inline):hover:not(:disabled) {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 65%, var(--border));
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent),
+    0 0 16px color-mix(in srgb, var(--accent) 32%, transparent);
+}
+
+/* Filled buttons already carry the accent: brighten and bloom instead, so
+   the label never ends up accent on accent. */
+.settingspage .primary:hover:not(:disabled),
+.settingspage .setup-primary:hover:not(:disabled),
+.settingspage .danger:hover:not(:disabled),
+.settingspage button.active:hover:not(:disabled) {
+  filter: brightness(1.08);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 65%, transparent),
+    0 0 20px color-mix(in srgb, var(--accent) 75%, transparent);
+}
+
+/* Dropdowns on these pages get the same glass pill as the toolbar ones. */
+.settingselect {
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--headbg) calc(var(--drop-tint) * 0.7), transparent);
+  backdrop-filter: blur(var(--drop-blur)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--drop-blur)) saturate(180%);
+  transition:
+    box-shadow 0.16s ease,
+    background-color 0.16s ease;
+}
+
+.settingselect:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 65%, var(--border));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent),
+    0 0 16px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settingspage button,
+  .settingselect {
+    transition: none;
+  }
+}
+
+/* The avatar (account) button was excluded from the toolbar hover so its
+   picture would not tint. It still needs to look pressable: ring and glow. */
+.avatarbtn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent),
+    0 0 18px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.avatarbtn:hover .avatar-img {
+  box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+/* --- Our own dropdown, so the open list can be glass too ---------------- */
+.gselect {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+  border-radius: 8px;
+  padding: 0.2rem 0.5rem;
+  background: color-mix(in srgb, var(--headbg) calc(var(--drop-tint) * 0.7), transparent);
+  backdrop-filter: blur(var(--drop-blur)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--drop-blur)) saturate(180%);
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition:
+    box-shadow 0.16s ease,
+    background-color 0.16s ease;
+}
+
+.gselect:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 65%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent),
+    0 0 16px color-mix(in srgb, var(--accent) 32%, transparent);
+}
+
+.gselect:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.gselect-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gselect-chevron {
+  font-size: 0.7em;
+  opacity: 0.8;
+  margin-left: auto;
+}
+
+/* The branch picker sits in the toolbar and carries its own weight. */
+.gselect.branchselect .gselect-label {
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.gselect-pop {
+  position: fixed;
+  z-index: 150;
+  margin: 0;
+  padding: 0.3rem;
+  list-style: none;
+  overflow-y: auto;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--border));
+  background: color-mix(in srgb, var(--headbg) var(--drop-tint), transparent);
+  backdrop-filter: blur(calc(var(--drop-blur) * 1.25)) saturate(190%);
+  -webkit-backdrop-filter: blur(calc(var(--drop-blur) * 1.25)) saturate(190%);
+  font-size: 0.82rem;
+  box-shadow:
+    0 20px 50px rgba(0, 0, 0, 0.45),
+    0 0 34px color-mix(in srgb, var(--accent) 22%, transparent);
+  animation: glassrise 0.14s ease-out;
+  scroll-padding-block: 0.3rem;
+  overscroll-behavior: contain;
+}
+
+.gselect-opt {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 0.35rem 0.6rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.gselect-opt.active {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 70%, transparent);
+}
+
+.gselect-opt.chosen {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.gselect-opt.chosen.active {
+  background: color-mix(in srgb, var(--accent) 26%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gselect {
+    transition: none;
+  }
+  .gselect-pop {
+    animation: none;
+  }
+}
+
+/* --- Badges glow in their own colour -----------------------------------
+   Each status keeps its meaning (blue free, scarlet yours, amber theirs,
+   green new, orange edited, warning deleted) and now carries a matching
+   halo, so the status column reads at a glance. */
+.badge {
+  transition: box-shadow 0.16s ease;
+}
+
+.badge-free {
+  box-shadow: 0 0 12px color-mix(in srgb, #539bf5 30%, transparent);
+}
+
+.badge-mine {
+  box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.badge-theirs {
+  box-shadow: 0 0 12px color-mix(in srgb, #9e6a03 35%, transparent);
+}
+
+.badge-new {
+  box-shadow: 0 0 12px color-mix(in srgb, #57ab5a 38%, transparent);
+}
+
+.badge-edited {
+  box-shadow: 0 0 12px color-mix(in srgb, #d29922 38%, transparent);
+}
+
+.badge-deleted {
+  box-shadow: 0 0 12px color-mix(in srgb, var(--warning) 40%, transparent);
+}
+
+/* Hovering the row brings its badges up with it. */
+.filerow:hover .badge-free {
+  box-shadow: 0 0 18px color-mix(in srgb, #539bf5 55%, transparent);
+}
+
+.filerow:hover .badge-mine {
+  box-shadow: 0 0 20px color-mix(in srgb, var(--accent) 65%, transparent);
+}
+
+.filerow:hover .badge-theirs {
+  box-shadow: 0 0 18px color-mix(in srgb, #9e6a03 55%, transparent);
+}
+
+.filerow:hover .badge-new {
+  box-shadow: 0 0 18px color-mix(in srgb, #57ab5a 60%, transparent);
+}
+
+.filerow:hover .badge-edited {
+  box-shadow: 0 0 18px color-mix(in srgb, #d29922 60%, transparent);
+}
+
+.filerow:hover .badge-deleted {
+  box-shadow: 0 0 18px color-mix(in srgb, var(--warning) 60%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .badge {
+    transition: none;
+  }
+}
+
+/* The branch picker sits inside a toolbar segment that already has its own
+   frame and "Current branch" label. Giving it a pill of its own made it look
+   like a loose chip: at rest it is just the name and a chevron, and the glass
+   only appears when you reach for it. */
+.gselect.branchselect {
+  border-color: transparent;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
+  padding: 0.1rem 0.35rem;
+  margin-left: -0.35rem;
+}
+
+.gselect.branchselect:hover:not(:disabled),
+.gselect.branchselect[aria-expanded="true"] {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  backdrop-filter: blur(var(--drop-blur)) saturate(170%);
+  -webkit-backdrop-filter: blur(var(--drop-blur)) saturate(170%);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent),
+    0 0 16px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.filerow.filehead,
+.filerow.filehead:hover {
+  background: color-mix(
+    in srgb,
+    var(--headbg) calc(var(--glass-tint) * 1.7),
+    transparent
+  );
+  backdrop-filter: blur(calc(var(--glass-blur) * 1.2)) saturate(140%);
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.2)) saturate(140%);
+  box-shadow: none;
+  transition: none;
+}
+
+.filerow.filehead .badge,
+.filerow.filehead button {
+  box-shadow: none;
+}
+
+/* --- Dialog buttons ----------------------------------------------------
+.modal button {
+  transition:
+    box-shadow 0.16s ease,
+    background-color 0.16s ease,
+    color 0.16s ease;
+}
+
+/* Outline buttons. */
+.modal button:not(.primary):not(.danger):not(:disabled):hover {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 65%, var(--border));
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent),
+    0 0 16px color-mix(in srgb, var(--accent) 32%, transparent);
+}
+
+
+.modal .primary:not(:disabled):hover,
+.modal .danger:not(:disabled):hover {
+  filter: brightness(1.1);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 65%, transparent),
+    0 0 22px color-mix(in srgb, var(--accent) 75%, transparent);
+}
+
+.modal .danger:not(:disabled):hover {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--error) 65%, transparent),
+    0 0 22px color-mix(in srgb, var(--error) 70%, transparent);
+}
+
+.modal input[type="checkbox"] {
+  accent-color: var(--accent);
+}
+
+.modal .togglerow:hover {
+  color: var(--accent);
+}
+
+.modal button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+
+:root {
+  --info: #2f6fb5;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --info: #539bf5;
+  }
+}
+
+.notice {
+  position: relative;
+  overflow: hidden;
+  margin: 0.55rem 0.9rem 0;
+  padding: 0.6rem 1rem 0.6rem 1.4rem;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--info) 42%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--info) 14%,
+    color-mix(in srgb, var(--headbg) 70%, transparent)
+  );
+  backdrop-filter: blur(calc(var(--glass-blur) * 0.8)) saturate(140%);
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 0.8)) saturate(140%);
+  color: inherit;
+  box-shadow:
+    0 6px 22px rgba(0, 0, 0, 0.28),
+    0 0 22px color-mix(in srgb, var(--info) 22%, transparent);
+  animation: noticein 0.2s ease-out;
+}
+
+/* The lit edge that says which kind of message this is. */
+.notice::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--info);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--info) 85%, transparent);
+}
+
+.notice.warn {
+  border-color: color-mix(in srgb, var(--warning) 45%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--warning) 14%,
+    color-mix(in srgb, var(--headbg) 70%, transparent)
+  );
+  box-shadow:
+    0 6px 22px rgba(0, 0, 0, 0.28),
+    0 0 22px color-mix(in srgb, var(--warning) 26%, transparent);
+}
+
+.notice.warn::before {
+  background: var(--warning);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--warning) 85%, transparent);
+}
+
+.notice-ok {
+  padding: 0.25rem 0.9rem;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--info) 55%, transparent);
+  background: color-mix(in srgb, var(--info) 16%, transparent);
+  color: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition:
+    box-shadow 0.16s ease,
+    background-color 0.16s ease;
+}
+
+.notice-ok:hover {
+  background: color-mix(in srgb, var(--info) 28%, transparent);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--info) 50%, transparent);
+}
+
+.notice.warn .notice-ok {
+  color: inherit;
+  border-color: color-mix(in srgb, var(--warning) 60%, transparent);
+  background: color-mix(in srgb, var(--warning) 16%, transparent);
+}
+
+.notice.warn .notice-ok:hover {
+  background: color-mix(in srgb, var(--warning) 30%, transparent);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--warning) 55%, transparent);
+}
+
+@keyframes noticein {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notice {
+    animation: none;
+  }
+  .notice-ok {
+    transition: none;
+  }
+}
+
+/* --- Drop the left edge bars */
+.notice::before {
+  display: none;
+}
+
+.notice {
+  padding-left: 1rem;
+}
+
+.filerow:hover {
+  box-shadow: none;
+}
+
+.lockitem:hover {
+  box-shadow: none;
+}
+
+.gselect-opt.active {
+  box-shadow: none;
+}
+
+.commit:hover,
+.lockjump:hover {
+  box-shadow: none;
+}
+
+/* Let the logo's halo fall past the toolbar onto the rows underneath. */
+.ghbar .brand,
+.ghbar .brandlogo {
+  overflow: visible;
+}
+
+/* The active filter throws light far enough to wash across the sticky header
+   below it. */
+.typefilter button.active {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent),
+    0 0 10px color-mix(in srgb, var(--accent) 35%, transparent),
+    0 8px 26px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.typefilter button.active:hover {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent),
+    0 0 14px color-mix(in srgb, var(--accent) 50%, transparent),
+    0 8px 30px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+.treetoolbar {
+  overflow: visible;
+}
+
+.modal .warn-inline + .togglerow,
+.modal p + .togglerow {
+  margin-top: 1.1rem;
+}

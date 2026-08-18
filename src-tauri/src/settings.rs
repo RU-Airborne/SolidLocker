@@ -7,7 +7,7 @@ use tauri_plugin_store::StoreExt;
 use crate::error::{AppError, AppResult};
 use crate::PRODUCT_DIR;
 
-/// %APPDATA%\SolidLocker\settings.json — a clean product-name folder instead of
+/// %APPDATA%\SolidLocker\settings.json, a clean product-name folder instead of
 /// Tauri's default bundle-identifier folder (%APPDATA%\com.solidlocker.app).
 fn store_path(app: &AppHandle) -> AppResult<PathBuf> {
     let dir = app

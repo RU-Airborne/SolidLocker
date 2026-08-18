@@ -1,4 +1,4 @@
-/// SolidWorks writes ~$Foo.SLDPRT companions while a document is open — junk,
+/// SolidWorks writes ~$Foo.SLDPRT companions while a document is open. Junk,
 /// not work worth saving.
 export function isSwTemp(path: string): boolean {
   return (path.split("/").pop() ?? path).startsWith("~$");

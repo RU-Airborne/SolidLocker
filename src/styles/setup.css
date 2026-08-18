@@ -1,0 +1,43 @@
+/* First run: pick a folder or clone one. */
+
+.setupcard {
+  max-width: 480px;
+  text-align: center;
+}
+
+.setup-primary,
+.setupcard > button.setup-primary {
+  padding: 0.55rem 1.3rem;
+  border-radius: 8px;
+  border: none;
+  background: var(--accent);
+  color: white;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.setup-primary:hover,
+.setupcard > button.setup-primary:hover {
+  background: color-mix(in srgb, var(--accent) 85%, white);
+}
+
+.setupsection h3 {
+  margin-bottom: 0.5rem;
+}
+
+.setuprow {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.setuprow input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.4rem 0.7rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}

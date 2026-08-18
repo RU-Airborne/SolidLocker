@@ -87,7 +87,6 @@ pub async fn preflight(cwd: &Path) -> (bool, bool, Option<String>) {
     }
 }
 
-/// Install the global git-lfs filters if they are missing.
 pub async fn ensure_lfs_filters(cwd: &Path) {
     let configured = run_git(cwd, &["config", "--get", "filter.lfs.process"], 10)
         .await
@@ -351,8 +350,7 @@ pub struct CommitIdentity {
     pub email: String,
 }
 
-/// Author identities across ALL branches, newest first. The identity
-/// directory must see every branch, not just the checked-out one.
+/// every branch, not just the checked-out one
 pub async fn list_commit_identities(root: &Path) -> AppResult<Vec<CommitIdentity>> {
     let out = run_git(
         root,
@@ -388,7 +386,7 @@ pub struct FileCommit {
     pub date: String,
 }
 
-/// Every shared change to one file, newest first, for the row detail view.
+/// Newest first.
 pub async fn file_history(root: &Path, rel: &str) -> AppResult<Vec<FileCommit>> {
     let out = run_git(
         root,
@@ -512,9 +510,7 @@ pub async fn get_activity(
     Ok(parse_activity_log(&out.stdout))
 }
 
-/// Move untracked files out of the repo into a sibling backup folder so a
-/// branch switch can proceed. Only files git currently reports as untracked
-/// are moved. Returns the backup folder path.
+/// Only what git currently calls untracked gets moved. Returns the folder.
 pub async fn set_aside_untracked(root: &Path, files: Vec<String>) -> AppResult<String> {
     let status = get_repo_status(root).await?;
     let untracked: HashSet<String> = status.untracked.into_iter().collect();
@@ -555,8 +551,7 @@ pub async fn set_aside_untracked(root: &Path, files: Vec<String>) -> AppResult<S
     Ok(backup_dir.to_string_lossy().into_owned())
 }
 
-/// Put the given files back to their committed (HEAD) state. Used to clear
-/// stuck cross-branch leftovers once SolidWorks releases the files.
+/// Clears stuck cross-branch leftovers, once SolidWorks lets go of them.
 pub async fn restore_paths(root: &Path, files: Vec<String>) -> AppResult<()> {
     if files.is_empty() {
         return Ok(());
@@ -692,8 +687,7 @@ pub async fn remote_branches(root: &Path) -> AppResult<Vec<String>> {
         .collect())
 }
 
-/// For each given repo path, list the remote branches whose tree contains it.
-/// Uses already-fetched refs; accuracy depends on the last fetch.
+/// Reads already-fetched refs, so it is only as accurate as the last fetch.
 pub async fn locate_paths_in_branches(
     root: &Path,
     paths: Vec<String>,

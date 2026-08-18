@@ -1,18 +1,12 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useQuery } from "@tanstack/react-query";
 import {
-  connectionState,
-  fetchRemote,
-  githubSignIn,
-  githubSignedIn,
-  hideToTray,
+  isSwitching,
   listRepoBranches,
   openFile,
   pushNow,
-  quitApp,
   restoreFiles,
   selectExistingRepo,
   switchBranch,
@@ -29,10 +23,15 @@ import {
   useSyncAttributes,
 } from "../../queries";
 import type { AppState, FileEntry, LockStatus } from "../../types";
-import { isAppError, isSwTemp } from "../../types";
+import { isAppError } from "../../types";
 import type { Lock } from "../../types";
 import { copy } from "../../copy";
 import { notifyDesktop } from "../../notify";
+import { read, useChoice, useFlag, usePathSet, usePersisted, write } from "../../persist";
+import { useExitBehavior } from "../../exit";
+import { useShortcuts } from "../../shortcuts";
+import { useSignIn } from "../../signin";
+import { useSync } from "../../sync";
 import {
   playCheckComplete,
   playFileOpenComplete,
@@ -89,7 +88,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
   const locks = useLocks(true);
   const claim = useClaim();
   const release = useRelease();
-  const sync = useSyncAttributes();
+  const perms = useSyncAttributes();
   const repoStatus = useRepoStatus(true);
   const getLatestMut = useGetLatest();
   const saveShareMut = useSaveAndShare();
@@ -99,6 +98,21 @@ export function Dashboard({ appState }: { appState: AppState }) {
   } | null>(null);
   const queryClient = useQueryClient();
   const swInstalled = useSwInstalled();
+
+  // A branch switch rewrites every file in the project. Nothing else may run
+  // against the worktree while it does. The backend enforces that, and the
+  // UI blocks interaction so clicks do not queue up and land on a project
+  // that changed underneath them.
+  const [switchingTo, setSwitchingTo] = useState<string | null>(null);
+  const [stuckFiles, setStuckFiles] = useState<string[] | null>(null);
+  // Closing to the tray destroys the window, so a switch can outlive the UI
+  // that started it. A rebuilt window has no memory of one and must ask.
+  const backendSwitching = useQuery({
+    queryKey: ["isSwitching"],
+    queryFn: isSwitching,
+    refetchInterval: (query) => (query.state.data === true ? 1000 : false),
+  });
+  const switching = switchingTo !== null || backendSwitching.data === true;
 
   /** Ordinary news: quiet banner, no sound. */
   function setNotice(text: string | null) {
@@ -119,87 +133,36 @@ export function Dashboard({ appState }: { appState: AppState }) {
   }, [notice]);
 
   // Quietly fetch the remote on an interval so `behind` stays accurate.
-  const [lastFetchAt, setLastFetchAt] = useState<number | null>(null);
-  const [fetchFailed, setFetchFailed] = useState(false);
-  const [syncing, setSyncing] = useState(false);
-  const [fetchIntervalS, setFetchIntervalS] = useState(() => {
-    const v = Number(localStorage.getItem("solidlocker.fetchIntervalS"));
-    return [30, 60, 120, 300].includes(v) ? v : 60;
+  // Keeping up with the team: the interval fetch and the automatic pull.
+  // sync.ts owns both, and the rules about when a pull is safe.
+  const [conflictFiles, setConflictFiles] = useState<string[] | null>(null);
+  const sync = useSync({
+    paused: switching,
+    status: repoStatus.data,
+    pullLatest: getLatestMut.mutateAsync,
+    busy: getLatestMut.isPending || saveShareMut.isPending,
+    onNotice: setNotice,
+    onWarn: warn,
+    onConflict: setConflictFiles,
   });
-
-  function handleFetchIntervalChange(seconds: number) {
-    localStorage.setItem("solidlocker.fetchIntervalS", String(seconds));
-    setFetchIntervalS(seconds);
-  }
 
   // Days a claim may sit idle before the release reminder; 0 disables it.
-  const [staleDays, setStaleDays] = useState(() => {
-    const v = Number(localStorage.getItem("solidlocker.staleDays"));
-    return [0, 1, 3, 7].includes(v) && localStorage.getItem("solidlocker.staleDays") !== null
-      ? v
-      : 3;
-  });
-
-  function handleStaleDaysChange(days: number) {
-    localStorage.setItem("solidlocker.staleDays", String(days));
-    setStaleDays(days);
-  }
+  const [staleDays, handleStaleDaysChange] = useChoice("staleDays", [0, 1, 3, 7], 3);
 
   // Large file warning threshold in MB; 0 disables it.
-  const [bigFileMb, setBigFileMb] = useState(() => {
-    const v = Number(localStorage.getItem("solidlocker.bigFileMb"));
-    return [0, 5, 25, 50].includes(v) &&
-      localStorage.getItem("solidlocker.bigFileMb") !== null
-      ? v
-      : 5;
-  });
-
-  function handleBigFileMbChange(mb: number) {
-    localStorage.setItem("solidlocker.bigFileMb", String(mb));
-    setBigFileMb(mb);
-  }
+  const [bigFileMb, handleBigFileMbChange] = useChoice("bigFileMb", [0, 5, 25, 50], 5);
 
   // Notify about connection changes; on by default.
-  const [notifyConnection, setNotifyConnection] = useState(
-    () => localStorage.getItem("solidlocker.notifyConnection") !== "off",
-  );
+  const [notifyConnection, handleNotifyConnectionChange] = useFlag("notifyConnection");
 
-  function handleNotifyConnectionChange(on: boolean) {
-    localStorage.setItem("solidlocker.notifyConnection", on ? "on" : "off");
-    setNotifyConnection(on);
-  }
-
-  // Closing the window keeps SolidLocker running in the tray; on by default.
-  // The choice lives in the exit dialog, which stops asking once the user
-  // ticks "remember".
-  const [closeToTray, setCloseToTray] = useState(
-    () => localStorage.getItem("solidlocker.closeToTray") !== "off",
-  );
-  const [askOnExit, setAskOnExit] = useState(
-    () => localStorage.getItem("solidlocker.askOnExit") !== "off",
-  );
-  const [exitPrompt, setExitPrompt] = useState(false);
+  // Closing the window keeps SolidLocker running in the tray by default. The
+  // choice lives in the exit dialog, which stops asking once "remember" is
+  // ticked; exit.ts owns the whole arrangement.
+  const exit = useExitBehavior();
   const [offlineHelp, setOfflineHelp] = useState(false);
 
-  useEffect(() => {
-    const doFetch = () =>
-      fetchRemote()
-        .then(() => {
-          setLastFetchAt(Date.now());
-          setFetchFailed(false);
-          queryClient.invalidateQueries({ queryKey: ["repoStatus"] });
-          // A fetch can bring in branches teammates just created.
-          queryClient.invalidateQueries({ queryKey: ["repoBranches"] });
-        })
-        // A failed fetch must never look like a successful one.
-        .catch(() => setFetchFailed(true));
-    doFetch();
-    const t = window.setInterval(doFetch, fetchIntervalS * 1000);
-    return () => window.clearInterval(t);
-  }, [queryClient, fetchIntervalS]);
-
   function handleFixPerms() {
-    sync
+    perms
       .mutateAsync()
       .then((r) =>
         setNotice(
@@ -213,66 +176,6 @@ export function Dashboard({ appState }: { appState: AppState }) {
       .catch((e) => warn(String(e)));
   }
 
-  function handleSyncNow() {
-    if (syncing) return;
-    lastAutoPull.current = 0;
-    setSyncing(true);
-    fetchRemote()
-      .then(() => {
-        playCheckComplete();
-        setLastFetchAt(Date.now());
-        setFetchFailed(false);
-        queryClient.invalidateQueries({ queryKey: ["repoStatus"] });
-        queryClient.invalidateQueries({ queryKey: ["locks"] });
-        queryClient.invalidateQueries({ queryKey: ["files"] });
-        queryClient.invalidateQueries({ queryKey: ["repoBranches"] });
-        // Only for a sync the user asked for. The 60s poll stays silent.
-        // If teammates' changes came in, the auto pull below reports what
-        // actually arrived, so do not claim "up to date" over the top of it.
-        const behind = repoStatus.data?.behind ?? 0;
-        if (behind === 0) setNotice(copy.syncedOk);
-      })
-      .catch((e) => {
-        setFetchFailed(true);
-        warn(isAppError(e) ? e.message : copy.offlineRetry);
-      })
-      .finally(() => setSyncing(false));
-  }
-
-  // Auto-sync: when teammates have pushed changes and we have nothing
-  // unsaved, pull them in automatically.
-  const lastAutoPull = useRef(0);
-  useEffect(() => {
-    const s = repoStatus.data;
-    if (
-      !s ||
-      s.behind === 0 ||
-      s.dirty.some((p) => !isSwTemp(p)) ||
-      s.conflicted.length > 0
-    )
-      return;
-    if (getLatestMut.isPending || saveShareMut.isPending) return;
-    if (Date.now() - lastAutoPull.current < 30_000) return;
-    lastAutoPull.current = Date.now();
-    getLatestMut
-      .mutateAsync()
-      .then((r) => {
-        if (r.merged) {
-          setNotice(copy.syncedChanges(r.behind_before));
-        }
-      })
-      .catch((e) => {
-        if (isAppError(e) && e.code === "CONFLICT") {
-          const files = (e.detail as { files?: string[] } | undefined)?.files;
-          // Never open the dialog with nothing to resolve.
-          if (files && files.length > 0) {
-            playMateFailed();
-            setConflictFiles(files);
-          }
-        }
-        // Other failures (offline etc.) stay quiet; next cycle retries.
-      });
-  }, [repoStatus.data, getLatestMut, saveShareMut.isPending]);
   const [busyPaths, setBusyPaths] = useState<Set<string>>(new Set());
   const [claimDialogPath, setClaimDialogPath] = useState<string | null>(null);
   const [releaseDialogPath, setReleaseDialogPath] = useState<string | null>(null);
@@ -295,7 +198,6 @@ export function Dashboard({ appState }: { appState: AppState }) {
     );
   }
   const [commitDialogOpen, setCommitDialogOpen] = useState(false);
-  const [conflictFiles, setConflictFiles] = useState<string[] | null>(null);
   const [highlightedPath, setHighlightedPath] = useState<string | null>(null);
   const [panelTab, setPanelTab] = useState<"locks" | "activity">("locks");
   const [forceTarget, setForceTarget] = useState<Lock | null>(null);
@@ -315,10 +217,13 @@ export function Dashboard({ appState }: { appState: AppState }) {
   const lastSyncAt = useRef(0);
 
   // After every fresh (server-verified) lock refresh, align read-only bits:
-  // writable only if claimed by me. Safe to repeat — it never touches files
+  // writable only if claimed by me. Safe to repeat, since it never touches files
   // that are modified or claimed, so it can run on every poll.
   useEffect(() => {
     if (!locks.data?.fresh) return;
+    // Read-only bits are meaningless mid-switch: git is replacing the files
+    // they belong to. The next poll after the switch puts them right.
+    if (switching) return;
     if (Date.now() - lastSyncAt.current < 10_000) return;
     lastSyncAt.current = Date.now();
     syncAttributes()
@@ -330,11 +235,11 @@ export function Dashboard({ appState }: { appState: AppState }) {
       .catch(() => {
         lastSyncAt.current = 0;
       });
-  }, [locks.dataUpdatedAt, locks.data?.fresh, queryClient]);
+  }, [locks.dataUpdatedAt, locks.data?.fresh, queryClient, switching]);
 
   // Right panel width, draggable and remembered.
   const [panelWidth, setPanelWidth] = useState(() => {
-    const v = Number(localStorage.getItem("solidlocker.panelWidth"));
+    const v = Number(read("panelWidth"));
     return v >= 220 && v <= 640 ? v : 280;
   });
 
@@ -343,7 +248,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
     const onMove = (ev: PointerEvent) => {
       const w = Math.min(640, Math.max(220, window.innerWidth - ev.clientX));
       setPanelWidth(w);
-      localStorage.setItem("solidlocker.panelWidth", String(w));
+      write("panelWidth", String(w));
     };
     const onUp = () => {
       window.removeEventListener("pointermove", onMove);
@@ -354,26 +259,31 @@ export function Dashboard({ appState }: { appState: AppState }) {
   }
 
   // Pinned files stay at the top of the list, across restarts.
-  const [pinned, setPinned] = useState<Set<string>>(() => {
-    try {
-      return new Set(
-        JSON.parse(localStorage.getItem("solidlocker.pinned") ?? "[]") as string[],
-      );
-    } catch {
-      return new Set();
-    }
-  });
-
-  function togglePin(path: string) {
-    setPinned((prev) => {
-      const next = new Set(prev);
-      const key = path.toLowerCase();
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      localStorage.setItem("solidlocker.pinned", JSON.stringify([...next]));
-      return next;
-    });
-  }
+  // Every stored preference in this file used to be its own state + handler
+  // pair with the key spelled out inline, nine times over. persist.ts holds
+  // the shape now; this was the last of them:
+  //
+  // const [pinned, setPinned] = useState<Set<string>>(() => {
+  //   try {
+  //     return new Set(
+  //       JSON.parse(localStorage.getItem("solidlocker.pinned") ?? "[]") as string[],
+  //     );
+  //   } catch {
+  //     return new Set();
+  //   }
+  // });
+  //
+  // function togglePin(path: string) {
+  //   setPinned((prev) => {
+  //     const next = new Set(prev);
+  //     const key = path.toLowerCase();
+  //     if (next.has(key)) next.delete(key);
+  //     else next.add(key);
+  //     localStorage.setItem("solidlocker.pinned", JSON.stringify([...next]));
+  //     return next;
+  //   });
+  // }
+  const [pinned, togglePin] = usePathSet("pinned");
 
   // Search, file-type, and "only my claims" filtering.
   const [searchQuery, setSearchQuery] = useState("");
@@ -383,37 +293,14 @@ export function Dashboard({ appState }: { appState: AppState }) {
   );
 
   // Tree sort order, remembered across restarts.
-  const [sortMode, setSortMode] = useState<SortMode>(() => {
-    const saved = localStorage.getItem("solidlocker.sortMode");
-    return saved === "size" || saved === "modified" ? saved : "name";
-  });
-
-  function handleSortChange(mode: SortMode) {
-    localStorage.setItem("solidlocker.sortMode", mode);
-    setSortMode(mode);
-  }
+  const [sortMode, handleSortChange] = usePersisted<SortMode>(
+    "sortMode",
+    (raw) => (raw === "size" || raw === "modified" ? raw : "name"),
+    (mode) => mode,
+  );
 
   // "Tell me when it's free": watched paths (lowercased) survive restarts.
-  const [watched, setWatched] = useState<Set<string>>(() => {
-    try {
-      return new Set(
-        JSON.parse(localStorage.getItem("solidlocker.watched") ?? "[]") as string[],
-      );
-    } catch {
-      return new Set();
-    }
-  });
-
-  function toggleWatch(path: string) {
-    setWatched((prev) => {
-      const next = new Set(prev);
-      const key = path.toLowerCase();
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      localStorage.setItem("solidlocker.watched", JSON.stringify([...next]));
-      return next;
-    });
-  }
+  const [watched, toggleWatch, editWatched] = usePathSet("watched");
 
   useEffect(() => {
     const l = locks.data;
@@ -423,11 +310,8 @@ export function Dashboard({ appState }: { appState: AppState }) {
     );
     const freed = [...watched].filter((p) => !lockedNow.has(p));
     if (freed.length === 0) return;
-    setWatched((prev) => {
-      const next = new Set(prev);
+    editWatched((next) => {
       for (const f of freed) next.delete(f);
-      localStorage.setItem("solidlocker.watched", JSON.stringify([...next]));
-      return next;
     });
     const names = freed.map((p) => p.split("/").pop() ?? p);
     for (const name of names) {
@@ -483,25 +367,10 @@ export function Dashboard({ appState }: { appState: AppState }) {
   }, [locks.data]);
 
   // "New" badges disappear once a file is opened or edited, or after a week.
-  const [seenNew, setSeenNew] = useState<Set<string>>(() => {
-    try {
-      return new Set(
-        JSON.parse(localStorage.getItem("solidlocker.seenNew") ?? "[]") as string[],
-      );
-    } catch {
-      return new Set();
-    }
-  });
+  const [seenNew, , editSeen] = usePathSet("seenNew");
 
   function markSeen(path: string) {
-    setSeenNew((prev) => {
-      const key = path.toLowerCase();
-      if (prev.has(key)) return prev;
-      const next = new Set(prev);
-      next.add(key);
-      localStorage.setItem("solidlocker.seenNew", JSON.stringify([...next]));
-      return next;
-    });
+    editSeen((next) => next.add(path.toLowerCase()));
   }
 
   // Editing a file counts as having looked at it.
@@ -569,128 +438,33 @@ export function Dashboard({ appState }: { appState: AppState }) {
     [files.data],
   );
 
-  // Closing the window: ask once (then remember), hide to the tray so
-  // protection keeps running, or quit outright.
-  const askOnExitRef = useRef(askOnExit);
-  askOnExitRef.current = askOnExit;
-  const closeToTrayRef = useRef(closeToTray);
-  closeToTrayRef.current = closeToTray;
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    // The listener arrives asynchronously. Without this flag a fast
-    // unmount/remount (React strict mode, hot reload) loses the handle and
-    // leaks a listener, so an old handler keeps hiding the window while the
-    // new one opens the dialog.
-    let disposed = false;
-    getCurrentWindow()
-      .onCloseRequested(async (event) => {
-        if (disposed) return;
-        if (askOnExitRef.current) {
-          event.preventDefault();
-          // Make sure the window is up front, so the question can't be
-          // answered blind behind other windows.
-          const w = getCurrentWindow();
-          await w.show();
-          await w.unminimize();
-          await w.setFocus();
-          setExitPrompt(true);
-          return;
-        }
-        if (closeToTrayRef.current) {
-          event.preventDefault();
-          // Tear the window down rather than hiding it: that lets the webview
-          // processes exit, so sitting in the tray costs a fraction of the
-          // memory. The tray icon rebuilds the window on demand.
-          await hideToTray();
-          return;
-        }
-        event.preventDefault();
-        await quitApp();
-      })
-      .then((u) => {
-        unlisten = u;
-        if (disposed) u();
-      });
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
-  }, []);
-
-  // Keyboard shortcuts. Ctrl+Z has no meaning here, so it gets the sound
-  // every SolidWorks user knows.
+  // Ctrl+Z has no meaning here, so it gets the sound every SolidWorks user
+  // knows. Escape closes whatever is on top, so the list is ordered by depth.
   const searchRef = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const mod = e.ctrlKey || e.metaKey;
-      if (mod && e.key.toLowerCase() === "f") {
-        e.preventDefault();
-        setProgressOpen(false);
-        setSettingsOpen(false);
-        searchRef.current?.focus();
-        searchRef.current?.select();
-        return;
-      }
-      if (mod && e.key.toLowerCase() === "s") {
-        e.preventDefault();
-        setCommitDialogOpen(true);
-        return;
-      }
-      if (mod && e.key.toLowerCase() === "z") {
-        e.preventDefault();
-        playMateFailed();
-        setNotice("Mate failed... Wait, what? This isn't SolidWorks.");
-        return;
-      }
-      if (e.key === "Escape") {
-        if (rowMenu) return setRowMenu(null);
-        if (offlineHelp) return setOfflineHelp(false);
-        if (openWarning) return setOpenWarning(null);
-        if (claimDialogPath) return setClaimDialogPath(null);
-        if (releaseDialogPath) return setReleaseDialogPath(null);
-        if (commitDialogOpen) return setCommitDialogOpen(false);
-        if (progressOpen) return setProgressOpen(false);
-        if (settingsOpen) return setSettingsOpen(false);
-        if (searchQuery) return setSearchQuery("");
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [
-    rowMenu,
-    offlineHelp,
-    openWarning,
-    claimDialogPath,
-    releaseDialogPath,
-    commitDialogOpen,
-    progressOpen,
-    settingsOpen,
-    searchQuery,
-  ]);
-
-  const closeBehavior: "ask" | "tray" | "quit" = askOnExit
-    ? "ask"
-    : closeToTray
-      ? "tray"
-      : "quit";
-
-  function handleCloseBehaviorChange(mode: "ask" | "tray" | "quit") {
-    const ask = mode === "ask";
-    const tray = mode !== "quit";
-    localStorage.setItem("solidlocker.askOnExit", ask ? "on" : "off");
-    localStorage.setItem("solidlocker.closeToTray", tray ? "on" : "off");
-    setAskOnExit(ask);
-    setCloseToTray(tray);
-  }
-
-  function rememberExitChoice(toTray: boolean, remember: boolean) {
-    localStorage.setItem("solidlocker.closeToTray", toTray ? "on" : "off");
-    setCloseToTray(toTray);
-    if (remember) {
-      localStorage.setItem("solidlocker.askOnExit", "off");
-      setAskOnExit(false);
-    }
-  }
+  useShortcuts({
+    find: () => {
+      setProgressOpen(false);
+      setSettingsOpen(false);
+      searchRef.current?.focus();
+      searchRef.current?.select();
+    },
+    save: () => setCommitDialogOpen(true),
+    undo: () => {
+      playMateFailed();
+      setNotice("Mate failed... Wait, what? This isn't SolidWorks.");
+    },
+    layers: [
+      [!!rowMenu, () => setRowMenu(null)],
+      [offlineHelp, () => setOfflineHelp(false)],
+      [!!openWarning, () => setOpenWarning(null)],
+      [!!claimDialogPath, () => setClaimDialogPath(null)],
+      [!!releaseDialogPath, () => setReleaseDialogPath(null)],
+      [commitDialogOpen, () => setCommitDialogOpen(false)],
+      [progressOpen, () => setProgressOpen(false)],
+      [settingsOpen, () => setSettingsOpen(false)],
+      [searchQuery !== "", () => setSearchQuery("")],
+    ],
+  });
 
 
   function withBusy(paths: string[], fn: () => Promise<void>) {
@@ -736,7 +510,8 @@ export function Dashboard({ appState }: { appState: AppState }) {
     watched,
     togglePin,
     pinned,
-    claim: (paths) =>
+    claim: (paths) => {
+      if (switching) return;
       withBusy(paths, async () => {
         setNotice(null);
         try {
@@ -764,8 +539,10 @@ export function Dashboard({ appState }: { appState: AppState }) {
         } catch (e) {
           setNotice(String(e));
         }
-      }),
-    release: (paths) =>
+      });
+    },
+    release: (paths) => {
+      if (switching) return;
       withBusy(paths, async () => {
         setNotice(null);
         try {
@@ -786,9 +563,10 @@ export function Dashboard({ appState }: { appState: AppState }) {
         } catch (e) {
           setNotice(String(e));
         }
-      }),
+      });
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [busyPaths, highlightedPath, watched, pinned, lockStatusByPath]);
+  }), [busyPaths, highlightedPath, watched, pinned, lockStatusByPath, switching]);
 
   function handleSaveShare(message: string, paths: string[]) {
     saveShareMut
@@ -808,9 +586,6 @@ export function Dashboard({ appState }: { appState: AppState }) {
   });
   const currentBranch = repoStatus.data?.branch ?? appState.repo!.branch;
 
-  const [switchingTo, setSwitchingTo] = useState<string | null>(null);
-  const [stuckFiles, setStuckFiles] = useState<string[] | null>(null);
-
   function handleFixStuck() {
     if (!stuckFiles) return;
     restoreFiles(stuckFiles)
@@ -829,7 +604,12 @@ export function Dashboard({ appState }: { appState: AppState }) {
     try {
       const result = await switchBranch(name);
       queryClient.invalidateQueries();
-      if (result.stuck_files.length > 0) {
+      // Files written while the switch ran still hold unsaved work. They were
+      // deliberately left alone, and saying so matters more than the switch.
+      if (result.kept_files.length > 0) {
+        warn(copy.keptDuringSwitch(result.kept_files));
+        if (result.stuck_files.length > 0) setStuckFiles(result.stuck_files);
+      } else if (result.stuck_files.length > 0) {
         playMateFailed();
         setStuckFiles(result.stuck_files);
       } else {
@@ -873,63 +653,13 @@ export function Dashboard({ appState }: { appState: AppState }) {
   }
 
   const stale = locks.data ? !locks.data.fresh : false;
-  const offline = locks.isError || fetchFailed;
+  const offline = locks.isError || sync.failed;
 
-  // First run check GitHub credentials once
-  const [signInPrompt, setSignInPrompt] = useState(false);
-  const [checkingSignIn, setCheckingSignIn] = useState(false);
-  const [signingIn, setSigningIn] = useState(false);
-  const [connState, setConnState] = useState<
-    "ok" | "signed_out" | "offline" | null
-  >(null);
-  const signInChecked = useRef(false);
-  useEffect(() => {
-    if (signInChecked.current) return;
-    signInChecked.current = true;
-    githubSignedIn()
-      .then((ok) => {
-        if (!ok) setSignInPrompt(true);
-        // Already signed in: the check just cached our login, so refetch the
-        // app state to fill in the profile name and picture.
-        else queryClient.invalidateQueries({ queryKey: ["appState"] });
-      })
-      .catch(() => {});
-  }, []);
-
-  function recheckSignIn() {
-    setCheckingSignIn(true);
-    githubSignedIn()
-      .then((ok) => {
-        if (ok) {
-          setSignInPrompt(false);
-          setNotice("Signed in to GitHub.");
-          queryClient.invalidateQueries();
-        }
-      })
-      .catch((e) => warn(isAppError(e) ? e.message : String(e)))
-      .finally(() => setCheckingSignIn(false));
-  }
-
-  // Same flow as the Sign in button on the profile page: open the credential
-  // manager's browser sign in, then refresh everything that was blocked.
-  function handleSignIn() {
-    setSigningIn(true);
-    githubSignIn()
-      .then((ok) => {
-        queryClient.invalidateQueries();
-        if (ok) {
-          setSignInPrompt(false);
-          setNotice("Signed in to GitHub.");
-          // Re-check the connection right away so the warning banner clears
-          // now, instead of lingering until the next background poll.
-          fetchRemote()
-            .then(() => setFetchFailed(false))
-            .catch(() => setFetchFailed(true));
-        }
-      })
-      .catch((e) => warn(isAppError(e) ? e.message : String(e)))
-      .finally(() => setSigningIn(false));
-  }
+  // The GitHub sign in, and the "why can't we reach GitHub" probe that tells
+  // a signed out member apart from an offline one. signin.ts owns both.
+  const signin = useSignIn(offline || stale, setNotice, warn, (ok) =>
+    sync.setFailed(!ok),
+  );
 
   // A branch without locking rules cannot protect anything
   const lockableOk = appState.repo!.lockable_ok;
@@ -952,25 +682,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
       notifyDesktop(copy.onlineNotificationTitle, copy.onlineNotificationBody);
       setNotice(copy.onlineNotificationBody);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [offline, notifyConnection]);
-
-  // When the warning banner is up, ask the backend WHY GitHub is unreachable,
-  // so it can say "you are signed out" instead of "check your connection".
-  useEffect(() => {
-    if (!(offline || stale)) {
-      setConnState(null);
-      return;
-    }
-    let cancelled = false;
-    connectionState()
-      .then((s) => !cancelled && setConnState(s))
-      .catch(() => !cancelled && setConnState("offline"));
-    return () => {
-      cancelled = true;
-    };
-  }, [offline, stale]);
-  const signedOut = connState === "signed_out";
 
   const updating = getLatestMut.isPending || saveShareMut.isPending;
 
@@ -984,14 +696,14 @@ export function Dashboard({ appState }: { appState: AppState }) {
         switchingTo={switchingTo}
         onSwitchRepo={handleSwitchRepo}
         status={repoStatus.data}
-        lastFetchAt={lastFetchAt}
+        lastFetchAt={sync.lastFetchAt}
         offline={offline}
         stale={stale}
-        onSyncNow={handleSyncNow}
-        syncing={syncing}
+        onSyncNow={sync.syncNow}
+        syncing={sync.syncing}
         onSaveShare={() => setCommitDialogOpen(true)}
         onPushOnly={handlePushOnly}
-        fetchIntervalS={fetchIntervalS}
+        fetchIntervalS={sync.intervalS}
         updating={updating}
         myClaimCount={myClaimCount}
         mineActive={showOnlyMine}
@@ -1007,10 +719,10 @@ export function Dashboard({ appState }: { appState: AppState }) {
           </button>
         </div>
       )}
-      {signedOut ? (
+      {signin.signedOut ? (
         <div className="notice warn">
           <span>{copy.notSignedIn}</span>
-          <button className="notice-ok" onClick={() => setSignInPrompt(true)}>
+          <button className="notice-ok" onClick={signin.open}>
             Sign in
           </button>
         </div>
@@ -1140,32 +852,35 @@ export function Dashboard({ appState }: { appState: AppState }) {
         />
       )}
       {offlineHelp && <OfflineHelpDialog onClose={() => setOfflineHelp(false)} />}
-      {signInPrompt && (
+      {signin.prompting && (
         <SignInDialog
-          checking={checkingSignIn}
-          signingIn={signingIn}
-          onSignIn={handleSignIn}
-          onCheckAgain={recheckSignIn}
-          onClose={() => setSignInPrompt(false)}
+          checking={signin.checking}
+          signingIn={signin.signingIn}
+          onSignIn={signin.signIn}
+          onCheckAgain={signin.checkAgain}
+          onClose={signin.dismiss}
         />
       )}
-      {exitPrompt && (
+      {exit.prompting && (
         <ExitDialog
           heldCount={myClaimCount}
-          onCancel={() => setExitPrompt(false)}
-          onStayInTray={(remember) => {
-            setExitPrompt(false);
-            rememberExitChoice(true, remember);
-            hideToTray();
-          }}
-          onQuit={(remember) => {
-            setExitPrompt(false);
-            rememberExitChoice(false, remember);
-            quitApp();
-          }}
+          onCancel={exit.cancelPrompt}
+          onStayInTray={(remember) => exit.answerPrompt(true, remember)}
+          onQuit={(remember) => exit.answerPrompt(false, remember)}
         />
       )}
       <div className="stage">
+      {switching && (
+        <div className="switchblock" role="status" aria-live="polite">
+          <div className="switchblock-card">
+            <span className="switchspinner" aria-hidden="true" />
+            <p className="switchblock-title">
+              {copy.switching(switchingTo ?? currentBranch)}
+            </p>
+            <p className="muted small">{copy.switchingDetail}</p>
+          </div>
+        </div>
+      )}
       <div className="body">
         <main className="content">
           <div className="treetoolbar">
@@ -1285,16 +1000,16 @@ export function Dashboard({ appState }: { appState: AppState }) {
           ) : (
             <SettingsPage
               appState={appState}
-              fetchIntervalS={fetchIntervalS}
-              onFetchIntervalChange={handleFetchIntervalChange}
+              fetchIntervalS={sync.intervalS}
+              onFetchIntervalChange={sync.setIntervalS}
               staleDays={staleDays}
               onStaleDaysChange={handleStaleDaysChange}
               bigFileMb={bigFileMb}
               onBigFileMbChange={handleBigFileMbChange}
               notifyConnection={notifyConnection}
               onNotifyConnectionChange={handleNotifyConnectionChange}
-              closeBehavior={closeBehavior}
-              onCloseBehaviorChange={handleCloseBehaviorChange}
+              closeBehavior={exit.behavior}
+              onCloseBehaviorChange={exit.setBehavior}
               onFixPerms={() => {
                 setSettingsOpen(false);
                 handleFixPerms();

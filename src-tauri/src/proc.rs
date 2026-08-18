@@ -188,8 +188,8 @@ pub async fn run_program(
     })
 }
 
-/// Runs git and lets Git Credential Manager show its sign in window. Only
-/// for actions the user explicitly asked for.
+/// Lets Git Credential Manager put its sign in window up. Explicit user
+/// actions only.
 pub async fn run_git_interactive(
     repo: &Path,
     args: &[&str],

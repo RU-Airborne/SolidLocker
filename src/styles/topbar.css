@@ -1,0 +1,259 @@
+/* The toolbar across the top */
+
+.app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.ghbar {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--muted) 6%, transparent);
+  position: relative;
+  z-index: 3;
+}
+
+.topbar-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 3px;
+  overflow: hidden;
+}
+
+.topbar-progress::after {
+  content: "";
+  display: block;
+  height: 100%;
+  width: 30%;
+  background: var(--accent);
+  border-radius: 2px;
+  animation: topbar-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes topbar-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(433%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .topbar-progress::after {
+    animation: none;
+    width: 100%;
+    opacity: 0.5;
+  }
+}
+
+.ghbar {
+  min-height: 108px;
+}
+
+.brand {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.5rem;
+}
+
+.brandlogo {
+  height: 88px;
+  width: auto;
+}
+
+.setuplogo {
+  height: 120px;
+  width: auto;
+  display: block;
+  margin: 0 auto 0.5rem;
+}
+
+/* Contour glow */
+.logoglow {
+  display: inline-flex;
+}
+
+.logoglow img {
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--accent) 85%, transparent))
+    drop-shadow(0 0 16px color-mix(in srgb, var(--accent) 65%, transparent))
+    drop-shadow(0 0 34px color-mix(in srgb, var(--accent) 40%, transparent));
+}
+
+.launchscreen h2 {
+  margin: 0.6rem 0 0.2rem;
+}
+
+.launchscreen p {
+  margin: 0;
+}
+
+.seg {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.1rem;
+  padding: 0.45rem 1rem;
+  border: none;
+  border-left: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+
+button.seg:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.seg .cap,
+.seg-sync .cap {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.seg .cap.warn,
+.seg-sync .cap.warn {
+  color: var(--warning);
+  font-weight: 700;
+}
+
+.seg-sync .cap .cross {
+  color: var(--warning);
+  font-weight: 700;
+}
+
+.seg .cap .tick,
+.seg-sync .cap .tick {
+  color: var(--success);
+  font-weight: 700;
+}
+
+.seg .val {
+  font-size: 1.02rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.segicon {
+  margin-right: 0.35rem;
+  vertical-align: -2px;
+  color: var(--muted);
+}
+
+.segchevron {
+  margin-left: 0.45rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+button.seg:hover .segchevron,
+button.seg:hover .segicon {
+  color: var(--accent);
+}
+
+.seg-sync {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.8rem;
+  cursor: default;
+}
+
+.seg-sync .cap {
+  flex: 0 1 auto;
+}
+
+/* Native <select> popups (esp. WebView2 on Windows) ignore page styles unless
+   options get explicit colors matching the active scheme. */
+select option {
+  background: #ffffff;
+  color: #1d1a17;
+}
+
+@media (prefers-color-scheme: dark) {
+  select option {
+    background: #1b1e24;
+    color: #ece8e1;
+  }
+}
+
+/* Recolour the selected/hovered option with a real background */
+select option:hover,
+select option:checked {
+  background: rgb(169, 46, 49);
+  color: #ffffff;
+}
+
+.warn-inline {
+  color: var(--warning);
+  font-size: 0.88rem;
+  margin: 0.2rem 0;
+}
+
+.spacer {
+  flex: 1;
+}
+
+
+.minibtn {
+  padding: 0.35rem 0.9rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.minibtn:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.minibtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.barbtn {
+  align-self: center;
+  margin-right: 0.6rem;
+  padding: 0.35rem 0.9rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.barbtn:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.barbtn.attention {
+  background: var(--accent);
+  color: white;
+  border-color: transparent;
+}
+
+.barbtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

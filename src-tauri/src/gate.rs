@@ -1,6 +1,6 @@
 //! Serializes everything that writes to the working tree to reduce the risks of a race condition. 
 //! Tauri runs commands concurrently, clicking branch switching and locking at the same time would
-//!  race over the same index and file.
+//! race over the same index and file.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -12,7 +12,6 @@ pub struct RepoGate {
     switching: AtomicBool,
 }
 
-/// Held for the length of a branch switch
 pub struct SwitchGuard<'a> {
     _tree: MutexGuard<'a, ()>,
     switching: &'a AtomicBool,
@@ -29,7 +28,7 @@ impl RepoGate {
         self.tree.lock().await
     }
 
-    /// Take the tree only if it is free. `None` means "someone is working
+    /// Take the tree only if it is free.
     pub fn try_exclusive(&self) -> Option<MutexGuard<'_, ()>> {
         self.tree.try_lock().ok()
     }

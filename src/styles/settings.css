@@ -1,0 +1,341 @@
+/* The Settings and Progress pages. */
+
+.settingspage {
+  flex: 1;
+  overflow-y: auto;
+  padding: 2.5rem 2.5rem 4rem;
+}
+
+.settingshead {
+  max-width: 900px;
+  margin: 0 auto 2.6rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1rem;
+  text-align: left;
+}
+
+.settingshead h2 {
+  margin: 0;
+  font-size: 1.9rem;
+  letter-spacing: -0.02em;
+}
+
+.settingsbrand {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  width: 100%;
+}
+
+.settingslogo {
+  height: 136px;
+  width: auto;
+  display: block;
+}
+
+.settingstitle {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+
+.linkish.inline {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  line-height: inherit;
+  vertical-align: baseline;
+  text-align: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.linkish.inline:hover {
+  text-decoration: underline;
+}
+
+.ghbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.95rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.ghbtn:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.headerbtns {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.backbtn {
+  padding: 0.35rem 0.8rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.backbtn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.settingsbody {
+  max-width: 900px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  text-align: left;
+}
+
+/* Each section is a roomy card. */
+.settingsbody .setupsection {
+  background: color-mix(in srgb, var(--muted) 5%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.3rem 1.5rem 1.5rem;
+}
+
+.settingsbody .setupsection h3 {
+  margin: 0 0 0.3rem;
+  font-size: 1rem;
+}
+
+.settingsbody .setupsection > .muted {
+  margin: 0 0 0.9rem;
+  max-width: 60ch;
+}
+
+.settingsbody .setuprow {
+  margin-top: 0.7rem;
+}
+
+.accountcard {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 0.7rem;
+}
+
+.accountavatar .avatar-img {
+  border-radius: 50%;
+}
+
+.accountdetails {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.accountname {
+  font-size: 1.1rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.accounthandle {
+  font-size: 0.88rem;
+}
+
+.accountstatus {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.2rem;
+}
+
+.statusdot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+  flex-shrink: 0;
+}
+
+.statusdot.off {
+  background: var(--warning);
+}
+
+.statusdot.unknown {
+  background: var(--muted);
+}
+
+.accountaction button {
+  padding: 0.4rem 1rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.accountaction button:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.accountaction button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ---- Progress page ---- */
+
+.statrow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 1rem;
+}
+
+.stattile {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 1rem 1.2rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--muted) 5%, transparent);
+}
+
+.statnum {
+  font-size: 1.9rem;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.weekchart {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.4rem;
+  height: 140px;
+  padding-top: 0.5rem;
+}
+
+.weekbar {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.weekfill {
+  width: 100%;
+  border-radius: 4px 4px 0 0;
+  background: var(--accent);
+  min-height: 2px;
+}
+
+.weekbar:hover .weekfill {
+  background: color-mix(in srgb, var(--accent) 75%, white);
+}
+
+.weeklabel {
+  font-size: 0.68rem;
+  white-space: nowrap;
+  height: 1em;
+}
+
+.arealist {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.areacard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.areahead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.areabar,
+.contribbar {
+  height: 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 22%, transparent);
+  overflow: hidden;
+}
+
+.areafill,
+.contribfill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.contriblist {
+  list-style: none;
+  margin: 0.6rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.contriblist li {
+  display: grid;
+  grid-template-columns: auto minmax(8rem, 14rem) 1fr auto;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.contriblist li.churnrow {
+  grid-template-columns: minmax(8rem, 16rem) 1fr auto;
+}
+
+.sectionhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.3rem;
+}
+
+.sectionhead h3 {
+  margin: 0 !important;
+}
+
+.contribname {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

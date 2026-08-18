@@ -3,8 +3,6 @@ import { useMemo } from "react";
 import { getCommitIdentities, type CommitIdentity } from "./api";
 
 /**
- * One person, one name — everywhere.
- *
  * GitHub's noreply commit emails ("12345+login@users.noreply.github.com")
  * carry the account's permanent numeric id, which survives username renames.
  * Commit history across ALL branches therefore doubles as a directory: for

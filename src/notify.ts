@@ -4,7 +4,6 @@ import {
   sendNotification,
 } from "@tauri-apps/plugin-notification";
 
-/** Desktop notification, best effort — never throws. */
 export async function notifyDesktop(title: string, body: string) {
   try {
     let granted = await isPermissionGranted();

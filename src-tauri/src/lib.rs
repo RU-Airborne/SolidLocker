@@ -353,9 +353,8 @@ async fn connection_state(app: AppHandle) -> AppResult<String> {
     }
 }
 
-/// The signed in GitHub login, straight from the credential helper, so the
-/// profile shows a name and avatar right after sign in instead of waiting for
-/// the first lock. None if no usable login is stored (e.g. token-only auth).
+/// Straight from the credential helper, so the profile fills in at sign in
+/// rather than waiting for the first lock. None on token-only auth.
 async fn github_login(repo: &Path) -> Option<String> {
     let out = proc::run_git_stdin(
         repo,
