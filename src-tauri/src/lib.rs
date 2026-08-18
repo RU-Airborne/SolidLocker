@@ -1,6 +1,7 @@
 mod avatars;
 mod error;
 mod fsattr;
+mod gate;
 mod lfs;
 mod proc;
 mod repo;
@@ -68,14 +69,15 @@ async fn get_app_state(app: AppHandle) -> AppResult<AppState> {
         }
     }
 
-    // Note: deliberately no keychain probe here — the OAuth token is unused
+    // Note: deliberately no keychain probe here. The OAuth token is unused
     // since the GitHub-API features were descoped, and probing triggers a
     // macOS keychain permission prompt on every (re)build.
     Ok(AppState {
         repo: repo_info,
         signed_in: false,
         // Prefer the (dormant) OAuth identity, else the LFS username learned
-        // from fresh lock responses — the only one that exists in practice.
+        // from fresh lock responses, which is the only one that exists in
+        // practice.
         username: match settings::get_string(&app, KEY_GH_USERNAME)? {
             Some(u) => Some(u),
             None => settings::get_string(&app, KEY_USERNAME)?,
@@ -166,20 +168,40 @@ async fn list_repo_branches(app: AppHandle) -> AppResult<Vec<String>> {
 }
 
 #[tauri::command]
-async fn switch_branch(app: AppHandle, name: String) -> AppResult<repo::SwitchResult> {
+async fn switch_branch(
+    app: AppHandle,
+    gate: State<'_, gate::RepoGate>,
+    name: String,
+) -> AppResult<repo::SwitchResult> {
     let root = current_repo(&app)?;
+    let _switching = gate.exclusive_switch().await;
     repo::switch_branch(&root, &name).await
 }
 
 #[tauri::command]
-async fn restore_files(app: AppHandle, files: Vec<String>) -> AppResult<()> {
+fn is_switching(gate: State<'_, gate::RepoGate>) -> bool {
+    gate.is_switching()
+}
+
+#[tauri::command]
+async fn restore_files(
+    app: AppHandle,
+    gate: State<'_, gate::RepoGate>,
+    files: Vec<String>,
+) -> AppResult<()> {
     let root = current_repo(&app)?;
+    let _tree = gate.exclusive().await;
     repo::restore_paths(&root, files).await
 }
 
 #[tauri::command]
-async fn set_aside_files(app: AppHandle, files: Vec<String>) -> AppResult<String> {
+async fn set_aside_files(
+    app: AppHandle,
+    gate: State<'_, gate::RepoGate>,
+    files: Vec<String>,
+) -> AppResult<String> {
     let root = current_repo(&app)?;
+    let _tree = gate.exclusive().await;
     repo::set_aside_untracked(&root, files).await
 }
 
@@ -193,7 +215,12 @@ async fn locate_lock_paths(
 }
 
 #[tauri::command]
-async fn select_existing_repo(app: AppHandle, path: String) -> AppResult<RepoInfo> {
+async fn select_existing_repo(
+    app: AppHandle,
+    gate: State<'_, gate::RepoGate>,
+    path: String,
+) -> AppResult<RepoInfo> {
+    let _tree = gate.exclusive().await;
     let info = repo::validate_repo(&path).await?;
     settings::set_string(&app, KEY_REPO_PATH, &info.repo_path)?;
     Ok(info)
@@ -238,23 +265,35 @@ async fn get_locks(app: AppHandle) -> AppResult<LocksResult> {
 }
 
 #[tauri::command]
-async fn claim_files(app: AppHandle, paths: Vec<String>) -> AppResult<workflow::ClaimResult> {
+async fn claim_files(
+    app: AppHandle,
+    gate: State<'_, gate::RepoGate>,
+    paths: Vec<String>,
+) -> AppResult<workflow::ClaimResult> {
     let root = current_repo(&app)?;
+    let _tree = gate.exclusive().await;
     workflow::claim_files(&root, paths).await
 }
 
 #[tauri::command]
 async fn release_files(
     app: AppHandle,
+    gate: State<'_, gate::RepoGate>,
     paths: Vec<String>,
 ) -> AppResult<Vec<workflow::ReleaseOutcome>> {
     let root = current_repo(&app)?;
+    let _tree = gate.exclusive().await;
     workflow::release_files(&root, paths).await
 }
 
 #[tauri::command]
-async fn force_unlock(app: AppHandle, path: String) -> AppResult<()> {
+async fn force_unlock(
+    app: AppHandle,
+    gate: State<'_, gate::RepoGate>,
+    path: String,
+) -> AppResult<()> {
     let root = current_repo(&app)?;
+    let _tree = gate.exclusive().await;
     lfs::unlock_file(&root, &path, true).await?;
     let _ = fsattr::set_readonly(&root.join(&path), true);
     Ok(())
@@ -375,8 +414,11 @@ async fn sign_out_github(app: AppHandle) -> AppResult<()> {
 }
 
 #[tauri::command]
-async fn fetch_remote(app: AppHandle) -> AppResult<bool> {
+async fn fetch_remote(app: AppHandle, gate: State<'_, gate::RepoGate>) -> AppResult<bool> {
     let root = current_repo(&app)?;
+    let Some(_tree) = gate.try_exclusive() else {
+        return Ok(true);
+    };
     // --prune so branches deleted on GitHub stop showing in the picker.
     let out = proc::run_git(&root, &["fetch", "--prune", "origin"], 120).await?;
     if !out.ok() {
@@ -394,8 +436,12 @@ async fn get_repo_status(app: AppHandle) -> AppResult<repo::RepoStatus> {
 }
 
 #[tauri::command]
-async fn get_latest(app: AppHandle) -> AppResult<workflow::GetLatestResult> {
+async fn get_latest(
+    app: AppHandle,
+    gate: State<'_, gate::RepoGate>,
+) -> AppResult<workflow::GetLatestResult> {
     let root = current_repo(&app)?;
+    let _tree = gate.exclusive().await;
     let result = workflow::get_latest(&root).await?;
     let username_hint = settings::get_string(&app, KEY_USERNAME)?;
     let _ = workflow::sync_attributes(&root, username_hint.as_deref()).await;
@@ -403,30 +449,42 @@ async fn get_latest(app: AppHandle) -> AppResult<workflow::GetLatestResult> {
 }
 
 #[tauri::command]
-async fn abort_merge(app: AppHandle) -> AppResult<()> {
+async fn abort_merge(app: AppHandle, gate: State<'_, gate::RepoGate>) -> AppResult<()> {
     let root = current_repo(&app)?;
+    let _tree = gate.exclusive().await;
     workflow::abort_merge(&root).await
 }
 
 #[tauri::command]
-async fn resolve_keep_theirs(app: AppHandle, paths: Vec<String>) -> AppResult<()> {
+async fn resolve_keep_theirs(
+    app: AppHandle,
+    gate: State<'_, gate::RepoGate>,
+    paths: Vec<String>,
+) -> AppResult<()> {
     let root = current_repo(&app)?;
+    let _tree = gate.exclusive().await;
     workflow::resolve_keep_theirs(&root, paths).await
 }
 
 #[tauri::command]
-async fn push_now(app: AppHandle) -> AppResult<workflow::SaveResult> {
+async fn push_now(
+    app: AppHandle,
+    gate: State<'_, gate::RepoGate>,
+) -> AppResult<workflow::SaveResult> {
     let root = current_repo(&app)?;
+    let _tree = gate.exclusive().await;
     workflow::push_now(&root).await
 }
 
 #[tauri::command]
 async fn save_and_share(
     app: AppHandle,
+    gate: State<'_, gate::RepoGate>,
     message: String,
     paths: Vec<String>,
 ) -> AppResult<workflow::SaveResult> {
     let root = current_repo(&app)?;
+    let _tree = gate.exclusive().await;
     workflow::save_and_share(&root, message, paths).await
 }
 
@@ -437,8 +495,14 @@ async fn resolve_references(app: AppHandle, path: String) -> AppResult<workflow:
 }
 
 #[tauri::command]
-async fn sync_attributes(app: AppHandle) -> AppResult<workflow::SyncResult> {
+async fn sync_attributes(
+    app: AppHandle,
+    gate: State<'_, gate::RepoGate>,
+) -> AppResult<workflow::SyncResult> {
     let root = current_repo(&app)?;
+    let Some(_tree) = gate.try_exclusive() else {
+        return Ok(workflow::SyncResult::default());
+    };
     let username_hint = settings::get_string(&app, KEY_USERNAME)?;
     workflow::sync_attributes(&root, username_hint.as_deref()).await
 }
@@ -549,6 +613,7 @@ fn open_main_window(app: &tauri::AppHandle) {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .manage(avatars::AvatarCache::default())
+        .manage(gate::RepoGate::default())
         .invoke_handler(tauri::generate_handler![
             get_app_state,
             select_existing_repo,
@@ -584,6 +649,7 @@ fn open_main_window(app: &tauri::AppHandle) {
             push_now,
             list_repo_branches,
             switch_branch,
+            is_switching,
             restore_files,
             set_aside_files,
             locate_lock_paths,

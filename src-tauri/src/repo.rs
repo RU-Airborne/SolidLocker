@@ -41,21 +41,49 @@ pub fn parse_slug_from_remote(url: &str) -> Option<String> {
     Some(format!("{owner}/{repo}"))
 }
 
+const PROBE_TIMEOUT_SECS: u64 = 30;
+const PROBE_ATTEMPTS: usize = 3;
+const PROBE_BACKOFF_MS: u64 = 400;
+
+async fn probe_version(cwd: &Path, args: &[&str]) -> Option<String> {
+    for attempt in 0..PROBE_ATTEMPTS {
+        match run_git(cwd, args, PROBE_TIMEOUT_SECS).await {
+            Ok(out) if out.ok() => return Some(out.stdout.trim().to_string()),
+            Ok(_) => return None,
+            Err(_) if attempt + 1 < PROBE_ATTEMPTS => {
+                tokio::time::sleep(std::time::Duration::from_millis(PROBE_BACKOFF_MS)).await;
+            }
+            Err(_) => return None,
+        }
+    }
+    None
+}
+
+// pub async fn preflight(cwd: &Path) -> (bool, bool, Option<String>) {
+//     let git_ok = run_git(cwd, &["--version"], 10)
+//         .await
+//         .map(|o| o.ok())
+//         .unwrap_or(false);
+//     let lfs = run_git(cwd, &["lfs", "version"], 10).await;
+//     match lfs {
+//         Ok(o) if o.ok() => {
+//             ensure_lfs_filters(cwd).await;
+//             (git_ok, true, Some(o.stdout.trim().to_string()))
+//         }
+//         _ => (git_ok, false, None),
+//     }
+// }
 pub async fn preflight(cwd: &Path) -> (bool, bool, Option<String>) {
-    let git_ok = run_git(cwd, &["--version"], 10)
-        .await
-        .map(|o| o.ok())
-        .unwrap_or(false);
-    let lfs = run_git(cwd, &["lfs", "version"], 10).await;
-    match lfs {
-        Ok(o) if o.ok() => {
+    let git_ok = probe_version(cwd, &["--version"]).await.is_some();
+    match probe_version(cwd, &["lfs", "version"]).await {
+        Some(version) => {
             // Having the git-lfs binary is not enough: without the global
             // filters, clones produce 130 byte pointer files instead of CAD
             // data. Idempotent, so it is safe on every launch.
             ensure_lfs_filters(cwd).await;
-            (git_ok, true, Some(o.stdout.trim().to_string()))
+            (git_ok, true, Some(version))
         }
-        _ => (git_ok, false, None),
+        None => (git_ok, false, None),
     }
 }
 
@@ -83,7 +111,7 @@ pub async fn validate_repo(path: &str) -> AppResult<RepoInfo> {
     let root = PathBuf::from(toplevel.stdout.trim());
 
     // `lockable` may be missing on branches created before the LFS locking
-    // setup — that's a warning for the UI, not a reason to reject the repo.
+    // setup. That's a warning for the UI, not a reason to reject the repo.
     let attrs = root.join(".gitattributes");
     let lockable_ok = std::fs::read_to_string(&attrs)
         .map(|s| s.contains("lockable"))
@@ -110,7 +138,7 @@ pub async fn validate_repo(path: &str) -> AppResult<RepoInfo> {
     ensure_lfs_filters(&root).await;
     let _ = run_git(&root, &["lfs", "checkout"], 120).await;
 
-    // Best effort — a repo without origin/<branch> just stays untracked until
+    // Best effort. A repo without origin/<branch> just stays untracked until
     // its first push (push_now uses `push -u`).
     let _ = heal_upstream(&root).await;
 
@@ -138,13 +166,13 @@ pub struct RepoStatus {
     pub behind: i64,
     /// Tracked files with uncommitted modifications.
     pub dirty: Vec<String>,
-    /// New files git doesn't know about yet — never block switching/pulling.
+    /// New files git doesn't know about yet. Never block switching/pulling.
     pub untracked: Vec<String>,
     pub conflicted: Vec<String>,
 }
 
 /// SolidWorks writes `~$Foo.SLDPRT` companion files while a document is open.
-/// They are transient junk — never treat them as work worth saving or guarding
+/// They are transient junk, never to be treated as work worth saving or guarding
 /// on. (Some got committed by hand before SolidLocker; they still show as dirty
 /// until removed from the branch, but must not block switching or syncing.)
 pub fn is_sw_temp(path: &str) -> bool {
@@ -215,7 +243,7 @@ pub async fn get_repo_status(root: &Path) -> AppResult<RepoStatus> {
 /// Heal a branch created without tracking info: if origin has a branch of the
 /// same name, adopt it as upstream so the release guard and auto-sync can
 /// reason about what's on GitHub. Runs at targeted moments (repo select,
-/// branch switch) rather than on the status poll — it writes repo config, and
+/// branch switch) rather than on the status poll, because it writes repo config and
 /// polling it spawned a doomed extra git process forever on local-only
 /// branches. The branch is named explicitly so a racing switch can never
 /// attach the upstream to the wrong branch.
@@ -292,7 +320,7 @@ pub fn parse_activity_log(stdout: &str) -> Vec<CommitInfo> {
             let Some((status, rest)) = line.split_once('\t') else {
                 continue;
             };
-            // Renames/copies list "old<TAB>new" — show the new name.
+            // Renames/copies list "old<TAB>new". Show the new name.
             let path = if status.starts_with('R') || status.starts_with('C') {
                 rest.rsplit('\t').next().unwrap_or(rest)
             } else {
@@ -323,7 +351,7 @@ pub struct CommitIdentity {
     pub email: String,
 }
 
-/// Author identities across ALL branches, newest first — the identity
+/// Author identities across ALL branches, newest first. The identity
 /// directory must see every branch, not just the checked-out one.
 pub async fn list_commit_identities(root: &Path) -> AppResult<Vec<CommitIdentity>> {
     let out = run_git(
@@ -478,7 +506,7 @@ pub async fn get_activity(
     ]);
     let out = run_git(root, &args, 30).await?;
     if !out.ok() {
-        // Empty repo or unborn branch — just show nothing.
+        // Empty repo or unborn branch. Just show nothing.
         return Ok(Vec::new());
     }
     Ok(parse_activity_log(&out.stdout))
@@ -708,36 +736,93 @@ pub async fn locate_paths_in_branches(
     Ok(result)
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Default, Serialize)]
 pub struct SwitchResult {
     /// Files still carrying the previous branch's content because a program
     /// (usually SolidWorks) had them open while git tried to swap them.
+    /// Safe to restore: that content is committed on the branch we left.
     pub stuck_files: Vec<String>,
+    /// Files that were written while the switch was running. Unsaved work,
+    /// left exactly as it is. Never restore these.
+    pub kept_files: Vec<String>,
 }
 
-/// The switch guard requires a clean tree, so any real-dirty file right after
-/// a successful switch is a swap that Windows blocked (file held open).
-/// Restoring is safe (the content belongs to the previous branch, which is
-/// committed) — try once, then report whatever stays stuck.
-async fn finish_switch(root: &Path) -> SwitchResult {
+/// Is the file on disk identical to the version in `commit`?
+///
+/// Compared with `git diff` rather than hashing the file, because the
+/// committed blob of a CAD file is an LFS pointer: hashing the working copy
+/// would compare megabytes of geometry against 130 bytes of pointer and
+/// never match. `git diff` runs the clean filter and compares like for like.
+async fn matches_commit(root: &Path, commit: &str, path: &str) -> bool {
+    run_git(root, &["diff", "--quiet", commit, "--", path], 60)
+        .await
+        .map(|out| out.status == 0)
+        .unwrap_or(false)
+}
+
+/// The switch guard requires a clean tree, so a dirty file right after a
+/// successful switch is one of two things, and they must not be confused:
+///
+/// - A swap Windows blocked because SolidWorks held the file open. It still
+///   holds the previous branch's committed bytes, so restoring it costs
+///   nothing and puts the branch right.
+/// - A file something wrote *during* the switch. That is unsaved work, and
+///   restoring it would delete work with no undo and no warning.
+///
+/// Comparing against the commit we just left tells them apart. Anything that
+/// is not a verbatim copy of the old branch is left alone and reported.
+async fn finish_switch(root: &Path, prev_head: Option<&str>) -> SwitchResult {
     let _ = heal_upstream(root).await;
-    let stuck = |s: RepoStatus| -> Vec<String> {
+    let real_dirty = |s: RepoStatus| -> Vec<String> {
         s.dirty.into_iter().filter(|p| !is_sw_temp(p)).collect()
     };
-    let mut files = match get_repo_status(root).await {
-        Ok(s) => stuck(s),
+    let dirty = match get_repo_status(root).await {
+        Ok(s) => real_dirty(s),
         Err(_) => Vec::new(),
     };
-    if !files.is_empty() {
-        let mut args = vec!["restore", "--staged", "--worktree", "--"];
-        args.extend(files.iter().map(String::as_str));
-        let _ = run_git(root, &args, 60).await;
-        files = match get_repo_status(root).await {
-            Ok(s) => stuck(s),
-            Err(_) => files,
-        };
+    if dirty.is_empty() {
+        return SwitchResult::default();
     }
-    SwitchResult { stuck_files: files }
+
+    //     if !files.is_empty() {
+    //         let mut args = vec!["restore", "--staged", "--worktree", "--"];
+    //         args.extend(files.iter().map(String::as_str));
+    //         let _ = run_git(root, &args, 60).await;
+    //         files = match get_repo_status(root).await {
+    //             Ok(s) => stuck(s),
+    //             Err(_) => files,
+    //         };
+    //     }
+
+
+
+    // TODO: one git diff per bad file one after another. Too slow if there are a bunch stuck, worth batching if anyone hits it
+    let mut blocked = Vec::new();
+    let mut kept = Vec::new();
+    for path in dirty {
+        // No commit to compare against means no way to prove the file is disposable, so keep it.
+        match prev_head {
+            Some(head) if matches_commit(root, head, &path).await => blocked.push(path),
+            _ => kept.push(path),
+        }
+    }
+
+    if !blocked.is_empty() {
+        let mut args = vec!["restore", "--staged", "--worktree", "--"];
+        args.extend(blocked.iter().map(String::as_str));
+        let _ = run_git(root, &args, 60).await;
+        // Whatever is still dirty is genuinely stuck: SolidWorks has not let
+        // go of it yet, and the user has to close it before we can retry.
+        if let Ok(s) = get_repo_status(root).await {
+            let still = real_dirty(s);
+            blocked.retain(|p| still.contains(p));
+        }
+    }
+
+    SwitchResult {
+        stuck_files: blocked,
+        kept_files: kept,
+    }
 }
 
 pub async fn switch_branch(root: &Path, name: &str) -> AppResult<SwitchResult> {
@@ -749,7 +834,7 @@ pub async fn switch_branch(root: &Path, name: &str) -> AppResult<SwitchResult> {
 
     // Tracked ~$ SolidWorks temp files (committed by hand before SolidLocker) go
     // dirty whenever SolidWorks opens/closes a document and would make git
-    // refuse the switch. They are junk — discard their local state up front.
+    // refuse the switch. They are junk, so discard their local state up front.
     // Best effort: if SolidWorks holds one open the restore fails and the
     // switch error below explains itself.
     let junk_dirty: Vec<&str> = status
@@ -767,12 +852,21 @@ pub async fn switch_branch(root: &Path, name: &str) -> AppResult<SwitchResult> {
     // Refresh remote refs so new branches are switchable; tolerate offline.
     let _ = run_git(root, &["fetch", "origin"], 120).await;
 
+    // Where we are standing right now. After the switch this is the only way
+    // to tell a file git could not swap (still the old branch's bytes) from
+    // one that was written while the switch ran (unsaved work).
+    let prev_head = run_git(root, &["rev-parse", "HEAD"], 15)
+        .await
+        .ok()
+        .filter(|out| out.ok())
+        .map(|out| out.stdout.trim().to_string());
+
     let mut last_err = String::new();
     // Retry briefly: a background poll may hold the index lock for a moment.
     for _ in 0..3 {
         let sw = run_git(root, &["switch", name], 60).await?;
         if sw.ok() {
-            return Ok(finish_switch(root).await);
+            return Ok(finish_switch(root, prev_head.as_deref()).await);
         }
         last_err = sw.stderr.trim().to_string();
         if last_err.contains("index.lock") {
@@ -811,7 +905,7 @@ pub async fn switch_branch(root: &Path, name: &str) -> AppResult<SwitchResult> {
     }
 
     // Fall back to explicit tracking only when the local branch doesn't exist
-    // yet — never for other failures, whose real error we must not mask.
+    // yet. Never for other failures, whose real error we must not mask.
     let branch_missing = last_err.contains("invalid reference")
         || last_err.contains("did not match any");
     if branch_missing {
@@ -821,7 +915,7 @@ pub async fn switch_branch(root: &Path, name: &str) -> AppResult<SwitchResult> {
         if exists.ok() {
             let tracked = run_git(root, &["switch", "--track", &remote_ref], 60).await?;
             if tracked.ok() {
-                return Ok(finish_switch(root).await);
+                return Ok(finish_switch(root, prev_head.as_deref()).await);
             }
             if !tracked.stderr.trim().is_empty() {
                 last_err = tracked.stderr.trim().to_string();

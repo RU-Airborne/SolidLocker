@@ -35,7 +35,7 @@ pub struct ReleaseOutcome {
     pub message: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Default, Serialize)]
 pub struct SyncResult {
     pub made_writable: Vec<String>,
     pub made_readonly: Vec<String>,
@@ -434,7 +434,7 @@ pub async fn get_latest(root: &Path) -> AppResult<GetLatestResult> {
     }
 
     // Discard local churn on tracked ~$ SolidWorks temp files so the merge
-    // below can't refuse on junk. Best effort — see repo::switch_branch.
+    // below can't refuse on junk. Best effort; see repo::switch_branch.
     let junk_dirty: Vec<&str> = status
         .dirty
         .iter()

@@ -9,18 +9,6 @@ use crate::error::{AppError, AppResult};
 static GIT_PROGRAM: OnceLock<String> = OnceLock::new();
 
 const PROBE_SECS: u64 = 8;
-/// Which git to run. GitHub Desktop ships Git and Git LFS but deliberately
-/// keeps them off PATH, so a member who installed only GitHub Desktop still
-/// has a perfectly good Git sitting on disk. Look on PATH first, then inside
-pub fn git_program() -> &'static str {
-    if let Some(found) = GIT_PROGRAM.get() {
-        return found.as_str();
-    }
-    match resolve_git() {
-        Some(found) => GIT_PROGRAM.get_or_init(|| found).as_str(),
-        None => "git",
-    }
-}
 
 fn runs(program: &str) -> bool {
     use std::process::Stdio;
@@ -51,6 +39,30 @@ fn runs(program: &str) -> bool {
             Ok(None) => std::thread::sleep(Duration::from_millis(20)),
             Err(_) => return false,
         }
+    }
+}
+
+//
+// pub fn git_program() -> &'static str {
+//     if let Some(found) = GIT_PROGRAM.get() {
+//         return found.as_str();
+//     }
+//     match resolve_git() {
+//         Some(found) => GIT_PROGRAM.get_or_init(|| found).as_str(),
+//         None => "git",
+//     }
+// }
+
+/// GitHub Desktop ships Git and Git LFS but deliberately keeps them off PATH,
+/// so someone who installed only GitHub Desktop still has a perfectly good
+/// Git sitting on disk. Look on PATH first, then inside GitHub Desktop.
+async fn resolved_git() -> &'static str {
+    if let Some(found) = GIT_PROGRAM.get() {
+        return found.as_str();
+    }
+    match tokio::task::spawn_blocking(resolve_git).await.ok().flatten() {
+        Some(found) => GIT_PROGRAM.get_or_init(|| found).as_str(),
+        None => "git",
     }
 }
 
@@ -123,9 +135,6 @@ fn base_command(program: &str, cwd: &Path) -> Command {
         // action is allowed to be interactive.
         .env("GCM_INTERACTIVE", "never")
         .env("GIT_LFS_SKIP_SMUDGE", "0")
-        // Background polls (status, ls-tree, check-attr) must never take
-        // git's optional index lock — a switch/commit running at the same
-        // moment would fail spuriously.
         .env("GIT_OPTIONAL_LOCKS", "0")
         .kill_on_drop(true);
     #[cfg(windows)]
@@ -137,7 +146,7 @@ fn base_command(program: &str, cwd: &Path) -> Command {
 }
 
 pub async fn run_git(repo: &Path, args: &[&str], timeout_secs: u64) -> AppResult<GitOutput> {
-    run_program(repo, git_program(), args, timeout_secs).await
+    run_program(repo, resolved_git().await, args, timeout_secs).await
 }
 
 pub async fn run_git_ok(repo: &Path, args: &[&str], timeout_secs: u64) -> AppResult<GitOutput> {
@@ -186,7 +195,7 @@ pub async fn run_git_interactive(
     args: &[&str],
     timeout_secs: u64,
 ) -> AppResult<GitOutput> {
-    let mut cmd = base_command(git_program(), repo);
+    let mut cmd = base_command(resolved_git().await, repo);
     cmd.env("GCM_INTERACTIVE", "auto").args(args);
 
     let output = tokio::time::timeout(Duration::from_secs(timeout_secs), cmd.output())
@@ -210,7 +219,7 @@ pub async fn run_git_stdin(
     use std::process::Stdio;
     use tokio::io::AsyncWriteExt;
 
-    let mut cmd = base_command(git_program(), repo);
+    let mut cmd = base_command(resolved_git().await, repo);
     cmd.args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

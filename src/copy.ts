@@ -20,6 +20,13 @@ export const copy = {
     `${listNames(files)} still show the previous branch's version because SolidWorks had them open during the switch. Close them in SolidWorks, then press Fix now.`,
   stuckFixed: "Fixed. Those files now match this branch.",
 
+  // Switching branches
+  switching: (branch: string) => `Switching to ${branch}…`,
+  switchingDetail:
+    "Every file is being swapped to the other branch's version. Locking and sharing are paused until this finishes.",
+  keptDuringSwitch: (files: string[]) =>
+    `${listNames(files)} ${files.length === 1 ? "was" : "were"} saved while the branch was switching, so ${files.length === 1 ? "it" : "they"} still ${files.length === 1 ? "holds" : "hold"} unsaved work. Nothing was thrown away. Save & Share to keep ${files.length === 1 ? "it" : "them"}, or unlock to go back to the shared version.`,
+
   // Locks
   claimPartial: (claimed: number, total: number, held: string) =>
     `Locked ${claimed} of ${total}. Already taken: ${held}`,

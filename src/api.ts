@@ -169,12 +169,16 @@ export const resolveReferences = (path: string) =>
 export const listRepoBranches = () => invoke<string[]>("list_repo_branches");
 
 export interface SwitchResult {
+  /** Still holding the old branch's content; safe to restore. */
   stuck_files: string[];
+  /** Written while the switch ran. Unsaved work, so never restore these. */
+  kept_files: string[];
 }
 
 export const switchBranch = (name: string) =>
   invoke<SwitchResult>("switch_branch", { name });
 
+export const isSwitching = () => invoke<boolean>("is_switching");
 export const restoreFiles = (files: string[]) =>
   invoke<void>("restore_files", { files });
 
