@@ -28,6 +28,14 @@ export const copy = {
     `${listNames(files)} ${files.length === 1 ? "was" : "were"} saved while the branch was switching, so ${files.length === 1 ? "it" : "they"} still ${files.length === 1 ? "holds" : "hold"} unsaved work. Nothing was thrown away. Save & Share to keep ${files.length === 1 ? "it" : "them"}, or unlock to go back to the shared version.`,
 
   // Locks
+  claimedOk: (paths: string[]) =>
+    paths.length === 1
+      ? `Locked ${listNames(paths)}. It is yours until you unlock it.`
+      : `Locked ${paths.length} files: ${listNames(paths)}. They are yours until you unlock them.`,
+  releasedOk: (paths: string[]) =>
+    paths.length === 1
+      ? `Unlocked ${listNames(paths)}. Your team can take it now.`
+      : `Unlocked ${paths.length} files: ${listNames(paths)}. Your team can take them now.`,
   claimPartial: (claimed: number, total: number, held: string) =>
     `Locked ${claimed} of ${total}. Already taken: ${held}`,
   releasePartial: (released: number, total: number, first: string, more: number) =>

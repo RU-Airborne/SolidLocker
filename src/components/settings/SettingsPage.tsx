@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import logo from "../../assets/logo.png";
+import DialLogo from "../DialLogo";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   cloneRepo,
@@ -181,7 +181,7 @@ export function SettingsPage({
         </button>
         <div className="settingsbrand">
           <span className="logoglow">
-            <img src={logo} alt="" className="settingslogo" />
+            <DialLogo className="settingslogo" label="" />
           </span>
           <div className="settingstitle">
             <h2>SolidLocker</h2>

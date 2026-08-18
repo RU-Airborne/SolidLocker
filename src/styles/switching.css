@@ -17,11 +17,11 @@
 }
 
 .switchblock-card {
-  max-width: 26rem;
-  padding: 1.5rem 1.75rem;
+  max-width: 34rem;
+  padding: 2.4rem 2.75rem 2.1rem;
   text-align: center;
   border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
-  border-radius: 14px;
+  border-radius: 18px;
   background: var(--menubg);
   box-shadow:
     0 0 0 1px color-mix(in srgb, var(--accent) 20%, transparent),
@@ -29,33 +29,19 @@
 }
 
 .switchblock-title {
-  margin: 0.75rem 0 0.35rem;
+  margin: 1.15rem 0 0.5rem;
+  font-size: 1.3rem;
   font-weight: 600;
+  line-height: 1.3;
+}
+
+.switchblock-card p.small {
+  font-size: 0.98rem;
+  line-height: 1.5;
 }
 
 .switchblock-card p:last-child {
   margin-bottom: 0;
 }
 
-.switchspinner {
-  display: inline-block;
-  width: 26px;
-  height: 26px;
-  border: 3px solid color-mix(in srgb, var(--accent) 25%, transparent);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: switchspin 0.8s linear infinite;
-}
 
-@keyframes switchspin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-
-@media (prefers-reduced-motion: reduce) {
-  .switchspinner {
-    animation-duration: 2.4s;
-  }
-}

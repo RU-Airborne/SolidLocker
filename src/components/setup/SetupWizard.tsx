@@ -2,7 +2,7 @@ import { useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { cloneRepo, selectExistingRepo } from "../../api";
 import { isAppError } from "../../types";
-import logo from "../../assets/logo.png";
+import DialLogo from "../DialLogo";
 
 export function SetupWizard({ onDone }: { onDone: () => void }) {
   const [error, setError] = useState<string | null>(null);
@@ -51,7 +51,7 @@ export function SetupWizard({ onDone }: { onDone: () => void }) {
     <div className="center">
       <div className="card setupcard">
         <span className="logoglow">
-          <img src={logo} alt="" className="setuplogo" />
+          <DialLogo className="setuplogo" label="" spinning={cloning} />
         </span>
         <h1>SolidLocker</h1>
 

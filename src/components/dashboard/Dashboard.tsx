@@ -46,6 +46,7 @@ import { ExitDialog } from "../dialogs/ExitDialog";
 import { SignInDialog } from "../dialogs/SignInDialog";
 import { ReleaseDialog } from "../dialogs/ReleaseDialog";
 import { SettingsPage } from "../settings/SettingsPage";
+import DialLogo from "../DialLogo";
 import { ProgressPage } from "../progress/ProgressPage";
 import { CommitDialog } from "../dialogs/CommitDialog";
 import { ConflictDialog } from "../dialogs/ConflictDialog";
@@ -123,6 +124,11 @@ export function Dashboard({ appState }: { appState: AppState }) {
   function warn(text: string) {
     playMateFailed();
     setNoticeState({ text, warn: true });
+  }
+
+  function succeed(text: string) {
+    playCheckComplete();
+    setNoticeState({ text, warn: false });
   }
 
   // Banners dismiss themselves after 8s; the Okie button dismisses sooner.
@@ -516,7 +522,9 @@ export function Dashboard({ appState }: { appState: AppState }) {
         setNotice(null);
         try {
           const result = await claim.mutateAsync(paths);
-          if (result.failed.length > 0) {
+          if (result.failed.length === 0) {
+            succeed(copy.claimedOk(result.claimed));
+          } else {
             const held = result.failed
               .slice(0, 4)
               .map(
@@ -548,7 +556,9 @@ export function Dashboard({ appState }: { appState: AppState }) {
         try {
           const outcomes = await release.mutateAsync(paths);
           const blocked = outcomes.filter((o) => !o.ok);
-          if (blocked.length > 0) {
+          if (blocked.length === 0) {
+            succeed(copy.releasedOk(outcomes.map((o) => o.path)));
+          } else {
             const released = outcomes.length - blocked.length;
             const first = `${blocked[0].path.split("/").pop()}: ${blocked[0].message}`;
             warn(
@@ -685,6 +695,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
   }, [offline, notifyConnection]);
 
   const updating = getLatestMut.isPending || saveShareMut.isPending;
+  const locking = claim.isPending || release.isPending;
 
   return (
     <div className="app">
@@ -694,6 +705,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
         currentBranch={currentBranch}
         onSwitchBranch={handleSwitchBranch}
         switchingTo={switchingTo}
+        locking={locking}
         onSwitchRepo={handleSwitchRepo}
         status={repoStatus.data}
         lastFetchAt={sync.lastFetchAt}
@@ -873,7 +885,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
       {switching && (
         <div className="switchblock" role="status" aria-live="polite">
           <div className="switchblock-card">
-            <span className="switchspinner" aria-hidden="true" />
+            <DialLogo className="switchlogo" label="" spinning />
             <p className="switchblock-title">
               {copy.switching(switchingTo ?? currentBranch)}
             </p>

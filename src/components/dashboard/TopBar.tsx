@@ -5,7 +5,7 @@ import { isSwTemp } from "../../types";
 import { githubAvatarUrl, UserAvatar } from "../common/UserAvatar";
 import { usePeople } from "../../identity";
 import { GlassSelect } from "../common/GlassSelect";
-import logo from "../../assets/logo.png";
+import DialLogo from "../DialLogo";
 
 function agoText(seconds: number): string {
   if (seconds < 60) return `${seconds}s ago`;
@@ -58,11 +58,14 @@ export function TopBar({
   onToggleMine,
   onOpenSettings,
   onOpenProgress,
+  locking,
 }: {
   appState: AppState;
   branches: string[] | undefined;
   currentBranch: string;
   onSwitchBranch: (name: string) => void;
+  /* A lock or unlock is in flight; the mark dials until it lands. */
+  locking: boolean;
   switchingTo: string | null;
   onSwitchRepo: () => void;
   status: RepoStatus | undefined;
@@ -118,7 +121,7 @@ export function TopBar({
   return (
     <header className="ghbar">
       <span className="brand logoglow" title="SolidLocker">
-        <img src={logo} alt="SolidLocker" className="brandlogo" />
+        <DialLogo className="brandlogo" spinning={locking} />
       </span>
 
       <button

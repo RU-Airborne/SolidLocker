@@ -65,12 +65,12 @@
 
 .brandlogo {
   height: 88px;
-  width: auto;
+  width: 88px;
 }
 
 .setuplogo {
   height: 120px;
-  width: auto;
+  width: 120px;
   display: block;
   margin: 0 auto 0.5rem;
 }
@@ -80,7 +80,8 @@
   display: inline-flex;
 }
 
-.logoglow img {
+.logoglow img,
+.logoglow svg {
   filter: drop-shadow(0 0 6px color-mix(in srgb, var(--accent) 85%, transparent))
     drop-shadow(0 0 16px color-mix(in srgb, var(--accent) 65%, transparent))
     drop-shadow(0 0 34px color-mix(in srgb, var(--accent) 40%, transparent));
@@ -181,16 +182,18 @@ button.seg:hover .segicon {
 /* Native <select> popups (esp. WebView2 on Windows) ignore page styles unless
    options get explicit colors matching the active scheme. */
 select option {
-  background: #ffffff;
-  color: #1d1a17;
+  background: #1b1e24; /* light was: #ffffff */
+  color: #ece8e1; /* light was: #1d1a17 */
 }
 
-@media (prefers-color-scheme: dark) {
+/* Light scheme, disabled while the app is dark only.
+@media (prefers-color-scheme: light) {
   select option {
-    background: #1b1e24;
-    color: #ece8e1;
+    background: #ffffff;
+    color: #1d1a17;
   }
 }
+*/
 
 /* Recolour the selected/hovered option with a real background */
 select option:hover,

@@ -1,0 +1,29 @@
+/* Motion for the SolidLocker mark.*/
+
+.dialface {
+  transition: transform 800ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.brandlogo:hover .dialface,
+.settingslogo:hover .dialface {
+  transform: rotate(72deg);
+}
+
+/* The mark standing in for the old border spinner during a branch switch. */
+.switchlogo {
+  width: 104px;
+  height: 104px;
+  display: block;
+  margin: 0 auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dialface {
+    transition: none;
+  }
+
+  .brandlogo:hover .dialface,
+  .settingslogo:hover .dialface {
+    transform: none;
+  }
+}

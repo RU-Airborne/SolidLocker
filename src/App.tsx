@@ -4,7 +4,7 @@ import { useAppState } from "./queries";
 import { Dashboard } from "./components/dashboard/Dashboard";
 import { SetupWizard } from "./components/setup/SetupWizard";
 import { isAppError } from "./types";
-import logo from "./assets/logo.png";
+import DialLogo from "./components/DialLogo";
 
 export default function App() {
   const queryClient = useQueryClient();
@@ -18,7 +18,7 @@ export default function App() {
       <div className="center">
         <div className="card launchscreen">
           <span className="logoglow">
-            <img src={logo} alt="SolidLocker" className="setuplogo" />
+            <DialLogo className="setuplogo" label="" spinning />
           </span>
           <h2>SolidLocker</h2>
           <p className="muted">Starting up…</p>
@@ -44,7 +44,7 @@ export default function App() {
       <div className="center">
         <div className="card">
           <span className="logoglow">
-            <img src={logo} alt="" className="setuplogo" />
+            <DialLogo className="setuplogo" label="" />
           </span>
           <h2>SolidLocker could not start</h2>
           <p>{cause}</p>
@@ -76,7 +76,7 @@ export default function App() {
       <div className="center">
         <div className="card">
           <span className="logoglow">
-            <img src={logo} alt="" className="setuplogo" />
+            <DialLogo className="setuplogo" label="" />
           </span>
           <h2>You need Git to continue</h2>
           <p>
