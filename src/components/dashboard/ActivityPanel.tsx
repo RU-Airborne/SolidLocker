@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { getActivity, type CommitInfo } from "../../api";
+// import { BranchGlyph, RestoreGlyph } from "../common/HistoryDiagrams";
 import { githubAvatarFromEmail, UserAvatar } from "../common/UserAvatar";
 import { formatDate } from "../../dates";
 import {
@@ -29,23 +30,28 @@ const STATUS_TITLE: Record<string, string> = {
   C: "Copied",
 };
 
+const CAD_FILE = /\.(sldprt|sldasm|slddrw)$/i;
+
 function FileLine({
   status,
   path,
   onBranch,
   onSelect,
+  onView,
 }: {
   status: string;
   path: string;
   onBranch: boolean;
   onSelect: (path: string) => void;
+  /** Look at the file as it was at this commit. Absent for deleted files. */
+  onView: (() => void) | null;
 }) {
   const parts = path.split("/");
   const name = parts.pop();
   const folder = parts.join("/");
   const s = status.toLowerCase();
   return (
-    <li className="commitfile" title={`${STATUS_TITLE[status] ?? "Changed"} — ${path}`}>
+    <li className="commitfile" title={`${STATUS_TITLE[status] ?? "Changed"} : ${path}`}>
       <span className={`st st-${s}`}>{status}</span>
       <button
         className="commitfilejump"
@@ -62,6 +68,15 @@ function FileLine({
           {folder && <span className="muted"> · {folder}</span>}
         </span>
       </button>
+      {/* per-file View lives on the Branches page now
+      {onView && (
+        <button className="fh-restore" onClick={onView}
+          title="Look at this file as it was in this change — preview it, open a read-only copy, bring it back, or branch off">
+          View…
+        </button>
+      )}
+      */}
+      {void onView}
     </li>
   );
 }
@@ -72,14 +87,34 @@ function CommitRow({
   avatarUrl,
   knownPaths,
   onSelectFile,
+  onViewVersion,
+  onBranchOff,
+  onRestoreFiles,
 }: {
   commit: CommitInfo;
   author: string;
   avatarUrl: string | null;
   knownPaths: Set<string>;
   onSelectFile: (path: string) => void;
+  onViewVersion: (path: string, commit: CommitInfo) => void;
+  onBranchOff: (commit: CommitInfo) => void;
+  onRestoreFiles: (paths: string[], commit: CommitInfo) => void;
 }) {
   const [open, setOpen] = useState(false);
+
+  // const cadFiles = commit.files.filter(
+  //   (f) => CAD_FILE.test(f.path) && f.status !== "D",
+  // );
+  // function restoreFromHere() {
+  //   if (cadFiles.length === 1) {
+  //     onViewVersion(cadFiles[0].path, commit);
+  //   } else {
+  //     onRestoreFiles(cadFiles.map((f) => f.path), commit);
+  //   }
+  // }
+  void onRestoreFiles;
+  void onBranchOff;
+
   return (
     <div className="commit">
       <button className="commithead" onClick={() => setOpen(!open)}>
@@ -113,10 +148,33 @@ function CommitRow({
               path={f.path}
               onBranch={knownPaths.has(f.path.toLowerCase())}
               onSelect={onSelectFile}
+              onView={
+                CAD_FILE.test(f.path) && f.status !== "D"
+                  ? () => onViewVersion(f.path, commit)
+                  : null
+              }
             />
           ))}
         </ul>
       )}
+      {/* took these out of the sidebar, too busy — Branches page has them
+      {open && (
+        <div className="commitactions">
+          {cadFiles.length > 0 && (
+            <button className="branchoffbtn" onClick={restoreFromHere}
+              title="Bring a file back to how it was in this change">
+              <RestoreGlyph />
+              Restore this version…
+            </button>
+          )}
+          <button className="branchoffbtn" onClick={() => onBranchOff(commit)}
+            title="Start a new branch from this moment in time. Your current branch stays untouched">
+            <BranchGlyph />
+            Branch off from here
+          </button>
+        </div>
+      )}
+      */}
     </div>
   );
 }
@@ -124,9 +182,15 @@ function CommitRow({
 export function ActivityPanel({
   knownPaths,
   onSelectFile,
+  onViewVersion,
+  onBranchOff,
+  onRestoreFiles,
 }: {
   knownPaths: Set<string>;
   onSelectFile: (path: string) => void;
+  onViewVersion: (path: string, commit: CommitInfo) => void;
+  onBranchOff: (commit: CommitInfo) => void;
+  onRestoreFiles: (paths: string[], commit: CommitInfo) => void;
 }) {
   const activity = useQuery({
     queryKey: ["activity"],
@@ -162,6 +226,9 @@ export function ActivityPanel({
             avatarUrl={person?.avatarUrl ?? null}
             knownPaths={knownPaths}
             onSelectFile={onSelectFile}
+            onViewVersion={onViewVersion}
+            onBranchOff={onBranchOff}
+            onRestoreFiles={onRestoreFiles}
           />
         );
       })}

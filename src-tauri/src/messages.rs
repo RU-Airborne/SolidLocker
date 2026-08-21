@@ -53,6 +53,20 @@ pub fn could_not_switch(branch: &str) -> String {
     format!("could not switch to branch {branch}")
 }
 
+pub fn could_not_preview(stderr: &str) -> String {
+    format!("Could not open that moment for a look: {stderr}")
+}
+
+pub const NOT_PREVIEWING: &str = "You are not looking at an old version right now.";
+
+pub fn bad_branch_name(name: &str) -> String {
+    format!("'{name}' can't be used as a branch name. Use letters, numbers, dashes and slashes, without spaces.")
+}
+
+pub fn could_not_branch_off(name: &str, stderr: &str) -> String {
+    format!("Could not start the branch '{name}': {stderr}")
+}
+
 pub fn refusing_to_move(file: &str) -> String {
     format!("{file} has saved changes, refusing to move it.")
 }
@@ -65,11 +79,13 @@ pub fn could_not_restore_version(stderr: &str) -> String {
     format!("Could not bring that version back, is the file open in SolidWorks? ({stderr})")
 }
 
-pub const RESTORE_NEEDS_LOCK: &str =
-    "Lock this file before bringing an earlier version back, so nobody else is editing it at the same time.";
+pub fn restore_needs_locks(files: &str) -> String {
+    format!("Lock these files before bringing the earlier version back, so nobody else is editing them at the same time: {files}")
+}
 
-pub const RESTORE_FILE_OPEN: &str =
-    "Close this file in SolidWorks first. SolidWorks keeps its own copy in memory and would write it straight back.";
+pub fn restore_files_open(files: &str) -> String {
+    format!("Close these files in SolidWorks first. SolidWorks keeps its own copy in memory and would write it straight back: {files}")
+}
 
 pub fn could_not_fix_files(stderr: &str) -> String {
     format!("Could not fix the files, are they still open in SolidWorks? ({stderr})")
@@ -110,6 +126,23 @@ pub const TEXT_CONFLICT: &str = "Some text files changed both here and on GitHub
 
 pub fn could_not_merge(stderr: &str) -> String {
     format!("Could not bring in the team's changes: {stderr}")
+}
+
+pub const MERGE_NEEDS_COMMIT: &str =
+    "You have unsaved changes. Use Save & Share before combining branches.";
+
+pub const UNDO_MERGE_DIRTY: &str =
+    "You have unsaved changes now, so undoing the combine could take work with it. Save & Share or discard them first.";
+
+pub const UNDO_MERGE_PUSHED: &str =
+    "The combined result is already on GitHub, so it can't be quietly undone. Ask your lead if it needs to come out.";
+
+pub const UNDO_MERGE_NOTHING: &str = "There is no recent combine to undo.";
+
+pub fn merge_conflict_aborted(branch: &str, files: &str) -> String {
+    format!(
+        "'{branch}' and your branch changed the same files, so nothing was combined: {files}. Combine them through a pull request on GitHub instead, or ask your lead."
+    )
 }
 
 // ---- Save & Share ----

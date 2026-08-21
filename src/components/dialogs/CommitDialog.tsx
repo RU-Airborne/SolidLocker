@@ -61,7 +61,7 @@ export function CommitDialog({
                 />
                 <span>{path}</span>
                 {isSwTemp(path) && (
-                  <span className="badge">SolidWorks temp — no need to share</span>
+                  <span className="badge">SolidWorks temp, no need to share</span>
                 )}
                 {isBig && (
                   <span className="badge badge-edited">

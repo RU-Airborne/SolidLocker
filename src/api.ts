@@ -44,8 +44,83 @@ export interface FileCommit {
 export const previewVersion = (path: string, sha: string) =>
   invoke<string | null>("preview_version", { path, sha });
 
-export const restoreVersion = (path: string, sha: string) =>
-  invoke<void>("restore_version", { path, sha });
+export const restoreVersion = (paths: string[], sha: string) =>
+  invoke<void>("restore_version", { paths, sha });
+
+export interface RefsAtResult {
+  resolved: string[];
+  unresolved: string[];
+  warning: string | null;
+}
+
+export const resolveReferencesAt = (path: string, sha: string) =>
+  invoke<RefsAtResult>("resolve_references_at", { path, sha });
+
+export const openVersion = (path: string, sha: string) =>
+  invoke<string>("open_version", { path, sha });
+
+export const branchFromCommit = (name: string, sha: string) =>
+  invoke<SwitchResult>("branch_from_commit", { name, sha });
+
+
+export const branchFromCommitFiles = (
+  name: string,
+  sha: string,
+  paths: string[],
+) => invoke<void>("branch_from_commit_files", { name, sha, paths });
+
+
+export const mergeBranch = (name: string) =>
+  invoke<{ merged: boolean; already_up_to_date: boolean }>("merge_branch", {
+    name,
+  });
+
+export interface MergePreview {
+  files: { status: string; path: string }[];
+  conflicts: string[];
+  up_to_date: boolean;
+}
+
+export const mergePreview = (name: string) =>
+  invoke<MergePreview>("merge_preview", { name });
+
+export const undoMerge = () => invoke<void>("undo_merge");
+
+export const createBranch = (name: string, from: string | null) =>
+  invoke<void>("create_branch", { name, from });
+
+export const previewCommit = (sha: string) =>
+  invoke<void>("preview_commit", { sha });
+
+export const endPreview = () => invoke<void>("end_preview");
+
+export const getPreviewState = () =>
+  invoke<string | null>("get_preview_state");
+
+export interface GraphCommit {
+  sha: string;
+  parents: string[];
+  author_name: string;
+  author_email: string;
+  date: string;
+  subject: string;
+  refs: string[];
+  is_head: boolean;
+}
+
+export const getGraph = () => invoke<GraphCommit[]>("get_graph");
+
+export const getCommitFiles = (sha: string) =>
+  invoke<{ status: string; path: string }[]>("get_commit_files", { sha });
+
+export interface InitLockableResult {
+  added: string[];
+  committed: boolean;
+  pushed: boolean;
+}
+
+export const initLockable = () =>
+  invoke<InitLockableResult>("init_lockable");
 
 export const getFileHistory = (path: string) =>
   invoke<FileCommit[]>("get_file_history", { path });

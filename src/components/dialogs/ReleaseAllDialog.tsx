@@ -28,7 +28,7 @@ export function ReleaseAllDialog({
           {rest > 0 && <li className="muted">and {rest} more</li>}
         </ul>
         <p className="muted small">
-          A file still open in SolidWorks keeps its lock — close it and press
+          A file still open in SolidWorks keeps its lock, close it and press
           this again.
         </p>
         <div className="modal-actions">

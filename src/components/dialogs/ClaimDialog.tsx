@@ -119,7 +119,7 @@ export function ClaimDialog({
               {refs.ambiguous.map((amb) => (
                 <div key={amb.name} className="ref-ambiguous">
                   <p className="muted">
-                    “{amb.name}” exists in several folders — check the right one(s):
+                    “{amb.name}” exists in several folders, check the right one(s):
                   </p>
                   {amb.candidates.map((candidate) => (
                     <label key={candidate}>

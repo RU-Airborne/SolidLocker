@@ -358,6 +358,81 @@
   border-radius: 7px;
 }
 
+.sectionhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.sectionhead h3 {
+  margin-bottom: 0;
+}
+
+.branchtree {
+  display: block;
+  width: 100%;
+  max-width: 34rem;
+  height: auto;
+  margin: 0.5rem 0 0.8rem;
+}
+
+.bt-main {
+  stroke: var(--muted);
+  stroke-width: 2.5;
+}
+
+.bt-arrow {
+  fill: var(--muted);
+}
+
+.bt-maindot {
+  fill: var(--muted);
+}
+
+.bt-mainlabel {
+  fill: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.bt-line {
+  fill: none;
+  stroke-width: 2;
+  stroke-dasharray: 3 3;
+}
+
+.bt-label {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.bt-sub {
+  font-size: 9.5px;
+  fill: var(--muted);
+}
+
+.bt-branch {
+  transition: opacity 0.12s ease;
+}
+
+.bt-branch.dim {
+  opacity: 0.25;
+}
+
+.bt-branch.hot .bt-line {
+  stroke-width: 3;
+}
+
+.bt-branch.hot .bt-label {
+  font-weight: 700;
+}
+
+.branchrow:hover {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
 .branchrow:nth-child(odd) {
   background: color-mix(in srgb, var(--border) 22%, transparent);
 }
@@ -399,4 +474,41 @@
 
 .branchlast {
   white-space: nowrap;
+}
+
+.discardlist {
+  margin: 0.4rem 0;
+  padding-left: 1.2rem;
+  max-height: 9rem;
+  overflow-y: auto;
+  font-size: 0.85rem;
+}
+
+.railscroll {
+  overflow-x: auto;
+  margin: 0.5rem 0 0.9rem;
+  padding-bottom: 0.3rem;
+}
+
+.branchrail {
+  display: block;
+}
+
+.rr-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.rr-date {
+  font-size: 10.5px;
+  fill: var(--muted);
+}
+
+.rr-dim {
+  opacity: 0.22;
+  transition: opacity 0.12s ease;
+}
+
+.rr-hot .rr-label {
+  font-weight: 700;
 }

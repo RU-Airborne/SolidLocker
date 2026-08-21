@@ -53,12 +53,10 @@ export function TopBar({
   onPushOnly,
   fetchIntervalS,
   updating,
-  myClaimCount,
-  mineActive,
-  onToggleMine,
-  onReleaseMine,
+  onDiscard,
   onOpenSettings,
   onOpenProgress,
+  onOpenHistory,
   locking,
 }: {
   appState: AppState;
@@ -79,18 +77,19 @@ export function TopBar({
   onPushOnly: () => void;
   fetchIntervalS: number;
   updating: boolean;
-  myClaimCount: number;
-  mineActive: boolean;
-  onToggleMine: () => void;
-  /** Hand back every lock this member still holds. */
-  onReleaseMine: () => void;
+  /** Open the discard-changes confirm. */
+  onDiscard: () => void;
   onOpenSettings: () => void;
   onOpenProgress: () => void;
+  onOpenHistory: () => void;
 }) {
   const directory = usePeople();
   // SolidWorks ~$ temp files never count as work worth saving.
+  // only tracked edits can be discarded — brand-new files have no shared
+  // version to go back to
+  const trackedDirty = status?.dirty.filter((p) => !isSwTemp(p)).length ?? 0;
   const dirtyCount =
-    (status?.dirty.filter((p) => !isSwTemp(p)).length ?? 0) +
+    trackedDirty +
     (status?.untracked.filter((p) => !isSwTemp(p)).length ?? 0);
   const behind = status?.behind ?? 0;
   const ahead = status?.ahead ?? 0;
@@ -112,7 +111,7 @@ export function TopBar({
     );
   } else if (updating) syncCap = "Syncing with team…";
   else if (behind > 0 && dirtyCount > 0) {
-    syncCap = `${behind} team change${behind === 1 ? "" : "s"} waiting — Save & Share first`;
+    syncCap = `${behind} team change${behind === 1 ? "" : "s"} waiting. Save & Share first`;
     syncWarn = true;
   } else if (behind > 0) syncCap = "Syncing with team…";
   else if (lastFetchAt !== null)
@@ -165,6 +164,8 @@ export function TopBar({
               ? []
               : [{ value: currentBranch, label: currentBranch }]),
             ...(branches ?? []).map((b) => ({ value: b, label: b })),
+            // not a branch — intercepted upstream to open the create dialog
+            { value: "__create__", label: "＋ New branch…" },
           ]}
         />
       </div>
@@ -183,37 +184,40 @@ export function TopBar({
 
       <span className="spacer" />
 
-      {myClaimCount > 0 && (
-        <span className="claimgroup">
-          <button
-            className={`barbtn claimchip${mineActive ? " active" : ""}`}
-            onClick={onToggleMine}
-            title="Show only the files you have locked"
-          >
-            You hold {myClaimCount}
-          </button>
-          <button
-            className="barbtn releasemine"
-            onClick={onReleaseMine}
-            disabled={switchingTo !== null}
-            title="Unlock everything you are finished with"
-          >
-            Release all
-          </button>
-        </span>
-      )}
-
-      {ahead > 0 && dirtyCount === 0 && (
-        <button className="barbtn attention" onClick={onPushOnly} disabled={updating}>
-          Share {ahead} saved change{ahead === 1 ? "" : "s"}
+      {trackedDirty > 0 && (
+        <button
+          className="barbtn"
+          onClick={onDiscard}
+          disabled={updating}
+          title="Throw away everything changed since the last Save & Share"
+        >
+          Discard…
         </button>
       )}
       <button
-        className={`barbtn${dirtyCount > 0 ? " attention" : ""}`}
-        onClick={onSaveShare}
-        disabled={updating || dirtyCount === 0}
+        className={`barbtn${dirtyCount > 0 || ahead > 0 ? " attention" : ""}`}
+        onClick={dirtyCount > 0 ? onSaveShare : onPushOnly}
+        disabled={updating || (dirtyCount === 0 && ahead === 0)}
+        title={
+          dirtyCount > 0
+            ? "Describe your changes and send them to the team"
+            : ahead > 0
+              ? `Everything is saved. This sends ${ahead} waiting change${ahead === 1 ? "" : "s"} to GitHub`
+              : "Nothing to share yet"
+        }
       >
-        Save &amp; Share{dirtyCount > 0 ? ` (${dirtyCount})` : ""}
+        {updating && dirtyCount === 0 && ahead > 0 ? (
+          "Sharing…"
+        ) : (
+          <>
+            Save &amp; Share
+            {dirtyCount > 0
+              ? ` (${dirtyCount})`
+              : ahead > 0
+                ? ` (${ahead} waiting)`
+                : ""}
+          </>
+        )}
       </button>
       <button
         className="barbtn"
@@ -221,6 +225,13 @@ export function TopBar({
         title="See what the team has been working on"
       >
         Progress
+      </button>
+      <button
+        className="barbtn"
+        onClick={onOpenHistory}
+        title="Explore every branch and change, look at old versions, branch off, and combine branches"
+      >
+        Branches
       </button>
       <button
         className="barbtn avatarbtn"

@@ -305,10 +305,15 @@ export const FileRow = memo(function FileRow({
       <RestoreVersionDialog
         path={path}
         commit={restoring}
+        branchName={actions.currentBranch}
         onClose={() => setRestoring(null)}
-        onDone={(notice) => {
+        onDone={(notice, restored) => {
           setRestoring(null);
-          actions.notify(notice);
+          actions.notify(notice, restored);
+        }}
+        onBranchedOff={(branch) => {
+          setRestoring(null);
+          actions.branchedOff(branch);
         }}
       />
     )}

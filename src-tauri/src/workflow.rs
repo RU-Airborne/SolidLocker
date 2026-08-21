@@ -810,6 +810,355 @@ pub async fn resolve_references(root: &Path, start_rel: String) -> AppResult<Ref
     })
 }
 
+#[derive(Debug, Serialize)]
+pub struct MergeOutcome {
+    pub merged: bool,
+    pub already_up_to_date: bool,
+}
+
+pub async fn merge_branch(root: &Path, name: &str) -> AppResult<MergeOutcome> {
+    let status = repo::get_repo_status(root).await?;
+    if !status.conflicted.is_empty() {
+        return Err(AppError::new("CONFLICT", messages::UPDATE_UNRESOLVED));
+    }
+    let real_dirty = status.dirty.iter().any(|p| !repo::is_sw_temp(p));
+    if real_dirty {
+        return Err(AppError::new("NEEDS_COMMIT", messages::MERGE_NEEDS_COMMIT));
+    }
+
+    // Freshest picture of the branch being merged
+    let _ = run_git(root, &["fetch", "origin"], 120).await;
+    let remote_ref = format!("refs/remotes/origin/{name}");
+    let has_remote = run_git(root, &["rev-parse", "--verify", "--quiet", &remote_ref], 15)
+        .await
+        .map(|o| o.ok())
+        .unwrap_or(false);
+    let merge_ref = if has_remote {
+        format!("origin/{name}")
+    } else {
+        name.to_string()
+    };
+
+    let merge = run_git(root, &["merge", "--no-edit", &merge_ref], 300).await?;
+    if merge.ok() {
+        let already = merge.stdout.contains("Already up to date");
+        crate::logger::info(format!("merged {merge_ref} into current branch (already_up_to_date={already})"));
+        return Ok(MergeOutcome {
+            merged: !already,
+            already_up_to_date: already,
+        });
+    }
+
+    let after = repo::get_repo_status(root).await?;
+    if !after.conflicted.is_empty() {
+        // A .gitattributes-only collision is self-inflicted and safely 
+        // union mergeable
+        if after.conflicted == [".gitattributes"]
+            && union_resolve_gitattributes(root).await
+        {
+            crate::logger::info(format!(
+                "merged {merge_ref}: union-resolved the .gitattributes collision"
+            ));
+            return Ok(MergeOutcome {
+                merged: true,
+                already_up_to_date: false,
+            });
+        }
+        let _ = run_git(root, &["merge", "--abort"], 60).await;
+        return Err(AppError::with_detail(
+            "CONFLICT",
+            messages::merge_conflict_aborted(name, &after.conflicted.join(", ")),
+            serde_json::json!({ "files": after.conflicted }),
+        ));
+    }
+    Err(AppError::git(messages::could_not_merge(merge.stderr.trim())))
+}
+
+/// Resolves a conflicted .gitattributes by keeping every line from both
+/// side and committing the merge.
+async fn union_resolve_gitattributes(root: &Path) -> bool {
+    let mut lines: Vec<String> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    for stage in ["2", "3"] {
+        let spec = format!(":{stage}:.gitattributes");
+        match run_git(root, &["show", &spec], 30).await {
+            Ok(out) if out.ok() => {
+                for line in out.stdout.lines() {
+                    if seen.insert(line.to_string()) {
+                        lines.push(line.to_string());
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    if lines.is_empty() {
+        return false;
+    }
+    let content = format!("{}\n", lines.join("\n"));
+    if std::fs::write(root.join(".gitattributes"), content).is_err() {
+        return false;
+    }
+    let add_ok = run_git(root, &["add", "--", ".gitattributes"], 30)
+        .await
+        .map(|o| o.ok())
+        .unwrap_or(false);
+    if !add_ok {
+        return false;
+    }
+    run_git(root, &["commit", "--no-edit"], 60)
+        .await
+        .map(|o| o.ok())
+        .unwrap_or(false)
+}
+
+pub async fn undo_merge(root: &Path) -> AppResult<()> {
+    let status = repo::get_repo_status(root).await?;
+    let real_dirty = status.dirty.iter().any(|p| !repo::is_sw_temp(p));
+    if real_dirty || !status.conflicted.is_empty() {
+        return Err(AppError::new("NEEDS_COMMIT", messages::UNDO_MERGE_DIRTY));
+    }
+    // Never rewind history that already reached GitHub.
+    if status.upstream.is_some() && status.ahead == 0 {
+        return Err(AppError::new("GIT", messages::UNDO_MERGE_PUSHED));
+    }
+    let verify = run_git(root, &["rev-parse", "--verify", "--quiet", "ORIG_HEAD"], 15).await?;
+    if !verify.ok() {
+        return Err(AppError::git(messages::UNDO_MERGE_NOTHING));
+    }
+    let out = run_git(root, &["reset", "--hard", "ORIG_HEAD"], 300).await?;
+    if !out.ok() {
+        return Err(AppError::git(out.stderr.trim().to_string()));
+    }
+    // Files swapped back may be LFS pointers on a cold cache.
+    let _ = run_git(root, &["lfs", "checkout"], 120).await;
+    crate::logger::info("undo_merge: reset to ORIG_HEAD");
+    Ok(())
+}
+
+#[derive(Debug, Serialize)]
+pub struct MergePreview {
+    /// What the merge would bring in, relative to the shared starting point.
+    pub files: Vec<repo::CommitFileChange>,
+    pub conflicts: Vec<String>,
+    pub up_to_date: bool,
+}
+
+pub async fn merge_preview(root: &Path, name: &str) -> AppResult<MergePreview> {
+    let remote_ref = format!("refs/remotes/origin/{name}");
+    let has_remote = run_git(root, &["rev-parse", "--verify", "--quiet", &remote_ref], 15)
+        .await
+        .map(|o| o.ok())
+        .unwrap_or(false);
+    let merge_ref = if has_remote {
+        format!("origin/{name}")
+    } else {
+        name.to_string()
+    };
+
+    let range = format!("HEAD...{merge_ref}");
+    let out = crate::proc::run_git_ok(
+        root,
+        &["-c", "core.quotepath=false", "diff", "--name-status", &range],
+        60,
+    )
+    .await?;
+    let mut files = Vec::new();
+    for line in out.stdout.lines() {
+        let Some((status, rest)) = line.trim_end().split_once('\t') else {
+            continue;
+        };
+        let path = if status.starts_with('R') || status.starts_with('C') {
+            rest.rsplit('\t').next().unwrap_or(rest)
+        } else {
+            rest
+        };
+        files.push(repo::CommitFileChange {
+            status: status.chars().next().unwrap_or('M').to_string(),
+            path: path.to_string(),
+        });
+    }
+
+    // Dry-run the merge in memory to predict collisions. 
+    // Older gits without --write-tree just skip the prediction.
+    let mut conflicts: Vec<String> = Vec::new();
+    if let Ok(mt) = run_git(
+        root,
+        &[
+            "merge-tree",
+            "--write-tree",
+            "--no-messages",
+            "--name-only",
+            "HEAD",
+            &merge_ref,
+        ],
+        60,
+    )
+    .await
+    {
+        if mt.status == 1 {
+            let mut seen = HashSet::new();
+            conflicts = mt
+                .stdout
+                .lines()
+                .skip(1) // first line is the resulting tree id
+                .map(str::trim)
+                .filter(|l| !l.is_empty())
+                .filter(|l| seen.insert(l.to_string()))
+                .map(str::to_string)
+                .collect();
+            // The .gitattributes collision resolves itself (union merge).
+            conflicts.retain(|f| f != ".gitattributes");
+        }
+    }
+
+    Ok(MergePreview {
+        up_to_date: files.is_empty(),
+        files,
+        conflicts,
+    })
+}
+
+#[derive(Debug, Serialize)]
+pub struct RefsAtResult {
+    pub resolved: Vec<String>,
+    pub unresolved: Vec<String>,
+    pub warning: Option<String>,
+}
+
+pub async fn resolve_references_at(
+    root: &Path,
+    start_rel: &str,
+    sha: &str,
+) -> AppResult<RefsAtResult> {
+    let files = repo::files_at_commit(root, sha).await?;
+    let mut by_basename: HashMap<String, Vec<String>> = HashMap::new();
+    for f in &files {
+        let base = f.rsplit('/').next().unwrap_or(f).to_lowercase();
+        by_basename.entry(base).or_default().push(f.clone());
+    }
+
+    let mut resolved = Vec::new();
+    let mut unresolved = Vec::new();
+    let mut warning: Option<String> = None;
+    let mut visited: HashSet<String> = HashSet::new();
+    let mut seen_names: HashSet<String> = HashSet::new();
+    let mut queue: VecDeque<String> = VecDeque::new();
+
+    visited.insert(start_rel.to_lowercase());
+    queue.push_back(start_rel.to_string());
+
+    while let Some(current) = queue.pop_front() {
+        let scratch = match repo::extract_version(root, &current, sha).await {
+            Ok(p) => p,
+            Err(e) => {
+                if warning.is_none() {
+                    warning = Some(e.message);
+                }
+                continue;
+            }
+        };
+        let scan_path = scratch.clone();
+        let names = tokio::task::spawn_blocking(move || swrefs::scan_file(&scan_path))
+            .await
+            .map_err(|e| AppError::new("INTERNAL", e.to_string()))?;
+        let _ = std::fs::remove_file(&scratch);
+        let names = match names {
+            Ok(n) => n,
+            Err(e) => {
+                if warning.is_none() {
+                    warning = Some(e.message);
+                }
+                continue;
+            }
+        };
+
+        let current_dir = current
+            .rsplit_once('/')
+            .map(|(d, _)| d.to_lowercase())
+            .unwrap_or_default();
+        for name in names {
+            if !seen_names.insert(name.clone()) {
+                continue;
+            }
+            let Some(candidates) = by_basename.get(&name) else {
+                unresolved.push(name);
+                continue;
+            };
+            let pick = candidates
+                .iter()
+                .find(|c| {
+                    c.rsplit_once('/')
+                        .map(|(d, _)| d.to_lowercase())
+                        .unwrap_or_default()
+                        == current_dir
+                })
+                .unwrap_or(&candidates[0]);
+            if visited.insert(pick.to_lowercase()) {
+                resolved.push(pick.clone());
+                if pick.to_lowercase().ends_with(".sldasm") {
+                    queue.push_back(pick.clone());
+                }
+            }
+        }
+    }
+
+    resolved.sort();
+    unresolved.sort();
+    Ok(RefsAtResult {
+        resolved,
+        unresolved,
+        warning,
+    })
+}
+
+pub async fn open_version(root: &Path, path: &str, sha: &str) -> AppResult<String> {
+    let short: String = sha.chars().take(8).collect();
+    let dir = std::env::temp_dir().join(format!("solidlocker-view-{short}"));
+
+    let mut targets = vec![path.to_string()];
+    let mut skipped = Vec::new();
+    if path.to_lowercase().ends_with(".sldasm") {
+        let refs = resolve_references_at(root, path, sha).await?;
+        targets.extend(refs.resolved);
+        skipped = refs.unresolved;
+    }
+
+    for (i, rel) in targets.iter().enumerate() {
+        let bytes = match repo::cat_version_bytes(root, rel, sha).await {
+            Ok(b) => b,
+            Err(e) if i > 0 => {
+                crate::logger::warn(format!("open_version: could not extract {rel}: {}", e.message));
+                continue;
+            }
+            Err(e) => return Err(e),
+        };
+        let dest = dir.join(rel);
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent).map_err(AppError::from)?;
+        }
+        if dest.exists() {
+            let _ = fsattr::set_readonly(&dest, false);
+        }
+        std::fs::write(&dest, &bytes).map_err(AppError::from)?;
+        // Read-only, so nobody mistakes the scratch copy for the real file
+        // and edits it.
+        let _ = fsattr::set_readonly(&dest, true);
+    }
+    if !skipped.is_empty() {
+        crate::logger::warn(format!(
+            "open_version: {} referenced file(s) not found at {sha}: {}",
+            skipped.len(),
+            skipped.join(", ")
+        ));
+    }
+
+    let target_abs = dir.join(path);
+    tauri_plugin_opener::open_path(target_abs.to_string_lossy().into_owned(), None::<&str>)
+        .map_err(|e| AppError::new("OPEN", e.to_string()))?;
+    Ok(target_abs.to_string_lossy().into_owned())
+}
+
 #[cfg(test)]
 mod tests {
     use super::parse_porcelain_z;

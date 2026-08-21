@@ -570,6 +570,12 @@ pub async fn extract_version(root: &Path, path: &str, sha: &str) -> AppResult<st
         .collect();
     let out_path = std::env::temp_dir().join(format!("solidlocker-{short}-{stem}.{ext}"));
 
+    let bytes = cat_version_bytes(root, path, sha).await?;
+    std::fs::write(&out_path, &bytes).map_err(|e| AppError::new("RESTORE", e.to_string()))?;
+    Ok(out_path)
+}
+
+pub async fn cat_version_bytes(root: &Path, path: &str, sha: &str) -> AppResult<Vec<u8>> {
     let spec = format!("{sha}:{path}");
     let (ok, mut bytes, err) =
         crate::proc::run_git_bytes(root, &["show", &spec], None, 60).await?;
@@ -589,15 +595,31 @@ pub async fn extract_version(root: &Path, path: &str, sha: &str) -> AppResult<st
         }
         bytes = content;
     }
+    Ok(bytes)
+}
 
-    std::fs::write(&out_path, &bytes).map_err(|e| AppError::new("RESTORE", e.to_string()))?;
-    Ok(out_path)
+pub async fn files_at_commit(root: &Path, sha: &str) -> AppResult<Vec<String>> {
+    let out = run_git_ok(root, &["ls-tree", "-r", "--name-only", "-z", sha], 60).await?;
+    Ok(out
+        .stdout
+        .split('\0')
+        .filter(|p| !p.is_empty())
+        .filter(|p| {
+            let lower = p.to_lowercase();
+            lower.ends_with(".sldprt") || lower.ends_with(".sldasm") || lower.ends_with(".slddrw")
+        })
+        .map(|p| p.to_string())
+        .collect())
 }
 
 
-/// Restore by branching forward
-pub async fn restore_version(root: &Path, path: &str, sha: &str) -> AppResult<()> {
-    let out = run_git(root, &["checkout", sha, "--", path], 300).await?;
+pub async fn restore_version_files(root: &Path, paths: &[String], sha: &str) -> AppResult<()> {
+    if paths.is_empty() {
+        return Err(AppError::new("INVALID", messages::NO_FILES_SELECTED));
+    }
+    let mut args: Vec<&str> = vec!["checkout", sha, "--"];
+    args.extend(paths.iter().map(String::as_str));
+    let out = run_git(root, &args, 600).await?;
     if out.ok() {
         Ok(())
     } else {
@@ -605,6 +627,141 @@ pub async fn restore_version(root: &Path, path: &str, sha: &str) -> AppResult<()
             out.stderr.trim(),
         )))
     }
+}
+
+pub async fn branch_from_commit(root: &Path, name: &str, sha: &str) -> AppResult<SwitchResult> {
+    let check = run_git(root, &["check-ref-format", "--branch", name], 15).await?;
+    if !check.ok() {
+        return Err(AppError::new("INVALID", messages::bad_branch_name(name)));
+    }
+
+    let status = get_repo_status(root).await?;
+    let real_dirty = status.dirty.iter().any(|p| !is_sw_temp(p));
+    if !status.conflicted.is_empty() || real_dirty {
+        return Err(AppError::new("NEEDS_COMMIT", messages::SWITCH_NEEDS_COMMIT));
+    }
+
+    let prev_head = run_git(root, &["rev-parse", "HEAD"], 15)
+        .await
+        .ok()
+        .filter(|out| out.ok())
+        .map(|out| out.stdout.trim().to_string());
+
+    let sw = run_git(root, &["switch", "-c", name, sha], 120).await?;
+    if !sw.ok() {
+        return Err(AppError::git(messages::could_not_branch_off(
+            name,
+            sw.stderr.trim(),
+        )));
+    }
+    crate::logger::info(format!("branched off {name} at {sha}"));
+    Ok(finish_switch(root, prev_head.as_deref()).await)
+}
+
+/// A branch that starts from nothing: empty project, no history carried
+/// over, locking rules written and shared right away. For starting a new
+/// design line in the same repository.
+pub async fn create_fresh_branch(root: &Path, name: &str) -> AppResult<InitLockableResult> {
+    let check = run_git(root, &["check-ref-format", "--branch", name], 15).await?;
+    if !check.ok() {
+        return Err(AppError::new("INVALID", messages::bad_branch_name(name)));
+    }
+    let status = get_repo_status(root).await?;
+    let real_dirty = status.dirty.iter().any(|p| !is_sw_temp(p));
+    if !status.conflicted.is_empty() || real_dirty {
+        return Err(AppError::new("NEEDS_COMMIT", messages::SWITCH_NEEDS_COMMIT));
+    }
+
+    // --orphan empties the working tree; every file stays safe on the
+    // branches it came from.
+    let sw = run_git(root, &["switch", "--orphan", name], 120).await?;
+    if !sw.ok() {
+        return Err(AppError::git(messages::could_not_branch_off(
+            name,
+            sw.stderr.trim(),
+        )));
+    }
+    crate::logger::info(format!("created fresh branch {name}"));
+    // first commit on the new line: the locking rules
+    init_lockable(root).await
+}
+
+/// Park the whole working tree on an old commit so someone can look around
+/// in SolidWorks. Nothing is committed from here; end_preview goes back.
+pub async fn preview_commit(root: &Path, sha: &str) -> AppResult<String> {
+    let status = get_repo_status(root).await?;
+    let real_dirty = status.dirty.iter().any(|p| !is_sw_temp(p));
+    if !status.conflicted.is_empty() || real_dirty {
+        return Err(AppError::new("NEEDS_COMMIT", messages::SWITCH_NEEDS_COMMIT));
+    }
+    let from = status.branch.clone();
+
+    let sw = run_git(root, &["switch", "--detach", sha], 300).await?;
+    if !sw.ok() {
+        return Err(AppError::git(messages::could_not_preview(sw.stderr.trim())));
+    }
+    // cold LFS cache means pointer files, which SolidWorks can't open
+    let _ = run_git(root, &["lfs", "checkout"], 300).await;
+    crate::logger::info(format!("previewing commit {sha} (was on {from})"));
+    Ok(from)
+}
+
+/// Back from a preview to the branch the user was on.
+pub async fn end_preview(root: &Path, branch: &str) -> AppResult<()> {
+    let sw = run_git(root, &["switch", branch], 300).await?;
+    if !sw.ok() {
+        return Err(AppError::git(messages::could_not_switch(branch)));
+    }
+    let _ = run_git(root, &["lfs", "checkout"], 300).await;
+    crate::logger::info(format!("preview ended, back on {branch}"));
+    Ok(())
+}
+
+/// The narrower branch-off: the new branch starts from TODAY's project, and
+/// only the given files are set back to how they were at `sha`. The rest of
+/// the project stays current.
+pub async fn branch_from_commit_files(
+    root: &Path,
+    name: &str,
+    sha: &str,
+    paths: &[String],
+) -> AppResult<()> {
+    let check = run_git(root, &["check-ref-format", "--branch", name], 15).await?;
+    if !check.ok() {
+        return Err(AppError::new("INVALID", messages::bad_branch_name(name)));
+    }
+
+    let status = get_repo_status(root).await?;
+    let real_dirty = status.dirty.iter().any(|p| !is_sw_temp(p));
+    if !status.conflicted.is_empty() || real_dirty {
+        return Err(AppError::new("NEEDS_COMMIT", messages::SWITCH_NEEDS_COMMIT));
+    }
+    let prev_branch = status.branch.clone();
+
+    let sw = run_git(root, &["switch", "-c", name], 60).await?;
+    if !sw.ok() {
+        return Err(AppError::git(messages::could_not_branch_off(
+            name,
+            sw.stderr.trim(),
+        )));
+    }
+    crate::logger::info(format!(
+        "branched off {name} from the current tip, restoring {} file(s) from {sha}",
+        paths.len()
+    ));
+
+    if let Err(e) = restore_version_files(root, paths, sha).await {
+        // Nothing landed: go back and remove the empty branch so the failed
+        // attempt leaves no trace.
+        if !prev_branch.is_empty() && prev_branch != "(detached)" {
+            let back = run_git(root, &["switch", &prev_branch], 60).await;
+            if back.map(|o| o.ok()).unwrap_or(false) {
+                let _ = run_git(root, &["branch", "-D", name], 30).await;
+            }
+        }
+        return Err(e);
+    }
+    Ok(())
 }
 
 pub async fn restore_paths(root: &Path, files: Vec<String>) -> AppResult<()> {
@@ -758,6 +915,9 @@ pub struct BranchSummary {
     pub ahead: u32,
     pub behind: u32,
     pub is_default: bool,
+    /// Unix seconds of the commit this branch forked off the default branch
+    /// (the merge base). Zero when unknown or on the default itself.
+    pub forked_at: i64,
 }
 
 async fn default_branch(root: &Path) -> String {
@@ -831,11 +991,38 @@ pub async fn branch_overview(root: &Path) -> AppResult<Vec<BranchSummary>> {
             }
         };
 
+        // When the branch forked: the merge base's commit date.
+        let forked_at: i64 = if is_default {
+            0
+        } else {
+            let base = run_git(
+                root,
+                &[
+                    "merge-base",
+                    &format!("origin/{default}"),
+                    &format!("origin/{name}"),
+                ],
+                20,
+            )
+            .await;
+            match base {
+                Ok(o) if o.ok() => {
+                    let sha = o.stdout.trim().to_string();
+                    match run_git(root, &["show", "-s", "--format=%ct", &sha], 15).await {
+                        Ok(d) if d.ok() => d.stdout.trim().parse().unwrap_or(0),
+                        _ => 0,
+                    }
+                }
+                _ => 0,
+            }
+        };
+
         branches.push(BranchSummary {
             name: name.to_string(),
             last_commit_at: when.trim().parse().unwrap_or(0),
             author: author.trim().to_string(),
             subject,
+            forked_at,
             ahead,
             behind,
             is_default,
@@ -1259,6 +1446,222 @@ pub async fn list_lockable_files(root: &Path) -> AppResult<Vec<FileEntry>> {
     }
     files.sort_by(|a, b| a.rel_path.cmp(&b.rel_path));
     Ok(files)
+}
+
+// ---- Commit graph  ----
+
+#[derive(Debug, Serialize)]
+pub struct GraphCommit {
+    pub sha: String,
+    pub parents: Vec<String>,
+    pub author_name: String,
+    pub author_email: String,
+    pub date: String,
+    pub subject: String,
+    /// Branch names pointing at this commit ("main", "origin/motor-mount").
+    pub refs: Vec<String>,
+    pub is_head: bool,
+}
+
+pub fn parse_graph_log(stdout: &str) -> Vec<GraphCommit> {
+    let mut commits = Vec::new();
+    for record in stdout.split('\u{1e}') {
+        let record = record.trim_matches(['\n', '\r']);
+        if record.is_empty() {
+            continue;
+        }
+        let fields: Vec<&str> = record.splitn(7, '\u{1f}').collect();
+        let [sha, parents, author_name, author_email, date, decorations, subject] = fields[..]
+        else {
+            continue;
+        };
+        let mut is_head = false;
+        let mut refs = Vec::new();
+        for d in decorations.split(", ").filter(|d| !d.is_empty()) {
+            let d = d.trim();
+            if let Some(target) = d.strip_prefix("HEAD -> ") {
+                is_head = true;
+                refs.push(target.to_string());
+            } else if d == "HEAD" {
+                is_head = true;
+            } else if let Some(tag) = d.strip_prefix("tag: ") {
+                refs.push(format!("🏷 {tag}"));
+            } else if d != "origin/HEAD" {
+                refs.push(d.to_string());
+            }
+        }
+        commits.push(GraphCommit {
+            sha: sha.to_string(),
+            parents: parents.split_whitespace().map(str::to_string).collect(),
+            author_name: author_name.to_string(),
+            author_email: author_email.to_string(),
+            date: date.to_string(),
+            subject: subject.trim().to_string(),
+            refs,
+            is_head,
+        });
+    }
+    commits
+}
+
+/// Every branch's commits in topological order, newest first, for the
+/// History page. Reads already-fetched refs.
+pub async fn commit_graph(root: &Path, limit: usize) -> AppResult<Vec<GraphCommit>> {
+    let n = limit.to_string();
+    let out = run_git_ok(
+        root,
+        &[
+            "log",
+            "--branches",
+            "--remotes",
+            "--topo-order",
+            "-n",
+            &n,
+            "--format=%H\u{1f}%P\u{1f}%an\u{1f}%ae\u{1f}%aI\u{1f}%D\u{1f}%s\u{1e}",
+        ],
+        60,
+    )
+    .await?;
+    Ok(parse_graph_log(&out.stdout))
+}
+
+/// What a single commit changed, fetched lazily when a commit is opened.
+pub async fn commit_files(root: &Path, sha: &str) -> AppResult<Vec<CommitFileChange>> {
+    let out = run_git_ok(
+        root,
+        &[
+            "-c",
+            "core.quotepath=false",
+            "show",
+            "--name-status",
+            "--format=",
+            sha,
+        ],
+        60,
+    )
+    .await?;
+    let mut files = Vec::new();
+    for line in out.stdout.lines() {
+        let line = line.trim_end();
+        let Some((status, rest)) = line.split_once('\t') else {
+            continue;
+        };
+        let path = if status.starts_with('R') || status.starts_with('C') {
+            rest.rsplit('\t').next().unwrap_or(rest)
+        } else {
+            rest
+        };
+        files.push(CommitFileChange {
+            status: status.chars().next().unwrap_or('M').to_string(),
+            path: path.to_string(),
+        });
+    }
+    Ok(files)
+}
+
+// ---- Locking setup (.gitattributes) ----
+
+const LOCKABLE_EXTENSIONS: [&str; 3] = ["sldprt", "sldasm", "slddrw"];
+
+#[derive(Debug, Serialize)]
+pub struct InitLockableResult {
+    /// Attribute patterns that were newly added (empty if all were present).
+    pub added: Vec<String>,
+    pub committed: bool,
+    pub pushed: bool,
+}
+
+/// Makes the current branch lockable: SolidWorks files go through Git LFS and
+/// carry the `lockable` attribute, which is what the whole locking model
+/// hangs on. Idempotent — existing rules are left alone.
+pub async fn init_lockable(root: &Path) -> AppResult<InitLockableResult> {
+    let attrs_path = root.join(".gitattributes");
+    let existing = std::fs::read_to_string(&attrs_path).unwrap_or_default();
+
+    // Attribute patterns match case-sensitively, and SolidWorks saves both
+    // spellings into the wild, so cover lower case and upper case.
+    let mut added = Vec::new();
+    let mut content = existing.clone();
+
+    // Two branches that each ran this setup both edited .gitattributes, and
+    // a later merge would collide on it. Union-merging this file is safe
+    // (rules are one-per-line and duplicates are harmless), so declare that
+    // and the collision never happens again.
+    let union_ok = existing.lines().any(|l| {
+        let mut parts = l.split_whitespace();
+        parts.next() == Some(".gitattributes") && l.contains("merge=union")
+    });
+    if !union_ok {
+        if !content.is_empty() && !content.ends_with('\n') {
+            content.push('\n');
+        }
+        content.push_str(".gitattributes merge=union\n");
+        added.push(".gitattributes".to_string());
+    }
+
+    for ext in LOCKABLE_EXTENSIONS {
+        for pattern in [format!("*.{ext}"), format!("*.{}", ext.to_uppercase())] {
+            let already = existing.lines().any(|l| {
+                let mut parts = l.split_whitespace();
+                parts.next() == Some(pattern.as_str()) && l.contains("lockable")
+            });
+            if !already {
+                if !content.is_empty() && !content.ends_with('\n') {
+                    content.push('\n');
+                }
+                content.push_str(&format!(
+                    "{pattern} filter=lfs diff=lfs merge=lfs -text lockable\n"
+                ));
+                added.push(pattern);
+            }
+        }
+    }
+
+    if added.is_empty() {
+        return Ok(InitLockableResult {
+            added,
+            committed: false,
+            pushed: false,
+        });
+    }
+
+    std::fs::write(&attrs_path, &content).map_err(AppError::from)?;
+    crate::logger::info(format!(
+        "init_lockable: added {} attribute rule(s)",
+        added.len()
+    ));
+
+    run_git_ok(root, &["add", "--", ".gitattributes"], 30).await?;
+    let commit = run_git(
+        root,
+        &["commit", "-m", "Set up Git LFS locking (via SolidLocker)"],
+        60,
+    )
+    .await?;
+    let committed = commit.ok();
+
+    // Locking rules only protect the team once they are on GitHub, but being
+    // offline should not undo the local setup. Push is best effort.
+    let pushed = if committed {
+        let status = get_repo_status(root).await?;
+        let push_args: Vec<&str> = if status.upstream.is_none() {
+            vec!["push", "-u", "origin", "HEAD"]
+        } else {
+            vec!["push"]
+        };
+        run_git(root, &push_args, 300)
+            .await
+            .map(|o| o.ok())
+            .unwrap_or(false)
+    } else {
+        false
+    };
+
+    Ok(InitLockableResult {
+        added,
+        committed,
+        pushed,
+    })
 }
 
 #[cfg(test)]

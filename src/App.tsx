@@ -91,7 +91,7 @@ export default function App() {
             <strong>close SolidLocker completely and open it again.</strong>
           </p>
           <button onClick={() => appState.refetch()}>
-            I&rsquo;ve installed it — check again
+            I&rsquo;ve installed it. Check again
           </button>
           <p className="muted small altinstall">
             Rather not use it?{" "}

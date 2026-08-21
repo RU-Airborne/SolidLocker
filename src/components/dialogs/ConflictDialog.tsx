@@ -27,7 +27,7 @@ export function ConflictDialog({
           <button
             onClick={() =>
               abortMerge()
-                .then(() => onDone("Update cancelled — nothing was changed."))
+                .then(() => onDone("Update cancelled. Nothing was changed."))
                 .catch((e) => onDone(String(e)))
             }
           >

@@ -47,6 +47,7 @@ export interface BranchSummary {
   ahead: number;
   behind: number;
   is_default: boolean;
+  forked_at: number;
 }
 
 export interface LocksResult {

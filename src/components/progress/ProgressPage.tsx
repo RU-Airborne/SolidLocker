@@ -1,7 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
-import { getActivityAll, getBranchOverview, getCommitStats } from "../../api";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  getActivityAll,
+  getBranchOverview,
+  getCommitStats,
+  getGraph,
+} from "../../api";
 import { FilePreview } from "../common/FilePreview";
+import { BranchGlyph } from "../common/HistoryDiagrams";
+import { laneColor, layoutGraph } from "../history/HistoryPage";
+import type { BranchSummary } from "../../types";
 import type { FileRowData } from "../dashboard/Dashboard";
 import { UserAvatar } from "../common/UserAvatar";
 import { formatPerson, resolveCommitAuthors, useIdentities } from "../../identity";
@@ -64,12 +72,255 @@ function quietFor(ms: number, now: number): string {
   return `quiet for ${months} month${months === 1 ? "" : "s"}`;
 }
 
+function truncName(s: string, n: number): string {
+  return s.length > n ? `${s.slice(0, n - 1)}…` : s;
+}
+
+
+// function BranchTree({
+//   branches,
+//   defaultName,
+//   highlight,
+// }: {
+//   branches: BranchSummary[];
+//   defaultName: string;
+//   /** Branch name being hovered in the list below; its line lights up. */
+//   highlight: string | null;
+// }) {
+//   const others = branches.filter((b) => !b.is_default).slice(0, 6);
+//   const n = others.length;
+//   const W = 520;
+//   const ROW = 30;
+//   // extra room under the rail for the fork dates
+//   const H = 58 + n * ROW;
+//   const mainY = H - 28;
+//   const lineEnd = W - 168;
+//   const forkDate = (secs: number) =>
+//     new Date(secs * 1000).toLocaleDateString(undefined, {
+//       month: "short",
+//       day: "numeric",
+//     });
+//   return (
+//     <svg
+//       className="branchtree"
+//       viewBox={`0 0 ${W} ${H}`}
+//       role="img"
+//       aria-label={`Simplified branch tree: ${defaultName} with ${n} branch${n === 1 ? "" : "es"} forking off`}
+//     >
+//       <line className="bt-main" x1="10" y1={mainY} x2={W - 70} y2={mainY} />
+//       <polygon
+//         className="bt-arrow"
+//         points={`${W - 70},${mainY - 4.5} ${W - 59},${mainY} ${W - 70},${mainY + 4.5}`}
+//       />
+//       {[36, 88, 140].map((x) => (
+//         <circle key={x} className="bt-maindot" cx={x} cy={mainY} r="3" />
+//       ))}
+//       <text className="bt-mainlabel" x={W - 8} y={mainY + 3.5} textAnchor="end">
+//         {truncName(defaultName, 14)}
+//       </text>
+//
+//       {others.map((b, i) => {
+//         // Newest branch closest to the rail; forks stagger left to right.
+//         const y = 14 + i * ROW;
+//         const xFork = 46 + i * 34;
+//         const color = laneColor(i);
+//         const dots = Math.max(1, Math.min(b.ahead, 5));
+//         const cls =
+//           highlight === null
+//             ? "bt-branch"
+//             : highlight === b.name
+//               ? "bt-branch hot"
+//               : "bt-branch dim";
+//         return (
+//           <g key={b.name} className={cls}>
+//             <path
+//               className="bt-line"
+//               stroke={color}
+//               d={`M ${xFork} ${mainY} C ${xFork + 16} ${mainY} ${xFork + 12} ${y} ${xFork + 30} ${y} L ${lineEnd} ${y}`}
+//             />
+//             {/* the junction: where and when this branch split off */}
+//             <circle cx={xFork} cy={mainY} r="3.2" fill={color} />
+//             {b.forked_at > 0 && (
+//               <text
+//                 className="bt-sub"
+//                 x={xFork}
+//                 y={mainY + (i % 2 === 0 ? 13 : 24)}
+//                 textAnchor="middle"
+//               >
+//                 {forkDate(b.forked_at)}
+//               </text>
+//             )}
+//             {Array.from({ length: dots }).map((_, k) => (
+//               <circle
+//                 key={k}
+//                 cx={lineEnd - 12 - k * 14}
+//                 cy={y}
+//                 r="3"
+//                 fill={color}
+//               />
+//             ))}
+//             <text className="bt-label" x={lineEnd + 8} y={y - 1} fill={color}>
+//               {truncName(b.name, 18)}
+//             </text>
+//             <text className="bt-sub" x={lineEnd + 8} y={y + 11}>
+//               updated {formatDate(b.last_commit_at * 1000)}
+//               {b.ahead > 0 ? ` · ${b.ahead} ahead` : ""}
+//             </text>
+//           </g>
+//         );
+//       })}
+//     </svg>
+//   );
+// }
+
+
+function BranchRailway({
+  rows,
+  laneCount,
+  branches,
+  highlight,
+}: {
+  rows: ReturnType<typeof layoutGraph>["rows"];
+  laneCount: number;
+  branches: BranchSummary[];
+  highlight: string | null;
+}) {
+  const COL = 40;
+  const LANE = 34;
+  const TOP = 176;
+  const PAD = 36;
+  const RIGHT = 80;
+  const W = PAD * 2 + rows.length * COL + RIGHT;
+  const H = TOP + laneCount * LANE + 26;
+  const shortDate = (d: string | number) =>
+    new Date(d).toLocaleDateString(undefined, {
+      month: "numeric",
+      day: "numeric",
+    });
+  const forkOf = new Map(branches.map((b) => [b.name, b.forked_at]));
+  const yOf = (l: number) => TOP + l * LANE;
+  const xOf = (i: number) => W - PAD - RIGHT - i * COL - COL / 2;
+
+  // newest commits sit at the right edge, start the view there
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollLeft = el.scrollWidth;
+  }, [rows.length]);
+
+  return (
+    <div className="railscroll" ref={scrollRef}>
+      <svg
+        className="branchrail"
+        width={W}
+        height={H}
+        viewBox={`0 0 ${W} ${H}`}
+        role="img"
+        aria-label="Every branch and merge in the project, newest at the right"
+      >
+        {rows.map((row, i) => {
+          const x = xOf(i);
+          const y = yOf(row.lane);
+          const xr = x + COL / 2;
+          const xl = x - COL / 2;
+          const c = row.commit;
+          const tipName = c.refs[0]?.startsWith("origin/")
+            ? c.refs[0].slice(7)
+            : c.refs[0];
+          const hot =
+            highlight !== null &&
+            c.refs.some(
+              (r) => r === highlight || r === `origin/${highlight}`,
+            );
+          const cls =
+            highlight === null ? undefined : hot ? "rr-hot" : "rr-dim";
+          return (
+            <g key={c.sha} className={cls}>
+              {row.passes.map((j) => (
+                <line
+                  key={`p${j}`}
+                  x1={xl}
+                  y1={yOf(j)}
+                  x2={xr}
+                  y2={yOf(j)}
+                  stroke={laneColor(j)}
+                  strokeWidth={3}
+                />
+              ))}
+              {row.hasTop && (
+                <line x1={x} y1={y} x2={xr} y2={y} stroke={laneColor(row.lane)} strokeWidth={3} />
+              )}
+              {row.joins.map((j) => (
+                <line
+                  key={`j${j}`}
+                  x1={xr}
+                  y1={yOf(j)}
+                  x2={x}
+                  y2={y}
+                  stroke={laneColor(j)}
+                  strokeWidth={3}
+                />
+              ))}
+              {row.continues && (
+                <line x1={x} y1={y} x2={xl} y2={y} stroke={laneColor(row.lane)} strokeWidth={3} />
+              )}
+              {row.forks.map((m) => (
+                <line
+                  key={`f${m}`}
+                  x1={x}
+                  y1={y}
+                  x2={xl}
+                  y2={yOf(m)}
+                  stroke={laneColor(m)}
+                  strokeWidth={3}
+                />
+              ))}
+              {c.is_head ? (
+                <g className="gg-head">
+                  <circle className="gg-halo" cx={x} cy={y} r={13} fill="var(--accent)" />
+                  <circle cx={x} cy={y} r={8} fill="none" stroke="var(--accent)" strokeWidth={3} />
+                  <circle cx={x} cy={y} r={4.2} fill="var(--accent)" />
+                </g>
+              ) : (
+                <circle
+                  cx={x}
+                  cy={y}
+                  r={tipName ? 6 : 4.2}
+                  fill={laneColor(row.lane)}
+                />
+              )}
+              {tipName && (
+                <text
+                  className="rr-label"
+                  x={x + 4}
+                  y={y - 16}
+                  fill={laneColor(row.lane)}
+                  transform={`rotate(-72 ${x + 4} ${y - 16})`}
+                >
+                  {truncName(tipName, 14)}
+                  <tspan className="rr-date" dx="6">
+                    {forkOf.get(tipName)
+                      ? `${shortDate(forkOf.get(tipName)! * 1000)}→${shortDate(c.date)}`
+                      : shortDate(c.date)}
+                  </tspan>
+                </text>
+              )}
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
 export function ProgressPage({
   rows,
   onClose,
+  onOpenBranches,
 }: {
   rows: FileRowData[];
   onClose: () => void;
+  onOpenBranches: () => void;
 }) {
   const stats = useQuery({
     queryKey: ["commitStats"],
@@ -89,16 +340,21 @@ export function ProgressPage({
   const branchList = branches.data ?? [];
   const defaultName =
     branchList.find((b) => b.is_default)?.name ?? "the default branch";
+  const graph = useQuery({
+    queryKey: ["graph"],
+    queryFn: getGraph,
+    staleTime: 60_000,
+  });
+  const laid = useMemo(() => layoutGraph(graph.data ?? []), [graph.data]);
   const identities = useIdentities();
-  // One clock for the whole page, ticking once a minute. Every bucket
-  // boundary and "quiet for N days" below is measured from it.
   const now = useNow();
+  const [hoveredBranch, setHoveredBranch] = useState<string | null>(null);
   const [range, setRange] = useState<RangeKey>("month");
   const [peopleRange, setPeopleRange] = useState<RangeKey>("month");
 
   const areas = useMemo(() => areaStats(rows, now), [rows, now]);
 
-  // Shares per bucket for the chosen range, oldest first.
+  // Shares per bucket for the chosen range, oldest first
   const buckets = useMemo(() => {
     const { buckets: count, size } = RANGES[range];
     const start = now - count * size;
@@ -119,7 +375,7 @@ export function ProgressPage({
 
   const peakCommits = Math.max(1, ...buckets.map((b) => b.commits));
 
-  // Who has shared work in the chosen window.
+  // Who has shared work in the chosen window
   const contributors = useMemo(() => {
     const { buckets: n, size } = RANGES[peopleRange];
     const cutoff = now - n * size;
@@ -267,7 +523,17 @@ export function ProgressPage({
         </section>
 
         <section className="setupsection">
-          <h3>Branches</h3>
+          <div className="sectionhead">
+            <h3>Branches</h3>
+            <button
+              className="branchoffbtn"
+              onClick={onOpenBranches}
+              title="The full picture: every branch and change on one railway, with branch off, restore and combine"
+            >
+              <BranchGlyph />
+              Explore branches
+            </button>
+          </div>
           <p className="muted">
             Every branch your team has shared, newest work first. Ahead and
             behind are counted against {defaultName}.
@@ -277,9 +543,25 @@ export function ProgressPage({
           ) : branchList.length === 0 ? (
             <p className="muted">No branches have been shared yet.</p>
           ) : (
+            <>
+            {laid.rows.length > 0 && (
+              <BranchRailway
+                rows={laid.rows}
+                laneCount={laid.laneCount}
+                branches={branchList}
+                highlight={hoveredBranch}
+              />
+            )}
             <ul className="branchlist">
               {branchList.map((b) => (
-                <li key={b.name} className="branchrow">
+                <li
+                  key={b.name}
+                  className="branchrow"
+                  onMouseEnter={() => setHoveredBranch(b.name)}
+                  onMouseLeave={() =>
+                    setHoveredBranch((prev) => (prev === b.name ? null : prev))
+                  }
+                >
                   <span className="branchname">
                     {b.name}
                     {b.is_default && (
@@ -309,6 +591,7 @@ export function ProgressPage({
                 </li>
               ))}
             </ul>
+            </>
           )}
         </section>
 

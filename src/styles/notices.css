@@ -3,11 +3,14 @@
 .notice {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 1rem;
   padding: 0.5rem 1rem;
   background: #2f6fb5;
   color: white;
+}
+
+.notice > span:first-child {
+  flex: 1;
 }
 
 .notice.warn {

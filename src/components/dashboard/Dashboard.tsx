@@ -3,15 +3,21 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useQuery } from "@tanstack/react-query";
 import {
+  endPreview,
+  getPreviewState,
+  initLockable,
   isSwitching,
   listRepoBranches,
   getOpenDocuments,
   openFile,
+  previewCommit,
   pushNow,
   restoreFiles,
   selectExistingRepo,
   switchBranch,
   syncAttributes,
+  undoMerge,
+  type CommitInfo,
 } from "../../api";
 import {
   useClaim,
@@ -55,6 +61,17 @@ import { ConflictDialog } from "../dialogs/ConflictDialog";
 import { ForceUnlockDialog } from "../dialogs/ForceUnlockDialog";
 import { SetAsideDialog } from "../dialogs/SetAsideDialog";
 import { OfflineHelpDialog } from "../dialogs/OfflineHelpDialog";
+import { BranchOffDialog } from "../dialogs/BranchOffDialog";
+import { MergeBranchDialog } from "../dialogs/MergeBranchDialog";
+import {
+  RestoreVersionDialog,
+  type VersionRef,
+} from "../dialogs/RestoreVersionDialog";
+import { RestoreFilesDialog } from "../dialogs/RestoreFilesDialog";
+import { DiscardChangesDialog } from "../dialogs/DiscardChangesDialog";
+import { CreateBranchDialog } from "../dialogs/CreateBranchDialog";
+import { isSwTemp } from "../../types";
+import { HistoryPage } from "../history/HistoryPage";
 import { ActivityPanel } from "./ActivityPanel";
 import { TopBar } from "./TopBar";
 import { FileTree, type SortMode } from "./FileTree";
@@ -84,8 +101,12 @@ export interface RowActions {
   pinned: Set<string>;
   busyPaths: Set<string>;
   highlightedPath: string | null;
-  /** Report an outcome from a row-level dialog and refresh what it changed. */
-  notify: (text: string) => void;
+  /** Report an outcome from a row-level dialog and refresh what it changed.
+      With undoPaths set, the banner offers an Undo that discards the local
+      change on those files (possible until Save & Share). */
+  notify: (text: string, undoPaths?: string[]) => void;
+  branchedOff: (name: string) => void;
+  currentBranch: string;
 }
 
 export function Dashboard({ appState }: { appState: AppState }) {
@@ -100,6 +121,8 @@ export function Dashboard({ appState }: { appState: AppState }) {
   const [notice, setNoticeState] = useState<{
     text: string;
     warn: boolean;
+    undoPaths?: string[];
+    undoAction?: () => void;
   } | null>(null);
   const queryClient = useQueryClient();
   const swInstalled = useSwInstalled();
@@ -135,12 +158,46 @@ export function Dashboard({ appState }: { appState: AppState }) {
     setNoticeState({ text, warn: false });
   }
 
-  // Banners dismiss themselves after 8s; the Okie button dismisses sooner.
   useEffect(() => {
     if (!notice) return;
-    const t = window.setTimeout(() => setNotice(null), 8000);
+    const t = window.setTimeout(
+      () => setNotice(null),
+      notice.undoPaths || notice.undoAction ? 30_000 : 8000,
+    );
     return () => window.clearTimeout(t);
   }, [notice]);
+
+  function doUndoMerge() {
+    setNotice(null);
+    undoMerge()
+      .then(() => {
+        queryClient.invalidateQueries();
+        setNotice(copy.undoneMerge);
+      })
+      .catch((e) => warn(isAppError(e) ? e.message : String(e)));
+  }
+
+  function handleInitLockable() {
+    if (settingUpLocking) return;
+    setSettingUpLocking(true);
+    initLockable()
+      .then((r) => {
+        queryClient.invalidateQueries();
+        succeed(copy.lockingSetUp(r.pushed));
+      })
+      .catch((e) => warn(isAppError(e) ? e.message : String(e)))
+      .finally(() => setSettingUpLocking(false));
+  }
+
+  function undoRestore(paths: string[]) {
+    setNotice(null);
+    restoreFiles(paths)
+      .then(() => {
+        queryClient.invalidateQueries();
+        setNotice(copy.undoneRestore);
+      })
+      .catch((e) => warn(isAppError(e) ? e.message : String(e)));
+  }
 
   // Quietly fetch the remote on an interval so `behind` stays accurate.
   // Keeping up with the team: the interval fetch and the automatic pull.
@@ -192,6 +249,34 @@ export function Dashboard({ appState }: { appState: AppState }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [releaseAllOpen, setReleaseAllOpen] = useState(false);
   const [progressOpen, setProgressOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  // Looking at a file as it was at an older commit (from Activity/History).
+  const [versionView, setVersionView] = useState<{
+    path: string;
+    commit: VersionRef;
+    /** Branch-off scope default: commit context = "all", file = "file". */
+    scopeDefault?: "all" | "file";
+  } | null>(null);
+  // "Branch off here" from a commit in Activity or History.
+  const [branchOffTarget, setBranchOffTarget] = useState<{
+    sha: string;
+    label: string;
+  } | null>(null);
+  // "Combine…" from a branch card on the Branches page.
+  const [mergeTarget, setMergeTarget] = useState<{
+    branch: string;
+    defaultBranch: string;
+  } | null>(null);
+  // Multi-file restore from a commit that touched several CAD files.
+  const [multiRestore, setMultiRestore] = useState<{
+    paths: string[];
+    commit: VersionRef;
+  } | null>(null);
+  const [discardOpen, setDiscardOpen] = useState(false);
+  // waiting-changes push in flight (the no-message Save & Share case)
+  const [pushing, setPushing] = useState(false);
+  const [createBranchOpen, setCreateBranchOpen] = useState(false);
+  const [settingUpLocking, setSettingUpLocking] = useState(false);
   const [rowMenu, setRowMenu] = useState<{
     x: number;
     y: number;
@@ -482,6 +567,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
     find: () => {
       setProgressOpen(false);
       setSettingsOpen(false);
+      setHistoryOpen(false);
       searchRef.current?.focus();
       searchRef.current?.select();
     },
@@ -496,9 +582,16 @@ export function Dashboard({ appState }: { appState: AppState }) {
       [!!openWarning, () => setOpenWarning(null)],
       [!!claimDialogPath, () => setClaimDialogPath(null)],
       [!!releaseDialogPath, () => setReleaseDialogPath(null)],
+      [!!versionView, () => setVersionView(null)],
+      [!!branchOffTarget, () => setBranchOffTarget(null)],
+      [!!mergeTarget, () => setMergeTarget(null)],
+      [!!multiRestore, () => setMultiRestore(null)],
+      [discardOpen, () => setDiscardOpen(false)],
+      [createBranchOpen, () => setCreateBranchOpen(false)],
       [commitDialogOpen, () => setCommitDialogOpen(false)],
       [progressOpen, () => setProgressOpen(false)],
       [settingsOpen, () => setSettingsOpen(false)],
+      [historyOpen, () => setHistoryOpen(false)],
       [searchQuery !== "", () => setSearchQuery("")],
     ],
   });
@@ -518,6 +611,59 @@ export function Dashboard({ appState }: { appState: AppState }) {
   // Referentially stable so the memoized FileTree/FileRow components only
   // re-render when something a row actually shows has changed. The handlers
   // close over state setters and mutateAsync, which React keeps stable.
+  const currentBranch = repoStatus.data?.branch ?? appState.repo!.branch;
+
+  // "Look around" mode: the tree is parked on an old commit.
+  const previewState = useQuery({
+    queryKey: ["previewState"],
+    queryFn: getPreviewState,
+    refetchInterval: 30_000,
+  });
+  const previewReturn = previewState.data ?? null;
+  const previewing = previewReturn !== null;
+
+  async function handlePreviewCommit(sha: string, label: string) {
+    setHistoryOpen(false);
+    setNotice(null);
+    setSwitchingTo(label);
+    try {
+      await previewCommit(sha);
+      queryClient.invalidateQueries();
+      setNotice(copy.previewStarted(label));
+    } catch (e) {
+      if (isAppError(e) && e.code === "NEEDS_COMMIT") {
+        setCommitDialogOpen(true);
+      } else {
+        warn(isAppError(e) ? e.message : String(e));
+      }
+    } finally {
+      setSwitchingTo(null);
+    }
+  }
+
+  function handleDiscardChanges() {
+    const files = (repoStatus.data?.dirty ?? []).filter((p) => !isSwTemp(p));
+    setDiscardOpen(false);
+    restoreFiles(files)
+      .then(() => {
+        queryClient.invalidateQueries();
+        setNotice(copy.discardedChanges(files.length));
+      })
+      .catch((e) => warn(isAppError(e) ? e.message : String(e)));
+  }
+
+  function handleEndPreview() {
+    const back = previewReturn ?? "";
+    setSwitchingTo(back);
+    endPreview()
+      .then(() => {
+        queryClient.invalidateQueries();
+        setNotice(copy.previewEnded(back));
+      })
+      .catch((e) => warn(isAppError(e) ? e.message : String(e)))
+      .finally(() => setSwitchingTo(null));
+  }
+
   const actions: RowActions = useMemo(() => ({
     busyPaths,
     highlightedPath,
@@ -541,11 +687,17 @@ export function Dashboard({ appState }: { appState: AppState }) {
       e.preventDefault();
       setRowMenu({ x: e.clientX, y: e.clientY, row });
     },
-    notify: (text) => {
-      succeed(text);
+    notify: (text, undoPaths) => {
+      playCheckComplete();
+      setNoticeState({ text, warn: false, undoPaths });
       void queryClient.invalidateQueries({ queryKey: ["files"] });
       void queryClient.invalidateQueries({ queryKey: ["repoStatus"] });
     },
+    branchedOff: (name) => {
+      queryClient.invalidateQueries();
+      succeed(copy.branchedOff(name));
+    },
+    currentBranch,
     claimWithRefs: (path) => setClaimDialogPath(path),
     releaseWithRefs: (path) => setReleaseDialogPath(path),
     toggleWatch,
@@ -553,7 +705,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
     togglePin,
     pinned,
     claim: (paths) => {
-      if (switching) return;
+      if (switching || previewing) return;
       withBusy(paths, async () => {
         setNotice(null);
         try {
@@ -589,7 +741,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
       });
     },
     release: (paths) => {
-      if (switching) return;
+      if (switching || previewing) return;
       withBusy(paths, async () => {
         setNotice(null);
         try {
@@ -615,7 +767,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
       });
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [busyPaths, highlightedPath, watched, pinned, lockStatusByPath, switching]);
+  }), [busyPaths, highlightedPath, watched, pinned, lockStatusByPath, switching, previewing, currentBranch]);
 
   function handleSaveShare(message: string, paths: string[]) {
     saveShareMut
@@ -633,8 +785,6 @@ export function Dashboard({ appState }: { appState: AppState }) {
     queryFn: listRepoBranches,
     staleTime: 5 * 60_000,
   });
-  const currentBranch = repoStatus.data?.branch ?? appState.repo!.branch;
-
   function handleFixStuck() {
     if (!stuckFiles) return;
     restoreFiles(stuckFiles)
@@ -647,6 +797,10 @@ export function Dashboard({ appState }: { appState: AppState }) {
   }
 
   async function handleSwitchBranch(name: string) {
+    if (name === "__create__") {
+      setCreateBranchOpen(true);
+      return;
+    }
     if (!name || name === currentBranch || switchingTo) return;
     setNotice(null);
     setSwitchingTo(name);
@@ -695,10 +849,13 @@ export function Dashboard({ appState }: { appState: AppState }) {
   }
 
   function handlePushOnly() {
+    if (pushing) return;
     setNotice(null);
+    setPushing(true);
     pushNow()
       .then(() => setNotice(copy.sharedOk))
-      .catch((e) => warn(isAppError(e) ? e.message : String(e)));
+      .catch((e) => warn(isAppError(e) ? e.message : String(e)))
+      .finally(() => setPushing(false));
   }
 
   const stale = locks.data ? !locks.data.fresh : false;
@@ -752,16 +909,14 @@ export function Dashboard({ appState }: { appState: AppState }) {
         stale={stale}
         onSyncNow={sync.syncNow}
         syncing={sync.syncing}
-        onSaveShare={() => setCommitDialogOpen(true)}
-        onPushOnly={handlePushOnly}
+        onSaveShare={() => !previewing && setCommitDialogOpen(true)}
+        onPushOnly={() => !previewing && handlePushOnly()}
+        onDiscard={() => !previewing && setDiscardOpen(true)}
         fetchIntervalS={sync.intervalS}
-        updating={updating}
-        myClaimCount={myClaimCount}
-        mineActive={showOnlyMine}
-        onToggleMine={() => setShowOnlyMine((v) => !v)}
-        onReleaseMine={() => setReleaseAllOpen(true)}
+        updating={updating || pushing}
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenProgress={() => setProgressOpen(true)}
+        onOpenHistory={() => setHistoryOpen(true)}
       />
       {stuckFiles && stuckFiles.length > 0 && (
         <div className="notice warn">
@@ -790,14 +945,42 @@ export function Dashboard({ appState }: { appState: AppState }) {
           <span>{copy.cantVerifyClaims}</span>
         </div>
       ) : null}
+      {previewing && (
+        <div className="notice warn">
+          <span>{copy.previewBanner(previewReturn!)}</span>
+          <button className="notice-ok" onClick={handleEndPreview}>
+            Back to {previewReturn}
+          </button>
+        </div>
+      )}
       {!appState.repo!.lockable_ok && (
         <div className="notice warn">
           <span>{copy.noLockingRules}</span>
+          <button
+            className="notice-ok"
+            onClick={handleInitLockable}
+            disabled={settingUpLocking}
+            title="Adds the locking rules for .sldprt, .sldasm and .slddrw files to this branch and shares them with the team"
+          >
+            {settingUpLocking ? "Setting up…" : "Set up locking"}
+          </button>
         </div>
       )}
       {notice && (
         <div className={`notice${notice.warn ? " warn" : ""}`}>
           <span>{notice.text}</span>
+          {(notice.undoPaths || notice.undoAction) && (
+            <button
+              className="notice-ok"
+              onClick={() =>
+                notice.undoAction
+                  ? notice.undoAction()
+                  : undoRestore(notice.undoPaths!)
+              }
+            >
+              Undo
+            </button>
+          )}
           <button className="notice-ok" onClick={() => setNotice(null)}>
             Okie
           </button>
@@ -966,6 +1149,25 @@ export function Dashboard({ appState }: { appState: AppState }) {
                 </button>
               ))}
             </div>
+            {myClaimCount > 0 && (
+              <>
+                <button
+                  className={`minechip${showOnlyMine ? " active" : ""}`}
+                  onClick={() => setShowOnlyMine((v) => !v)}
+                  title="Show only the files you have locked"
+                >
+                  Files you hold ({myClaimCount})
+                </button>
+                <button
+                  className="minechip unlockall"
+                  onClick={() => setReleaseAllOpen(true)}
+                  disabled={switching}
+                  title="Unlock everything you are finished with"
+                >
+                  Unlock all…
+                </button>
+              </>
+            )}
             <span className="spacer" />
             <input
               ref={searchRef}
@@ -1041,7 +1243,22 @@ export function Dashboard({ appState }: { appState: AppState }) {
               onForceRelease={setForceTarget}
             />
           ) : (
-            <ActivityPanel knownPaths={knownPaths} onSelectFile={focusFile} />
+            <ActivityPanel
+              knownPaths={knownPaths}
+              onSelectFile={focusFile}
+              onViewVersion={(path, commit) =>
+                setVersionView({ path, commit })
+              }
+              onBranchOff={(commit: CommitInfo) =>
+                setBranchOffTarget({
+                  sha: commit.sha,
+                  label: commit.message,
+                })
+              }
+              onRestoreFiles={(paths, commit) =>
+                setMultiRestore({ paths, commit })
+              }
+            />
           )}
         </aside>
       </div>
@@ -1056,10 +1273,123 @@ export function Dashboard({ appState }: { appState: AppState }) {
           }}
         />
       )}
-      {(progressOpen || settingsOpen) && (
+      {versionView && (
+        <RestoreVersionDialog
+          path={versionView.path}
+          commit={versionView.commit}
+          branchName={currentBranch}
+          branchScopeDefault={versionView.scopeDefault}
+          onClose={() => setVersionView(null)}
+          onDone={(text, restored) => {
+            setVersionView(null);
+            actions.notify(text, restored);
+          }}
+          onBranchedOff={(name) => {
+            setVersionView(null);
+            setHistoryOpen(false);
+            actions.branchedOff(name);
+          }}
+        />
+      )}
+      {createBranchOpen && (
+        <CreateBranchDialog
+          branches={branches.data ?? []}
+          currentBranch={currentBranch}
+          onClose={() => setCreateBranchOpen(false)}
+          onCreated={(name, fresh) => {
+            setCreateBranchOpen(false);
+            queryClient.invalidateQueries();
+            succeed(fresh ? copy.freshBranch(name) : copy.branchedOff(name));
+          }}
+        />
+      )}
+      {discardOpen && (
+        <DiscardChangesDialog
+          files={(repoStatus.data?.dirty ?? []).filter((p) => !isSwTemp(p))}
+          untrackedCount={
+            (repoStatus.data?.untracked ?? []).filter((p) => !isSwTemp(p))
+              .length
+          }
+          onClose={() => setDiscardOpen(false)}
+          onConfirm={handleDiscardChanges}
+        />
+      )}
+      {multiRestore && (
+        <RestoreFilesDialog
+          paths={multiRestore.paths}
+          commit={multiRestore.commit}
+          branchName={currentBranch}
+          onClose={() => setMultiRestore(null)}
+          onDone={(text, restored) => {
+            setMultiRestore(null);
+            setHistoryOpen(false);
+            actions.notify(text, restored);
+          }}
+        />
+      )}
+      {mergeTarget && (
+        <MergeBranchDialog
+          branch={mergeTarget.branch}
+          currentBranch={currentBranch}
+          defaultBranch={mergeTarget.defaultBranch}
+          repoSlug={appState.repo!.repo_slug}
+          onClose={() => setMergeTarget(null)}
+          onMerged={(text, undoable) => {
+            setMergeTarget(null);
+            queryClient.invalidateQueries();
+            playCheckComplete();
+            setNoticeState({
+              text,
+              warn: false,
+              undoAction: undoable ? doUndoMerge : undefined,
+            });
+          }}
+        />
+      )}
+      {branchOffTarget && (
+        <BranchOffDialog
+          sha={branchOffTarget.sha}
+          label={branchOffTarget.label}
+          branchName={currentBranch}
+          onClose={() => setBranchOffTarget(null)}
+          onBranched={(name) => {
+            setBranchOffTarget(null);
+            setHistoryOpen(false);
+            actions.branchedOff(name);
+          }}
+        />
+      )}
+      {(progressOpen || settingsOpen || historyOpen) && (
         <div className="glasspage">
-          {progressOpen ? (
-            <ProgressPage rows={rows} onClose={() => setProgressOpen(false)} />
+          {historyOpen ? (
+            <HistoryPage
+              currentBranch={currentBranch}
+              onClose={() => setHistoryOpen(false)}
+              onSwitchBranch={(name) => {
+                setHistoryOpen(false);
+                void handleSwitchBranch(name);
+              }}
+              onBranchOff={(sha, label) => setBranchOffTarget({ sha, label })}
+              onViewVersion={(path, commit, scopeDefault) =>
+                setVersionView({ path, commit, scopeDefault })
+              }
+              onRestoreFiles={(paths, commit) =>
+                setMultiRestore({ paths, commit })
+              }
+              onPreviewCommit={handlePreviewCommit}
+              onMergeBranch={(branch, defaultBranch) =>
+                setMergeTarget({ branch, defaultBranch })
+              }
+            />
+          ) : progressOpen ? (
+            <ProgressPage
+              rows={rows}
+              onClose={() => setProgressOpen(false)}
+              onOpenBranches={() => {
+                setProgressOpen(false);
+                setHistoryOpen(true);
+              }}
+            />
           ) : (
             <SettingsPage
               appState={appState}

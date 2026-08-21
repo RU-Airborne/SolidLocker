@@ -38,14 +38,36 @@ export const copy = {
       : `Unlocked ${paths.length} files: ${listNames(paths)}. Your team can take them now.`,
   claimPartial: (claimed: number, total: number, held: string) =>
     `Locked ${claimed} of ${total}. Already taken: ${held}`,
+  lockingSetUp: (pushed: boolean) =>
+    pushed
+      ? "Locking is set up: SolidWorks files (.sldprt, .sldasm, .slddrw) on this branch now go through Git LFS and can be locked. The rules were shared with your team."
+      : "Locking is set up on this branch for SolidWorks files (.sldprt, .sldasm, .slddrw). Couldn't reach GitHub to share the rules yet. They will go up with your next Save & Share.",
+  freshBranch: (name: string) =>
+    `You are on the brand-new branch "${name}". An empty project with locking already set up. The rest of the repository is untouched on its other branches.`,
+  branchedOff: (name: string) =>
+    `You are now on the new branch "${name}". Your team's branch is untouched; use Save & Share to put this branch on GitHub when you're ready.`,
+  undoneRestore:
+    "Undone. The files are back to the branch's latest version.",
+  undoneMerge:
+    "Undone. Your branch is back to how it was before the combine.",
+  discardedChanges: (n: number) =>
+    n === 1
+      ? "Discarded. The file is back to the last shared version."
+      : `Discarded. ${n} files are back to the last shared version.`,
+  previewStarted: (label: string) =>
+    `You're looking at the project as it was at "${label}". Nothing you do here is saved.`,
+  previewBanner: (branch: string) =>
+    `Every file is showing an older moment of the project. Locking and sharing are off until you go back to ${branch}.`,
+  previewEnded: (branch: string) =>
+    `Back to ${branch}. Everything is current again.`,
   claimRolledBack: (name: string, owner: string | null) =>
-    `Nothing was locked. ${owner ?? "A teammate"} locked ${name} at the same moment, and an assembly is only useful whole — so the files this claim had already taken were unlocked again. Wait for ${owner ?? "them"} to finish, or talk to ${owner ? "them" : "your team"}.`,
+    `Nothing was locked. ${owner ?? "A teammate"} locked ${name} at the same moment, and an assembly is only useful whole, so the files this claim had already taken were unlocked again. Wait for ${owner ?? "them"} to finish, or talk to ${owner ? "them" : "your team"}.`,
   releasePartial: (released: number, total: number, first: string, more: number) =>
     released > 0
       ? `Unlocked ${released} of ${total}. ${first}${more > 0 ? ` (and ${more} more held back)` : ""}`
       : `${first}${more > 0 ? ` (and ${more} more held back)` : ""}`,
   lockedWhileOpen: (name: string, owner: string | null) =>
-    `${owner ?? "Someone"} just locked ${name}, and you have it open in SolidWorks. Close it without saving — your copy is no longer the shared one.`,
+    `${owner ?? "Someone"} just locked ${name}, and you have it open in SolidWorks. Close it without saving, your copy is no longer the shared one.`,
   freedFiles: (names: string[]) =>
     `Now free: ${names.join(", ")}.`,
   freedNotificationTitle: "A file you were waiting on is now unlocked",

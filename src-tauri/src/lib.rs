@@ -23,6 +23,7 @@ use repo::{AppState, FileEntry, RepoInfo};
 const KEY_REPO_PATH: &str = "repo_path";
 const KEY_USERNAME: &str = "lfs_username";
 const KEY_GH_USERNAME: &str = "github_username";
+const KEY_PREVIEW_RETURN: &str = "preview_return_branch";
 
 pub const PRODUCT_DIR: &str = "SolidLocker";
 
@@ -258,44 +259,268 @@ async fn preview_version(
     Ok(drawn.get(&name).cloned())
 }
 
-/// Brings an earlier version of a file into the working tree as the next
-/// change. History moves forward; nothing is rewritten.
+/// Brings an earlier version of one or more files into the working tree as
+/// the next change. History moves forward; nothing is rewritten. Restoring an
+/// assembly together with its referenced parts keeps the mating consistent.
 #[tauri::command]
 async fn restore_version(
     app: AppHandle,
     gate: State<'_, gate::RepoGate>,
-    path: String,
+    paths: Vec<String>,
     sha: String,
 ) -> AppResult<()> {
     let root = current_repo(&app)?;
 
-    // Editing a file you do not hold is exactly what the app exists to
-    // prevent, and it would be read-only on disk anyway.
+    // Editing files you do not hold is exactly what the app exists to
+    // prevent, and they would be read-only on disk anyway.
     let username_hint = settings::get_string(&app, KEY_USERNAME)?;
     let locks = lfs::get_locks(&root, username_hint.as_deref()).await?;
-    let wanted = path.to_lowercase();
-    if !locks.ours.iter().any(|l| l.path.to_lowercase() == wanted) {
-        return Err(AppError::new("RESTORE", messages::RESTORE_NEEDS_LOCK));
+    let mine: std::collections::HashSet<String> =
+        locks.ours.iter().map(|l| l.path.to_lowercase()).collect();
+    let missing: Vec<&str> = paths
+        .iter()
+        .filter(|p| !mine.contains(&p.to_lowercase()))
+        .map(String::as_str)
+        .collect();
+    if !missing.is_empty() {
+        return Err(AppError::with_detail(
+            "RESTORE",
+            messages::restore_needs_locks(&missing.join(", ")),
+            serde_json::json!({ "files": missing }),
+        ));
     }
 
     #[cfg(windows)]
     {
-        let abs = root
-            .join(&path)
-            .to_string_lossy()
-            .replace('\\', "/")
-            .to_lowercase();
-        if swrefs::solidworks_open_documents()
+        let open_docs: std::collections::HashSet<String> = swrefs::solidworks_open_documents()
             .await
+            .into_iter()
+            .map(|p| p.replace('\\', "/").to_lowercase())
+            .collect();
+        let blocked: Vec<&str> = paths
             .iter()
-            .any(|p| p.replace('\\', "/").to_lowercase() == abs)
-        {
-            return Err(AppError::new("RESTORE", messages::RESTORE_FILE_OPEN));
+            .filter(|p| {
+                let abs = root
+                    .join(p.as_str())
+                    .to_string_lossy()
+                    .replace('\\', "/")
+                    .to_lowercase();
+                open_docs.contains(&abs)
+            })
+            .map(String::as_str)
+            .collect();
+        if !blocked.is_empty() {
+            return Err(AppError::with_detail(
+                "RESTORE",
+                messages::restore_files_open(&blocked.join(", ")),
+                serde_json::json!({ "files": blocked }),
+            ));
         }
     }
 
     let _tree = gate.exclusive().await;
-    repo::restore_version(&root, &path, &sha).await
+    repo::restore_version_files(&root, &paths, &sha).await
+}
+
+/// The parts an assembly referenced at a given commit, resolved against that
+/// same commit's file list.
+#[tauri::command]
+async fn resolve_references_at(
+    app: AppHandle,
+    path: String,
+    sha: String,
+) -> AppResult<workflow::RefsAtResult> {
+    let root = current_repo(&app)?;
+    workflow::resolve_references_at(&root, &path, &sha).await
+}
+
+/// Opens a read-only scratch copy of a file as it was at a commit — for an
+/// assembly, together with its referenced parts from that same commit.
+#[tauri::command]
+async fn open_version(app: AppHandle, path: String, sha: String) -> AppResult<String> {
+    let root = current_repo(&app)?;
+    workflow::open_version(&root, &path, &sha).await
+}
+
+/// Starts a new branch at an old commit and switches to it. The safe way to
+/// explore or continue from an earlier version.
+#[tauri::command]
+async fn branch_from_commit(
+    app: AppHandle,
+    gate: State<'_, gate::RepoGate>,
+    name: String,
+    sha: String,
+) -> AppResult<repo::SwitchResult> {
+    let root = current_repo(&app)?;
+    let _switching = gate.exclusive_switch().await;
+    repo::branch_from_commit(&root, &name, &sha).await
+}
+
+/// Every branch's commits for the History page.
+#[tauri::command]
+async fn get_graph(app: AppHandle) -> AppResult<Vec<repo::GraphCommit>> {
+    let root = current_repo(&app)?;
+    repo::commit_graph(&root, 300).await
+}
+
+#[tauri::command]
+async fn get_commit_files(app: AppHandle, sha: String) -> AppResult<Vec<repo::CommitFileChange>> {
+    let root = current_repo(&app)?;
+    repo::commit_files(&root, &sha).await
+}
+
+/// New branch from the switcher: either carrying an existing branch's work
+/// forward, or starting completely fresh (empty, locking rules written).
+#[tauri::command]
+async fn create_branch(
+    app: AppHandle,
+    gate: State<'_, gate::RepoGate>,
+    name: String,
+    from: Option<String>,
+) -> AppResult<()> {
+    let root = current_repo(&app)?;
+    let _switching = gate.exclusive_switch().await;
+    match from {
+        Some(src) => {
+            // prefer the freshest picture of the source branch; a bare name
+            // only resolves if a local branch happens to exist
+            let remote_ref = format!("refs/remotes/origin/{src}");
+            let has_remote =
+                proc::run_git(&root, &["rev-parse", "--verify", "--quiet", &remote_ref], 15)
+                    .await
+                    .map(|o| o.ok())
+                    .unwrap_or(false);
+            let start = if has_remote {
+                format!("origin/{src}")
+            } else {
+                src
+            };
+            repo::branch_from_commit(&root, &name, &start).await?;
+        }
+        None => {
+            repo::create_fresh_branch(&root, &name).await?;
+        }
+    }
+    Ok(())
+}
+
+/// Park the working tree on an old commit for a look around.
+#[tauri::command]
+async fn preview_commit(
+    app: AppHandle,
+    gate: State<'_, gate::RepoGate>,
+    sha: String,
+) -> AppResult<()> {
+    let root = current_repo(&app)?;
+    let _switching = gate.exclusive_switch().await;
+    let from = repo::preview_commit(&root, &sha).await?;
+    // Jumping between previewed commits keeps the ORIGINAL return branch.
+    if settings::get_string(&app, KEY_PREVIEW_RETURN)?.is_none()
+        && !from.is_empty()
+        && from != "(detached)"
+    {
+        settings::set_string(&app, KEY_PREVIEW_RETURN, &from)?;
+    }
+    Ok(())
+}
+
+/// Back to the branch the user was on before the preview.
+#[tauri::command]
+async fn end_preview(app: AppHandle, gate: State<'_, gate::RepoGate>) -> AppResult<()> {
+    let root = current_repo(&app)?;
+    let Some(branch) = settings::get_string(&app, KEY_PREVIEW_RETURN)? else {
+        return Err(AppError::new("GIT", messages::NOT_PREVIEWING));
+    };
+    let _switching = gate.exclusive_switch().await;
+    repo::end_preview(&root, &branch).await?;
+    settings::delete_key(&app, KEY_PREVIEW_RETURN)?;
+    Ok(())
+}
+
+/// The branch a preview will return to, or null when not previewing.
+#[tauri::command]
+async fn get_preview_state(app: AppHandle) -> AppResult<Option<String>> {
+    settings::get_string(&app, KEY_PREVIEW_RETURN)
+}
+
+/// Branch off carrying only the chosen files back to `sha`; the rest of the
+/// project stays current on the new branch.
+#[tauri::command]
+async fn branch_from_commit_files(
+    app: AppHandle,
+    gate: State<'_, gate::RepoGate>,
+    name: String,
+    sha: String,
+    paths: Vec<String>,
+) -> AppResult<()> {
+    let root = current_repo(&app)?;
+
+    // SolidWorks would write its in-memory copy straight over the restored
+    // version; same guard as a plain restore.
+    #[cfg(windows)]
+    {
+        let open_docs: std::collections::HashSet<String> = swrefs::solidworks_open_documents()
+            .await
+            .into_iter()
+            .map(|p| p.replace('\\', "/").to_lowercase())
+            .collect();
+        let blocked: Vec<&str> = paths
+            .iter()
+            .filter(|p| {
+                let abs = root
+                    .join(p.as_str())
+                    .to_string_lossy()
+                    .replace('\\', "/")
+                    .to_lowercase();
+                open_docs.contains(&abs)
+            })
+            .map(String::as_str)
+            .collect();
+        if !blocked.is_empty() {
+            return Err(AppError::with_detail(
+                "RESTORE",
+                messages::restore_files_open(&blocked.join(", ")),
+                serde_json::json!({ "files": blocked }),
+            ));
+        }
+    }
+
+    let _switching = gate.exclusive_switch().await;
+    repo::branch_from_commit_files(&root, &name, &sha, &paths).await
+}
+
+#[tauri::command]
+async fn undo_merge(app: AppHandle, gate: State<'_, gate::RepoGate>) -> AppResult<()> {
+    let root = current_repo(&app)?;
+    let _tree = gate.exclusive().await;
+    workflow::undo_merge(&root).await
+}
+
+#[tauri::command]
+async fn merge_preview(app: AppHandle, name: String) -> AppResult<workflow::MergePreview> {
+    let root = current_repo(&app)?;
+    workflow::merge_preview(&root, &name).await
+}
+
+#[tauri::command]
+async fn merge_branch(
+    app: AppHandle,
+    gate: State<'_, gate::RepoGate>,
+    name: String,
+) -> AppResult<workflow::MergeOutcome> {
+    let root = current_repo(&app)?;
+    let _tree = gate.exclusive().await;
+    workflow::merge_branch(&root, &name).await
+}
+
+#[tauri::command]
+async fn init_lockable(
+    app: AppHandle,
+    gate: State<'_, gate::RepoGate>,
+) -> AppResult<repo::InitLockableResult> {
+    let root = current_repo(&app)?;
+    let _tree = gate.exclusive().await;
+    repo::init_lockable(&root).await
 }
 
 #[tauri::command]
@@ -812,6 +1037,20 @@ fn report_window_failure(app: &tauri::AppHandle, detail: &str) {
             get_branch_overview,
             preview_version,
             restore_version,
+            resolve_references_at,
+            open_version,
+            branch_from_commit,
+            branch_from_commit_files,
+            create_branch,
+            preview_commit,
+            end_preview,
+            get_preview_state,
+            merge_branch,
+            merge_preview,
+            undo_merge,
+            get_graph,
+            get_commit_files,
+            init_lockable,
             switch_branch,
             is_switching,
             restore_files,
