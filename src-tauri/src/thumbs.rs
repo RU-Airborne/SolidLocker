@@ -35,15 +35,66 @@ public static class SLThumb {
 
   [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr o);
 
+  [ComImport, Guid("43826d1e-e718-42ee-bc55-a1e261c37bfe"),
+   InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  interface IShellItem { }
+
+  [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = false)]
+  static extern void SHCreateItemFromParsingName(string path, IntPtr bc,
+    [MarshalAs(UnmanagedType.LPStruct)] Guid riid,
+    [MarshalAs(UnmanagedType.Interface)] out IShellItem ppv);
+
+  public struct WTSID { public ulong a; public ulong b; }
+
+  [ComImport, Guid("091162a4-bc96-411f-aae8-c5122cd03363"),
+   InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  interface ISharedBitmap {
+    void GetSharedBitmap(out IntPtr phbm);
+    void GetSize(out SLSIZE size);
+    void GetFormat(out uint fmt);
+    void InitializeBitmap(IntPtr hbm, uint fmt);
+    void Detach(out IntPtr phbm);
+  }
+
+  [ComImport, Guid("F676C15D-596A-4ce2-8234-33996F445DB1"),
+   InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  interface IThumbnailCache {
+    void GetThumbnail(IShellItem item, uint size, uint flags,
+      out ISharedBitmap bmp, out uint outFlags, out WTSID id);
+  }
+
   // 0x8 is SIIGBF_THUMBNAILONLY: fail rather than hand back a generic file
   // icon, so the caller can fall back to its own type icon instead.
+  static IntPtr FromProvider(string path, int px) {
+    try {
+      IShellItemImageFactory f;
+      SHCreateItemFromParsingName(path, IntPtr.Zero,
+        new Guid("bcc18b79-ba16-442f-80c4-8a59c30c463b"), out f);
+      SLSIZE s; s.cx = px; s.cy = px;
+      IntPtr h = IntPtr.Zero;
+      f.GetImage(s, 0x8, out h);
+      return h;
+    } catch { return IntPtr.Zero; }
+  }
+
+  static IntPtr FromExplorerCache(string path, int px) {
+    try {
+      IShellItem item;
+      SHCreateItemFromParsingName(path, IntPtr.Zero,
+        new Guid("43826d1e-e718-42ee-bc55-a1e261c37bfe"), out item);
+      var cache = (IThumbnailCache)Activator.CreateInstance(
+        Type.GetTypeFromCLSID(new Guid("50EF4544-AC9F-4A8E-B21B-8A26180DB13F")));
+      ISharedBitmap sb; uint of; WTSID id;
+      cache.GetThumbnail(item, (uint)px, 0x1, out sb, out of, out id);
+      if (sb == null) return IntPtr.Zero;
+      IntPtr h; sb.Detach(out h);
+      return h;
+    } catch { return IntPtr.Zero; }
+  }
+
   public static string Png(string path, int px) {
-    IShellItemImageFactory f;
-    SHCreateItemFromParsingName(path, IntPtr.Zero,
-      new Guid("bcc18b79-ba16-442f-80c4-8a59c30c463b"), out f);
-    SLSIZE s; s.cx = px; s.cy = px;
-    IntPtr h = IntPtr.Zero;
-    f.GetImage(s, 0x8, out h);
+    IntPtr h = FromProvider(path, px);
+    if (h == IntPtr.Zero) h = FromExplorerCache(path, px);
     if (h == IntPtr.Zero) return null;
     try {
       using (Bitmap bmp = Image.FromHbitmap(h))
@@ -256,14 +307,16 @@ async fn render_batch(chunk: &[(String, String, String)], px: u32) -> HashMap<us
     // Silent in normal use. A whole batch coming back empty means the shell
     // handler or the script broke, which is worth being able to see.
     if drawn.is_empty() {
-        eprintln!(
-            "[thumbs] {} file(s) produced no preview: {}",
+        let detail: String = String::from_utf8_lossy(&out.stderr)
+            .chars()
+            .take(200)
+            .collect();
+        eprintln!("[thumbs] {} file(s) produced no preview: {detail}", chunk.len());
+        crate::logger::warn(format!(
+            "thumbs: batch of {} produced no preview (provider + Explorer cache): {}",
             chunk.len(),
-            String::from_utf8_lossy(&out.stderr)
-                .chars()
-                .take(200)
-                .collect::<String>()
-        );
+            crate::logger::one_line(&detail, 200)
+        ));
     }
     drawn
 }

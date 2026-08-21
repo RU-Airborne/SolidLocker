@@ -126,6 +126,7 @@ export function BranchDiagram({
   commitLabel?: string;
   fromTip?: boolean;
 }) {
+  void commitLabel;
   if (fromTip) {
     const tipPath = "M 212 78 C 228 78 226 38 250 38 L 288 38";
     return (
@@ -201,11 +202,6 @@ export function BranchDiagram({
       </text>
 
       {/* The full commit label gets its own uncramped line. */}
-      {commitLabel && (
-        <text className="bd-label" x="170" y="114" textAnchor="middle">
-          Splitting off at “{trunc(commitLabel, 38)}”
-        </text>
-      )}
     </svg>
   );
 }
@@ -311,11 +307,12 @@ export function RestoreDiagram({
   branchName: string;
   commitLabel?: string;
 }) {
+  void commitLabel;
   const arcPath = "M 64 72 C 108 22 228 22 268 68";
   return (
     <svg
       className="branchdiagram"
-      viewBox="0 0 340 130"
+      viewBox="0 0 340 108"
       role="img"
       aria-label={`Diagram: on the branch ${branchName}, the old version is copied forward as the next change; the history in between stays`}
     >
@@ -347,13 +344,11 @@ export function RestoreDiagram({
       {/* …and lands just ahead of you, as your next change. */}
       <circle className="bd-newdot" cx="268" cy="78" r="5.5" />
 
-      {/* Caption on two lines of its own, clear of every rail and label. */}
+      {/*
       <text className="bd-label" x="170" y="112" textAnchor="middle">
         “{trunc(commitLabel ?? "this earlier version", 36)}”
       </text>
-      <text className="bd-label" x="170" y="126" textAnchor="middle">
-        comes back as your next change on {trunc(branchName, 16)}
-      </text>
+      */}
     </svg>
   );
 }
@@ -394,6 +389,26 @@ export function FreshBranchDiagram({
       <text className="bd-labelnew" x="298" y="20" textAnchor="end">
         {trunc(newBranchName || "Your new branch", 26)}
       </text>
+    </svg>
+  );
+}
+
+export function MergeGlyph() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="13"
+      height="13"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="18" cy="18" r="3" />
+      <circle cx="6" cy="6" r="3" />
+      <path d="M6 21V9a9 9 0 0 0 9 9" />
     </svg>
   );
 }

@@ -8,7 +8,12 @@ import {
   type GraphCommit,
 } from "../../api";
 import { formatDate, formatDateTime } from "../../dates";
-import { BranchGlyph, EyeGlyph, RestoreGlyph } from "../common/HistoryDiagrams";
+import {
+  BranchGlyph,
+  EyeGlyph,
+  MergeGlyph,
+  RestoreGlyph,
+} from "../common/HistoryDiagrams";
 import type { VersionRef } from "../dialogs/RestoreVersionDialog";
 import { githubAvatarFromEmail, UserAvatar } from "../common/UserAvatar";
 import {
@@ -410,7 +415,7 @@ function CommitDetail({
           title="Start a new branch from this moment in time. Your current branch stays untouched"
         >
           <BranchGlyph />
-          Branch off from here
+          Branch off from here…
         </button>
       </div>
     </div>
@@ -514,7 +519,7 @@ export function HistoryPage({
     <main className="settingspage historypage">
       <div className="pagehead">
         <button className="backbtn" onClick={onClose}>
-          ← Back to your files
+          ← Back
         </button>
         <h2>Branches</h2>
         <p className="muted small">
@@ -596,7 +601,7 @@ export function HistoryPage({
                   </button>
                 )}
                 <button
-                  className="fh-restore"
+                  className="branchoffbtn"
                   onClick={() =>
                     onMergeBranch(
                       b.name,
@@ -606,6 +611,7 @@ export function HistoryPage({
                   }
                   title="Bring this branch's work into another branch directly, or through a reviewed pull request on GitHub"
                 >
+                  <MergeGlyph />
                   Combine…
                 </button>
               </div>

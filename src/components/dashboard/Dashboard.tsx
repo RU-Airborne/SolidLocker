@@ -107,6 +107,7 @@ export interface RowActions {
   notify: (text: string, undoPaths?: string[]) => void;
   branchedOff: (name: string) => void;
   currentBranch: string;
+  previewing: boolean;
 }
 
 export function Dashboard({ appState }: { appState: AppState }) {
@@ -699,6 +700,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
       succeed(copy.branchedOff(name));
     },
     currentBranch,
+    previewing,
     claimWithRefs: (path) => setClaimDialogPath(path),
     releaseWithRefs: (path) => setReleaseDialogPath(path),
     toggleWatch,

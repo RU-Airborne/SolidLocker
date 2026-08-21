@@ -259,7 +259,7 @@
    above and below, softly separated from the file list. */
 .commitactions {
   margin: 0.55rem 0 0.35rem;
-  padding-top: 0.55rem;
+  padding-top: 0.9rem;
   display: flex;
   justify-content: flex-end;
   flex-wrap: wrap;
@@ -316,25 +316,15 @@
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
-  background: color-mix(in srgb, var(--accent) 7%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
-  border-radius: 999px;
-  color: var(--accent);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: inherit;
   font: inherit;
   font-size: 0.8rem;
-  font-weight: 600;
-  padding: 0.28rem 0.85rem;
+  padding: 0.3rem 0.85rem;
   cursor: pointer;
   white-space: nowrap;
-  transition:
-    border-color 0.12s ease,
-    color 0.12s ease,
-    background 0.12s ease;
-}
-
-.branchoffbtn:hover {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
 }
 
 .branchoffbtn svg {

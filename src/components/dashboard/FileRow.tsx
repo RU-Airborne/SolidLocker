@@ -181,7 +181,7 @@ export const FileRow = memo(function FileRow({
           <>
             {/\.(sldasm|slddrw)$/i.test(path) && (
               <button
-                disabled={busy}
+                disabled={busy || actions.previewing}
                 title="Find every part this file uses and lock them all together"
                 onClick={() => actions.claimWithRefs(path)}
               >
@@ -189,7 +189,7 @@ export const FileRow = memo(function FileRow({
               </button>
             )}
             <button
-              disabled={busy}
+              disabled={busy || actions.previewing}
               title="Lock this file for yourself. It becomes editable for you and locked for teammates"
               onClick={() => actions.claim([path])}
             >
@@ -212,7 +212,7 @@ export const FileRow = memo(function FileRow({
           <>
             {/\.(sldasm|slddrw)$/i.test(path) && (
               <button
-                disabled={busy}
+                disabled={busy || actions.previewing}
                 title="Find every part this file uses and unlock the ones you hold all together"
                 onClick={() => actions.releaseWithRefs(path)}
               >
@@ -220,7 +220,7 @@ export const FileRow = memo(function FileRow({
               </button>
             )}
             <button
-              disabled={busy}
+              disabled={busy || actions.previewing}
               title="Give this file back so teammates can lock it. Your latest changes must be shared to GitHub first"
               onClick={() => actions.release([path])}
             >

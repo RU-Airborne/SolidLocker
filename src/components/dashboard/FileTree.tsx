@@ -274,7 +274,7 @@ export const FileTree = memo(function FileTree({
               key={`pin-${row.file.rel_path}`}
               row={row}
               actions={actions}
-              depth={1}
+              depth={0}
             />
           ))}
         </div>
