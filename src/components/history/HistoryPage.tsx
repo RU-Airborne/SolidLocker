@@ -27,6 +27,11 @@ interface LaidRow {
   continues: boolean;
   forks: number[];
   passes: number[];
+  passShas: string[];
+  passChilds: string[][];
+  forkShas: string[];
+  topChilds: string[];
+  joinChilds: string[][];
   below: number[];
 }
 
@@ -35,11 +40,13 @@ export function layoutGraph(commits: GraphCommit[]): {
   laneCount: number;
 } {
   const lanes: (string | null)[] = [];
+  const laneChilds: string[][] = [];
   const rows: LaidRow[] = [];
   let laneCount = 1;
 
   for (const c of commits) {
     const before = [...lanes];
+    const beforeChilds = laneChilds.map((l) => [...l]);
     const hits: number[] = [];
     lanes.forEach((sha, i) => {
       if (sha === c.sha) hits.push(i);
@@ -52,31 +59,45 @@ export function layoutGraph(commits: GraphCommit[]): {
       const free = lanes.indexOf(null);
       lane = free >= 0 ? free : (lanes.push(null), lanes.length - 1);
     }
-    for (const h of hits) lanes[h] = null;
+    for (const h of hits) {
+      lanes[h] = null;
+      laneChilds[h] = [];
+    }
 
     let continues = false;
     const forks: number[] = [];
+    const forkShas: string[] = [];
     for (const parent of c.parents) {
       const existing = lanes.findIndex((sha) => sha === parent);
       if (existing >= 0) {
-        // Another lane already waits for this parent, merge into its rail.
         forks.push(existing);
+        forkShas.push(parent);
+        (laneChilds[existing] ??= []).push(c.sha);
         continue;
       }
       if (!continues) {
         lanes[lane] = parent;
+        laneChilds[lane] = [c.sha];
         continues = true;
         continue;
       }
       const free = lanes.indexOf(null);
       const m = free >= 0 ? free : (lanes.push(null), lanes.length - 1);
       lanes[m] = parent;
+      laneChilds[m] = [c.sha];
       forks.push(m);
+      forkShas.push(parent);
     }
 
     const passes: number[] = [];
+    const passShas: string[] = [];
+    const passChilds: string[][] = [];
     before.forEach((sha, i) => {
-      if (sha !== null && !hits.includes(i)) passes.push(i);
+      if (sha !== null && !hits.includes(i)) {
+        passes.push(i);
+        passShas.push(sha);
+        passChilds.push(beforeChilds[i] ?? []);
+      }
     });
 
     const below: number[] = [];
@@ -88,10 +109,15 @@ export function layoutGraph(commits: GraphCommit[]): {
       commit: c,
       lane,
       hasTop: hits.length > 0,
+      topChilds: hits.length > 0 ? (beforeChilds[hits[0]] ?? []) : [],
       joins: hits.slice(1),
+      joinChilds: hits.slice(1).map((h) => beforeChilds[h] ?? []),
       continues,
       forks,
+      forkShas,
       passes,
+      passShas,
+      passChilds,
       below,
     });
     laneCount = Math.max(laneCount, lanes.length);

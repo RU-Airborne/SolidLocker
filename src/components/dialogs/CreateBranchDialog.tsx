@@ -3,6 +3,10 @@ import { useState } from "react";
 import { createBranch } from "../../api";
 import { isAppError } from "../../types";
 import { GlassSelect } from "../common/GlassSelect";
+import {
+  BranchDiagram,
+  FreshBranchDiagram,
+} from "../common/HistoryDiagrams";
 
 function slugify(text: string): string {
   return text
@@ -111,6 +115,16 @@ export function CreateBranchDialog({
             </span>
           </label>
         </div>
+
+        {mode === "from" ? (
+          <BranchDiagram
+            branchName={source}
+            newBranchName={cleaned || undefined}
+            commitLabel={`${source} as it is today`}
+          />
+        ) : (
+          <FreshBranchDiagram newBranchName={cleaned || undefined} />
+        )}
 
         {error && <p className="errdetail">{error}</p>}
 

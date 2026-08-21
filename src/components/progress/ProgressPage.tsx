@@ -208,6 +208,26 @@ function BranchRailway({
     if (el) el.scrollLeft = el.scrollWidth;
   }, [rows.length]);
 
+  const hl = useMemo(() => {
+    if (!highlight) return null;
+    const bySha = new Map(rows.map((r) => [r.commit.sha, r.commit]));
+    const tip = rows.find((r) =>
+      r.commit.refs.some((x) => x === highlight || x === `origin/${highlight}`),
+    );
+    if (!tip) return null;
+    const set = new Set<string>();
+    let sha: string | undefined = tip.commit.sha;
+    while (sha && !set.has(sha)) {
+      set.add(sha);
+      sha = bySha.get(sha)?.parents[0];
+    }
+    return set;
+  }, [highlight, rows]);
+  const dim = (on: boolean) => (hl === null || on ? undefined : "rr-dim");
+  const edgeLit = (childs: string[] | undefined, parent: string) =>
+    hl === null ||
+    (hl.has(parent) && (childs ?? []).some((ch) => hl.has(ch)));
+
   return (
     <div className="railscroll" ref={scrollRef}>
       <svg
@@ -227,18 +247,19 @@ function BranchRailway({
           const tipName = c.refs[0]?.startsWith("origin/")
             ? c.refs[0].slice(7)
             : c.refs[0];
-          const hot =
-            highlight !== null &&
-            c.refs.some(
-              (r) => r === highlight || r === `origin/${highlight}`,
-            );
-          const cls =
-            highlight === null ? undefined : hot ? "rr-hot" : "rr-dim";
+          const on = hl === null || hl.has(c.sha);
+          const labelOn =
+            hl === null ||
+            (highlight !== null &&
+              c.refs.some(
+                (r) => r === highlight || r === `origin/${highlight}`,
+              ));
           return (
-            <g key={c.sha} className={cls}>
-              {row.passes.map((j) => (
+            <g key={c.sha}>
+              {row.passes.map((j, k) => (
                 <line
                   key={`p${j}`}
+                  className={dim(edgeLit(row.passChilds[k], row.passShas[k]))}
                   x1={xl}
                   y1={yOf(j)}
                   x2={xr}
@@ -248,11 +269,20 @@ function BranchRailway({
                 />
               ))}
               {row.hasTop && (
-                <line x1={x} y1={y} x2={xr} y2={y} stroke={laneColor(row.lane)} strokeWidth={3} />
+                <line
+                  className={dim(edgeLit(row.topChilds, c.sha))}
+                  x1={x}
+                  y1={y}
+                  x2={xr}
+                  y2={y}
+                  stroke={laneColor(row.lane)}
+                  strokeWidth={3}
+                />
               )}
-              {row.joins.map((j) => (
+              {row.joins.map((j, k) => (
                 <line
                   key={`j${j}`}
+                  className={dim(edgeLit(row.joinChilds[k], c.sha))}
                   x1={xr}
                   y1={yOf(j)}
                   x2={x}
@@ -262,11 +292,12 @@ function BranchRailway({
                 />
               ))}
               {row.continues && (
-                <line x1={x} y1={y} x2={xl} y2={y} stroke={laneColor(row.lane)} strokeWidth={3} />
+                <line className={dim(on)} x1={x} y1={y} x2={xl} y2={y} stroke={laneColor(row.lane)} strokeWidth={3} />
               )}
-              {row.forks.map((m) => (
+              {row.forks.map((m, k) => (
                 <line
                   key={`f${m}`}
+                  className={dim(edgeLit([c.sha], row.forkShas[k]))}
                   x1={x}
                   y1={y}
                   x2={xl}
@@ -276,13 +307,17 @@ function BranchRailway({
                 />
               ))}
               {c.is_head ? (
-                <g className="gg-head">
+                <g className={`gg-head ${dim(on) ?? ""}`}>
                   <circle className="gg-halo" cx={x} cy={y} r={13} fill="var(--accent)" />
                   <circle cx={x} cy={y} r={8} fill="none" stroke="var(--accent)" strokeWidth={3} />
                   <circle cx={x} cy={y} r={4.2} fill="var(--accent)" />
+                  <text className="rr-here" x={x} y={y + 28} textAnchor="middle">
+                    You are here
+                  </text>
                 </g>
               ) : (
                 <circle
+                  className={dim(on)}
                   cx={x}
                   cy={y}
                   r={tipName ? 6 : 4.2}
@@ -291,7 +326,7 @@ function BranchRailway({
               )}
               {tipName && (
                 <text
-                  className="rr-label"
+                  className={`rr-label ${dim(labelOn) ?? ""}`}
                   x={x + 4}
                   y={y - 16}
                   fill={laneColor(row.lane)}
@@ -445,9 +480,6 @@ export function ProgressPage({
         <div className="settingsbrand">
           <div className="settingstitle">
             <h2>Progress</h2>
-            <span className="muted">
-              What the team has been working on across every branch
-            </span>
           </div>
         </div>
       </div>

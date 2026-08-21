@@ -107,7 +107,7 @@ function HereMarker({
       <circle cx={x} cy={y} r={3.2} fill="var(--accent)" />
       {labelY !== undefined && (
         <text className="bd-labelnew" x={x} y={labelY} textAnchor="middle">
-          where you are now
+          Where you are now
         </text>
       )}
     </g>
@@ -143,7 +143,7 @@ export function BranchDiagram({
       <circle className="bd-selectedring" cx="130" cy="78" r="10" />
       <circle className="bd-selected" cx="130" cy="78" r="5.5" />
       <text className="bd-label" x="130" y="98" textAnchor="middle">
-        this earlier version
+        This earlier version
       </text>
 
       {/* Where the user stands right now: the tip of the current branch. */}
@@ -161,13 +161,13 @@ export function BranchDiagram({
         {trunc(branchName, 18)}
       </text>
       <text className="bd-labelnew" x="296" y="24" textAnchor="end">
-        {trunc(newBranchName || "your new branch", 26)}
+        {trunc(newBranchName || "Your new branch", 26)}
       </text>
 
       {/* The full commit label gets its own uncramped line. */}
       {commitLabel && (
         <text className="bd-label" x="170" y="114" textAnchor="middle">
-          splitting off at “{trunc(commitLabel, 38)}”
+          Splitting off at “{trunc(commitLabel, 38)}”
         </text>
       )}
     </svg>
@@ -215,7 +215,7 @@ export function MergeDiagram({
       <circle className="bd-selectedring" cx="224" cy="78" r="10" />
       <circle className="bd-selected" cx="224" cy="78" r="5.5" />
       <text className="bd-label" x="224" y="98" textAnchor="middle">
-        both together
+        Both together
       </text>
       {intoIsCurrent ? (
         <HereMarker x={316} y={78} labelY={98} />
@@ -295,7 +295,7 @@ export function RestoreDiagram({
       <circle className="bd-selectedring" cx="64" cy="78" r="10" />
       <circle className="bd-selected" cx="64" cy="78" r="5.5" />
       <text className="bd-label" x="64" y="96" textAnchor="middle">
-        this earlier version
+        This earlier version
       </text>
 
       {/* Where the user stands right now. */}
@@ -318,6 +318,46 @@ export function RestoreDiagram({
       </text>
       <text className="bd-label" x="170" y="126" textAnchor="middle">
         comes back as your next change on {trunc(branchName, 16)}
+      </text>
+    </svg>
+  );
+}
+
+export function FreshBranchDiagram({
+  newBranchName,
+}: {
+  newBranchName?: string;
+}) {
+  const freshPath = "M 64 34 L 288 34";
+  return (
+    <svg
+      className="branchdiagram"
+      viewBox="0 0 340 104"
+      role="img"
+      aria-label="Diagram: a brand-new empty branch starts on its own line. The existing branches continue unchanged"
+    >
+      {/* everything that already exists, carrying on */}
+      <line className="bd-main" x1="12" y1="78" x2="314" y2="78" />
+      <polygon className="bd-arrow" points="302,73 314,78 302,83" />
+      {[44, 100, 156, 212].map((x) => (
+        <circle key={x} className="bd-dot" cx={x} cy="78" r="4" />
+      ))}
+      <text className="bd-label" x="326" y="96" textAnchor="end">
+        The existing branches
+      </text>
+
+      {/* the fresh line: starts from empty, connected to nothing */}
+      <circle className="bd-newdot" cx="64" cy="34" r="5.5" />
+      <line className="bd-new" x1="70" y1="34" x2="288" y2="34" />
+      <polygon className="bd-arrownew" points="286,29 298,34 286,39" />
+      <circle className="bd-comet" r="2.6">
+        <animateMotion dur="2s" repeatCount="indefinite" path={freshPath} />
+      </circle>
+      <text className="bd-label" x="64" y="56" textAnchor="middle">
+        Starts empty
+      </text>
+      <text className="bd-labelnew" x="298" y="20" textAnchor="end">
+        {trunc(newBranchName || "Your new branch", 26)}
       </text>
     </svg>
   );
