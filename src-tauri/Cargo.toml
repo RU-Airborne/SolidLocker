@@ -1,6 +1,6 @@
 [package]
 name = "solidlocker"
-version = "1.0.3"
+version = "0.5.0"
 description = "Claim-first Git LFS lock manager for SolidWorks teams"
 edition = "2021"
 
