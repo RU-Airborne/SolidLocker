@@ -29,6 +29,9 @@ pub fn clone_folder_exists(name: &str) -> String {
     format!("A folder named '{name}' already exists there. Use 'Select existing folder' instead.")
 }
 
+pub const GIT_MISSING_FOR_CLONE: &str =
+    "Git isn't available on this computer, so nothing could be downloaded. Install GitHub Desktop or Git for Windows, then restart SolidLocker and try again.";
+
 // ---- Branch switching ----
 
 pub const SWITCH_NEEDS_COMMIT: &str =
@@ -202,3 +205,7 @@ pub fn file_not_found(path: &str) -> String {
 
 pub const NOT_CLAIMED_BY_YOU: &str =
     "Modified locally but not locked by you. Lock it or discard the change.";
+
+// ---- Debug log ----
+
+pub const NO_LOG_FOLDER: &str = "Could not work out where the log folder lives on this computer.";

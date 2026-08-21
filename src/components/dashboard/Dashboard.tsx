@@ -560,6 +560,9 @@ export function Dashboard({ appState }: { appState: AppState }) {
           const result = await claim.mutateAsync(paths);
           if (result.failed.length === 0) {
             succeed(copy.claimedOk(result.claimed));
+          } else if (result.rolled_back) {
+            const f = result.failed[0];
+            warn(copy.claimRolledBack(f.path.split("/").pop() ?? f.path, f.owner));
           } else {
             const held = result.failed
               .slice(0, 4)

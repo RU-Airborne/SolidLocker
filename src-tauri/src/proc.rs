@@ -56,12 +56,16 @@ fn runs(program: &str) -> bool {
 /// GitHub Desktop ships Git and Git LFS but deliberately keeps them off PATH,
 /// so someone who installed only GitHub Desktop still has a perfectly good
 /// Git sitting on disk. Look on PATH first, then inside GitHub Desktop.
-async fn resolved_git() -> &'static str {
+pub async fn resolved_git() -> &'static str {
     if let Some(found) = GIT_PROGRAM.get() {
         return found.as_str();
     }
     match tokio::task::spawn_blocking(resolve_git).await.ok().flatten() {
-        Some(found) => GIT_PROGRAM.get_or_init(|| found).as_str(),
+        Some(found) => {
+            let program = GIT_PROGRAM.get_or_init(|| found).as_str();
+            crate::logger::info(format!("using git at: {program}"));
+            program
+        }
         None => "git",
     }
 }
@@ -171,6 +175,7 @@ pub async fn run_program(
     let mut cmd = base_command(program, cwd);
     cmd.args(args);
 
+    let started = std::time::Instant::now();
     let output = tokio::time::timeout(Duration::from_secs(timeout_secs), cmd.output())
         .await
         .map_err(|_| {
@@ -181,11 +186,29 @@ pub async fn run_program(
         })?
         .map_err(|e| AppError::new("SPAWN", format!("could not run {program}: {e}")))?;
 
-    Ok(GitOutput {
+    let out = GitOutput {
         status: output.status.code().unwrap_or(-1),
         stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
         stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-    })
+    };
+    
+    let elapsed = started.elapsed();
+    if !out.ok() {
+        crate::logger::warn(format!(
+            "{program} {} exited {} after {:.1}s: {}",
+            args.join(" "),
+            out.status,
+            elapsed.as_secs_f32(),
+            crate::logger::one_line(&out.stderr, 400),
+        ));
+    } else if elapsed.as_secs() >= 10 {
+        crate::logger::warn(format!(
+            "{program} {} was slow: {:.1}s",
+            args.join(" "),
+            elapsed.as_secs_f32(),
+        ));
+    }
+    Ok(out)
 }
 
 /// Lets Git Credential Manager put its sign in window up. Explicit user

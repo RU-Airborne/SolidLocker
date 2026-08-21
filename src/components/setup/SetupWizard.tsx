@@ -8,22 +8,45 @@ export function SetupWizard({ onDone }: { onDone: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [url, setUrl] = useState("");
   const [cloning, setCloning] = useState(false);
+  const [opening, setOpening] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
 
   async function pickExisting() {
-    if (cloning) return;
+    if (cloning || opening) return;
     setError(null);
     const dir = await open({
       directory: true,
       title: "Select your team's repository folder",
     });
     if (typeof dir !== "string") return;
+    // Stays on until the dashboard replaces this screen: after the backend
+    // accepts the repo, the app state still has to refetch, and dropping the
+    // spinner early would flash the setup screen as if nothing had happened.
+    setOpening(true);
     try {
       await selectExistingRepo(dir);
       onDone();
     } catch (e) {
+      setOpening(false);
       setError(isAppError(e) ? e.message : String(e));
     }
+  }
+
+  if (opening) {
+    return (
+      <div className="center">
+        <div className="card launchscreen" role="status" aria-live="polite">
+          <span className="logoglow">
+            <DialLogo className="setuplogo" label="" spinning />
+          </span>
+          <h2>Opening your project…</h2>
+          <p className="muted">
+            Checking the repository and preparing the CAD files. The first open
+            of a large project can take a few minutes.
+          </p>
+        </div>
+      </div>
+    );
   }
 
   async function startClone() {

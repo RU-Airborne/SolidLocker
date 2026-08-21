@@ -103,7 +103,10 @@ pub async fn validate_repo(path: &str) -> AppResult<RepoInfo> {
         return Err(AppError::new("REPO", messages::folder_not_found(path)));
     }
 
-    let toplevel = run_git(&p, &["rev-parse", "--show-toplevel"], 15).await?;
+    let toplevel = match run_git(&p, &["rev-parse", "--show-toplevel"], 15).await {
+        Ok(out) => out,
+        Err(_) => run_git(&p, &["rev-parse", "--show-toplevel"], 45).await?,
+    };
     if !toplevel.ok() {
         return Err(AppError::new("REPO", messages::NOT_A_REPO));
     }
@@ -652,7 +655,9 @@ pub async fn clone_repo(
     // pointer file that SolidWorks cannot open.
     ensure_lfs_filters(dest_parent).await;
 
-    let mut cmd = tokio::process::Command::new("git");
+    let git = crate::proc::resolved_git().await;
+    crate::logger::info(format!("cloning {url} into {}", dest.display()));
+    let mut cmd = tokio::process::Command::new(git);
     cmd.arg("clone")
         .arg("--progress")
         .arg(url)
@@ -665,9 +670,13 @@ pub async fn clone_repo(
     #[cfg(windows)]
     cmd.creation_flags(0x0800_0000);
 
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| AppError::new("SPAWN", format!("could not run git: {e}")))?;
+    let mut child = cmd.spawn().map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            AppError::new("REPO", messages::GIT_MISSING_FOR_CLONE)
+        } else {
+            AppError::new("SPAWN", format!("could not run git: {e}"))
+        }
+    })?;
 
     let mut stderr = child.stderr.take().expect("stderr piped");
     let mut buf = [0u8; 4096];

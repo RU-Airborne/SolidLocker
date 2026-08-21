@@ -17,6 +17,7 @@ use crate::swrefs;
 pub struct ClaimResult {
     pub claimed: Vec<String>,
     pub failed: Vec<FailedClaim>,
+    pub rolled_back: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -96,72 +97,90 @@ async fn unpushed_paths(root: &Path) -> AppResult<HashSet<String>> {
         .collect())
 }
 
-pub async fn claim_files(root: &Path, paths: Vec<String>) -> AppResult<ClaimResult> {
-    let mut claimed = Vec::new();
-    let mut failed_raw: Vec<(String, String)> = Vec::new();
-
-    for chunk in paths.chunks(4) {
-        let mut handles = Vec::new();
-        for path in chunk {
-            let root = root.to_path_buf();
-            let path = path.clone();
-            handles.push(tokio::spawn(async move {
-                let result = lfs::lock_file(&root, &path).await;
-                (path, result)
-            }));
-        }
-        for handle in handles {
-            let (path, result) = handle
-                .await
-                .map_err(|e| AppError::new("INTERNAL", e.to_string()))?;
-            match result {
-                Ok(()) => {
-                    let _ = fsattr::set_readonly(&root.join(&path), false);
-                    claimed.push(path);
-                }
-                Err(e) => failed_raw.push((path, e.message)),
+async fn roll_back_claims(root: &Path, claimed: &[String]) {
+    for path in claimed {
+        match lfs::unlock_file(root, path, false).await {
+            Ok(()) => {
+                let _ = fsattr::set_readonly(&root.join(path), true);
             }
+            Err(e) => crate::logger::error(format!(
+                "claim rollback: could not release {path}: {}",
+                e.message
+            )),
         }
     }
+}
 
-    let mut failed = Vec::new();
-    if !failed_raw.is_empty() {
-        // Offline is not "already taken": say so plainly instead of blaming
-        // a teammate. Nothing can be claimed without GitHub.
-        if failed_raw
-            .iter()
-            .any(|(_, message)| crate::error::looks_offline(message))
-        {
+/// All or nothing. Locking an assembly means locking every file it needs
+pub async fn claim_files(root: &Path, paths: Vec<String>) -> AppResult<ClaimResult> {
+    let mut paths = paths;
+    paths.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+    paths.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
+
+    let mut claimed: Vec<String> = Vec::new();
+
+    for path in &paths {
+        let err = match lfs::lock_file(root, path).await {
+            Ok(()) => {
+                let _ = fsattr::set_readonly(&root.join(path), false);
+                claimed.push(path.clone());
+                continue;
+            }
+            Err(e) => e,
+        };
+
+        if crate::error::looks_offline(&err.message) {
+            roll_back_claims(root, &claimed).await;
             return Err(AppError::offline(messages::CLAIM_OFFLINE));
         }
-        // Concurrent `git lfs lock` calls can trip over their shared local
-        // lock cache, recheck
-        // against the server before reporting failures.
+
+        // `git lfs lock` can trip over its local lock cache; recheck against
+        // the server before treating the failure as real.
         let locks = lfs::get_locks(root, None).await.ok();
         let server = locks.as_ref().filter(|l| l.fresh);
-        for (path, message) in failed_raw {
-            if let Some(l) = server {
-                if l.ours.iter().any(|k| k.path.eq_ignore_ascii_case(&path)) {
-                    let _ = fsattr::set_readonly(&root.join(&path), false);
-                    claimed.push(path);
-                    continue;
-                }
+        if let Some(l) = server {
+            if l.ours.iter().any(|k| k.path.eq_ignore_ascii_case(path)) {
+                let _ = fsattr::set_readonly(&root.join(path), false);
+                claimed.push(path.clone());
+                continue;
             }
-            let holder = server.and_then(|l| {
-                l.theirs
-                    .iter()
-                    .find(|lock| lock.path.eq_ignore_ascii_case(&path))
-            });
-            failed.push(FailedClaim {
+        }
+
+        let holder = server.and_then(|l| {
+            l.theirs
+                .iter()
+                .find(|lock| lock.path.eq_ignore_ascii_case(path))
+        });
+        let rolled_back = !claimed.is_empty();
+        if rolled_back {
+            crate::logger::warn(format!(
+                "claim of {} files lost {} to {}; releasing the {} already taken",
+                paths.len(),
+                path,
+                holder
+                    .and_then(|l| l.owner.as_ref().map(|o| o.name.as_str()))
+                    .unwrap_or("another member"),
+                claimed.len()
+            ));
+            roll_back_claims(root, &claimed).await;
+        }
+        return Ok(ClaimResult {
+            claimed: Vec::new(),
+            failed: vec![FailedClaim {
                 owner: holder.and_then(|l| l.owner.as_ref().map(|o| o.name.clone())),
                 locked_at: holder.and_then(|l| l.locked_at.clone()),
-                path,
-                message,
-            });
-        }
+                path: path.clone(),
+                message: err.message,
+            }],
+            rolled_back,
+        });
     }
 
-    Ok(ClaimResult { claimed, failed })
+    Ok(ClaimResult {
+        claimed,
+        failed: Vec::new(),
+        rolled_back: false,
+    })
 }
 
 pub async fn release_files(root: &Path, paths: Vec<String>) -> AppResult<Vec<ReleaseOutcome>> {

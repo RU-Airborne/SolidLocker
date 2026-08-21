@@ -81,11 +81,17 @@ export default function App() {
           <h2>You need Git to continue</h2>
           <p>
             SolidLocker needs Git. GitHub Desktop brings everything you need in one
-            install (Git, Git&nbsp;LFS, and the GitHub sign in). Install, sign
-            in, then restart SolidLocker.
+            install (Git, Git&nbsp;LFS, and the GitHub sign in).
           </p>
           <button onClick={() => openUrl("https://desktop.github.com/")}>
             Download GitHub Desktop
+          </button>
+          <p className="restart-callout">
+            After installing GitHub Desktop,{" "}
+            <strong>close SolidLocker completely and open it again.</strong>
+          </p>
+          <button onClick={() => appState.refetch()}>
+            I&rsquo;ve installed it — check again
           </button>
           <p className="muted small altinstall">
             Rather not use it?{" "}

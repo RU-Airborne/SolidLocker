@@ -3,6 +3,7 @@ mod error;
 mod fsattr;
 mod gate;
 mod lfs;
+mod logger;
 mod proc;
 mod repo;
 mod messages;
@@ -52,20 +53,48 @@ async fn quit_app(app: AppHandle) -> AppResult<()> {
 }
 
 #[tauri::command]
+async fn open_logs_folder() -> AppResult<()> {
+    let dir = logger::log_dir()
+        .ok_or_else(|| AppError::new("LOG", messages::NO_LOG_FOLDER))?;
+    std::fs::create_dir_all(&dir).map_err(AppError::from)?;
+    tauri_plugin_opener::open_path(dir.to_string_lossy().into_owned(), None::<&str>)
+        .map_err(|e| AppError::new("OPEN", e.to_string()))
+}
+
+#[tauri::command]
+async fn log_frontend(message: String) -> AppResult<()> {
+    let trimmed: String = message.chars().take(2000).collect();
+    logger::write_line("FRONTEND", &trimmed);
+    Ok(())
+}
+
+#[tauri::command]
 async fn get_app_state(app: AppHandle) -> AppResult<AppState> {
     let cwd = std::env::temp_dir();
     let (git_ok, lfs_ok, lfs_version) = repo::preflight(&cwd).await;
+    logger::info(format!(
+        "preflight: git_ok={git_ok} lfs_ok={lfs_ok} lfs={}",
+        lfs_version.as_deref().unwrap_or("-")
+    ));
 
     let mut repo_info: Option<RepoInfo> = None;
     if let Some(saved) = settings::get_string(&app, KEY_REPO_PATH)? {
         if PathBuf::from(&saved).is_dir() {
             match repo::validate_repo(&saved).await {
                 Ok(info) => repo_info = Some(info),
-                Err(_) => {
+                Err(e) if e.code == "REPO" => {
+                    logger::warn(format!(
+                        "saved repository at {saved} was rejected ({e}); clearing the saved path"
+                    ));
                     settings::delete_key(&app, KEY_REPO_PATH)?;
+                }
+                Err(e) => {
+                    logger::error(format!("could not validate the saved repository at {saved}: {e}"));
+                    return Err(e);
                 }
             }
         } else {
+            logger::warn(format!("saved repository folder {saved} is gone; clearing the saved path"));
             settings::delete_key(&app, KEY_REPO_PATH)?;
         }
     }
@@ -329,8 +358,13 @@ async fn select_existing_repo(
     path: String,
 ) -> AppResult<RepoInfo> {
     let _tree = gate.exclusive().await;
+    logger::info(format!("selecting repository: {path}"));
     let info = repo::validate_repo(&path).await?;
     settings::set_string(&app, KEY_REPO_PATH, &info.repo_path)?;
+    logger::info(format!(
+        "repository selected: {} ({}) on branch {}",
+        info.repo_path, info.repo_slug, info.branch
+    ));
     Ok(info)
 }
 
@@ -616,6 +650,12 @@ async fn sync_attributes(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    logger::info(format!(
+        "SolidLocker {} starting on {} {}",
+        env!("CARGO_PKG_VERSION"),
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    ));
     // Keep the WebView2 cache in %LOCALAPPDATA%\SolidLocker\WebView2 rather than
     // the bundle-identifier folder Tauri would use. WebView2 reads this env var
     // when the webview is first created, so it must be set before the app builds.
@@ -778,6 +818,8 @@ fn report_window_failure(app: &tauri::AppHandle, detail: &str) {
             set_aside_files,
             locate_lock_paths,
             hide_to_tray,
+            open_logs_folder,
+            log_frontend,
             quit_app
         ])
         .build(tauri::generate_context!())

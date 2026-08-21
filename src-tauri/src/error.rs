@@ -10,19 +10,19 @@ pub struct AppError {
 
 impl AppError {
     pub fn new(code: &str, message: impl Into<String>) -> Self {
-        Self {
+        let e = Self {
             code: code.into(),
             message: message.into(),
             detail: None,
-        }
+        };
+        crate::logger::error(format!("[{}] {}", e.code, crate::logger::one_line(&e.message, 500)));
+        e
     }
 
     pub fn with_detail(code: &str, message: impl Into<String>, detail: serde_json::Value) -> Self {
-        Self {
-            code: code.into(),
-            message: message.into(),
-            detail: Some(detail),
-        }
+        let mut e = Self::new(code, message);
+        e.detail = Some(detail);
+        e
     }
 
     pub fn git(message: impl Into<String>) -> Self {

@@ -38,6 +38,8 @@ export const copy = {
       : `Unlocked ${paths.length} files: ${listNames(paths)}. Your team can take them now.`,
   claimPartial: (claimed: number, total: number, held: string) =>
     `Locked ${claimed} of ${total}. Already taken: ${held}`,
+  claimRolledBack: (name: string, owner: string | null) =>
+    `Nothing was locked. ${owner ?? "A teammate"} locked ${name} at the same moment, and an assembly is only useful whole — so the files this claim had already taken were unlocked again. Wait for ${owner ?? "them"} to finish, or talk to ${owner ? "them" : "your team"}.`,
   releasePartial: (released: number, total: number, first: string, more: number) =>
     released > 0
       ? `Unlocked ${released} of ${total}. ${first}${more > 0 ? ` (and ${more} more held back)` : ""}`

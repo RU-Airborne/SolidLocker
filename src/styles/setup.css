@@ -41,3 +41,18 @@
   color: inherit;
   font: inherit;
 }
+
+.restart-callout {
+  margin: 1rem auto 0.75rem;
+  padding: 0.7rem 1rem;
+  max-width: 420px;
+  font-size: 1.15rem;
+  line-height: 1.4;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.restart-callout strong {
+  font-weight: 800;
+}

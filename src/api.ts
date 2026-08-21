@@ -93,6 +93,9 @@ export interface ClaimResult {
     locked_at: string | null;
     message: string;
   }[];
+  /** A teammate won part of the set mid-claim, so every lock this claim had
+      already taken was released again */
+  rolled_back: boolean;
 }
 
 export interface ReleaseOutcome {
@@ -184,6 +187,13 @@ export const resolveReferences = (path: string) =>
   invoke<RefResolution>("resolve_references", { path });
 
 export const listRepoBranches = () => invoke<string[]>("list_repo_branches");
+
+/** Shows the debug log folder in Explorer, for bug reports. */
+export const openLogsFolder = () => invoke<void>("open_logs_folder");
+
+/** Writes a line into the shared debug log. Fire and forget. */
+export const logFrontend = (message: string) =>
+  invoke<void>("log_frontend", { message }).catch(() => {});
 
 export const getBranchOverview = () =>
   invoke<BranchSummary[]>("get_branch_overview");

@@ -7,6 +7,7 @@ import {
   cloneRepo,
   githubSignIn,
   githubSignedIn,
+  openLogsFolder,
   openRepoFolder,
   selectExistingRepo,
   signOutGithub,
@@ -464,6 +465,19 @@ export function SettingsPage({
           </p>
           <div className="setuprow">
             <button onClick={onFixPerms}>Fix file permissions</button>
+          </div>
+        </section>
+
+        <section className="setupsection">
+          <h3>Troubleshooting</h3>
+          <p className="muted">
+            SolidLocker keeps a log of errors and slow operations. If something
+            misbehaves, attach the log file when reporting it.
+          </p>
+          <div className="setuprow">
+            <button onClick={() => void openLogsFolder().catch(() => {})}>
+              Open log folder
+            </button>
           </div>
         </section>
       </div>
