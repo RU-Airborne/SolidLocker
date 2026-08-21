@@ -136,7 +136,7 @@ export function RestoreVersionDialog({
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal versionmodal" onClick={(e) => e.stopPropagation()}>
-        <h2>{name}: earlier version</h2>
+        <h2>{name} (earlier version)</h2>
         <p>
           As it was on <strong>{formatDateTime(commit.date)}</strong>, by{" "}
           {commit.author_name}.

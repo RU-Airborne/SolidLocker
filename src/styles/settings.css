@@ -488,6 +488,22 @@
   overflow-x: auto;
   margin: 0.5rem 0 0.9rem;
   padding-bottom: 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+/* the rows under the railway scroll on their own */
+.settingsbody .branchlist {
+  max-height: 45vh;
+  overflow-y: auto;
+}
+
+.rr-node {
+  cursor: pointer;
+}
+
+.rr-node:hover circle {
+  filter: brightness(1.25);
 }
 
 .branchrail {

@@ -120,7 +120,7 @@ export function CreateBranchDialog({
           <BranchDiagram
             branchName={source}
             newBranchName={cleaned || undefined}
-            commitLabel={`${source} as it is today`}
+            fromTip
           />
         ) : (
           <FreshBranchDiagram newBranchName={cleaned || undefined} />

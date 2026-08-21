@@ -71,6 +71,24 @@ foreach ($line in [IO.File]::ReadAllLines($env:SOLIDLOCKER_LIST)) {
 }
 "#;
 
+fn embedded_png(abs: &Path) -> Option<Vec<u8>> {
+    use std::io::Read;
+    let mut comp = cfb::open(abs).ok()?;
+    let stream_path = comp
+        .walk()
+        .find(|e| {
+            e.is_stream() && e.name().eq_ignore_ascii_case("previewpng")
+        })
+        .map(|e| e.path().to_path_buf())?;
+    let mut bytes = Vec::new();
+    comp.open_stream(&stream_path).ok()?.read_to_end(&mut bytes).ok()?;
+    if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
+        Some(bytes)
+    } else {
+        None
+    }
+}
+
 pub async fn thumbnails(
     root: &Path,
     rels: Vec<String>,
@@ -107,6 +125,50 @@ pub async fn thumbnails(
         todo.push((rel, key, abs));
     }
 
+    if todo.is_empty() {
+        return Ok(found);
+    }
+
+    {
+        let paths: Vec<(usize, String)> = todo
+            .iter()
+            .enumerate()
+            .map(|(i, (_, _, abs))| (i, abs.clone()))
+            .collect();
+        let embedded = tokio::task::spawn_blocking(move || {
+            use base64::Engine;
+            let mut out: HashMap<usize, String> = HashMap::new();
+            for (i, abs) in paths {
+                if let Some(png) = embedded_png(Path::new(&abs)) {
+                    out.insert(
+                        i,
+                        base64::engine::general_purpose::STANDARD.encode(png),
+                    );
+                }
+            }
+            out
+        })
+        .await
+        .unwrap_or_default();
+
+        if !embedded.is_empty() {
+            let mut cached = cache.0.lock().unwrap();
+            for (i, b64) in &embedded {
+                let (rel, key, _) = &todo[*i];
+                let uri = format!("data:image/png;base64,{b64}");
+                cached.insert(key.clone(), Some(uri.clone()));
+                found.insert(rel.clone(), uri);
+            }
+            drop(cached);
+            let mut keep = Vec::new();
+            for (i, item) in todo.into_iter().enumerate() {
+                if !embedded.contains_key(&i) {
+                    keep.push(item);
+                }
+            }
+            todo = keep;
+        }
+    }
     if todo.is_empty() {
         return Ok(found);
     }

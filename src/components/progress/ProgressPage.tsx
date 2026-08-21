@@ -179,11 +179,14 @@ function BranchRailway({
   laneCount,
   branches,
   highlight,
+  onOpenCommit,
 }: {
   rows: ReturnType<typeof layoutGraph>["rows"];
   laneCount: number;
   branches: BranchSummary[];
   highlight: string | null;
+  /** Jump to this commit on the Branches page. */
+  onOpenCommit: (sha: string) => void;
 }) {
   const COL = 40;
   const LANE = 34;
@@ -191,7 +194,8 @@ function BranchRailway({
   const PAD = 36;
   const RIGHT = 80;
   const W = PAD * 2 + rows.length * COL + RIGHT;
-  const H = TOP + laneCount * LANE + 26;
+  // extra room under the lanes for the timeline
+  const H = TOP + laneCount * LANE + 46;
   const shortDate = (d: string | number) =>
     new Date(d).toLocaleDateString(undefined, {
       month: "numeric",
@@ -238,6 +242,28 @@ function BranchRailway({
         role="img"
         aria-label="Every branch and merge in the project, newest at the right"
       >
+        {/* timeline: a date tick wherever the day changes, oldest to newest */}
+        {rows.map((row, i) => {
+          const d = shortDate(row.commit.date);
+          const newer = i > 0 ? shortDate(rows[i - 1].commit.date) : null;
+          if (d === newer) return null;
+          const x = xOf(i);
+          return (
+            <g key={`t${row.commit.sha}`}>
+              <line
+                x1={x}
+                y1={H - 34}
+                x2={x}
+                y2={H - 26}
+                stroke="var(--border)"
+                strokeWidth={2}
+              />
+              <text className="rr-date" x={x} y={H - 12} textAnchor="middle">
+                {d}
+              </text>
+            </g>
+          );
+        })}
         {rows.map((row, i) => {
           const x = xOf(i);
           const y = yOf(row.lane);
@@ -306,24 +332,40 @@ function BranchRailway({
                   strokeWidth={3}
                 />
               ))}
-              {c.is_head ? (
-                <g className={`gg-head ${dim(on) ?? ""}`}>
-                  <circle className="gg-halo" cx={x} cy={y} r={13} fill="var(--accent)" />
-                  <circle cx={x} cy={y} r={8} fill="none" stroke="var(--accent)" strokeWidth={3} />
-                  <circle cx={x} cy={y} r={4.2} fill="var(--accent)" />
-                  <text className="rr-here" x={x} y={y + 28} textAnchor="middle">
-                    You are here
-                  </text>
-                </g>
-              ) : (
-                <circle
-                  className={dim(on)}
-                  cx={x}
-                  cy={y}
-                  r={tipName ? 6 : 4.2}
-                  fill={laneColor(row.lane)}
-                />
-              )}
+              {/* hover tells you which commit this is; click opens it on
+                  the Branches page */}
+              <g
+                className="rr-node"
+                onClick={() => onOpenCommit(c.sha)}
+                role="button"
+                aria-label={`Open ${c.subject} on the Branches page`}
+              >
+                <title>
+                  {`${c.subject}\n${c.author_name} · ${new Date(c.date).toLocaleString()}`}
+                </title>
+                {c.is_head ? (
+                  <g className={`gg-head ${dim(on) ?? ""}`}>
+                    <circle className="gg-halo" cx={x} cy={y} r={13} fill="var(--accent)" />
+                    <circle cx={x} cy={y} r={8} fill="none" stroke="var(--accent)" strokeWidth={3} />
+                    <circle cx={x} cy={y} r={4.2} fill="var(--accent)" />
+                    <text className="rr-here" x={x} y={y + 28} textAnchor="middle">
+                      You are here
+                    </text>
+                  </g>
+                ) : (
+                  <>
+                    {/* a roomier invisible target than the dot itself */}
+                    <circle cx={x} cy={y} r={11} fill="transparent" />
+                    <circle
+                      className={dim(on)}
+                      cx={x}
+                      cy={y}
+                      r={tipName ? 6 : 4.2}
+                      fill={laneColor(row.lane)}
+                    />
+                  </>
+                )}
+              </g>
               {tipName && (
                 <text
                   className={`rr-label ${dim(labelOn) ?? ""}`}
@@ -352,10 +394,13 @@ export function ProgressPage({
   rows,
   onClose,
   onOpenBranches,
+  onOpenCommit,
 }: {
   rows: FileRowData[];
   onClose: () => void;
   onOpenBranches: () => void;
+  /** Jump straight to one commit on the Branches page. */
+  onOpenCommit: (sha: string) => void;
 }) {
   const stats = useQuery({
     queryKey: ["commitStats"],
@@ -582,6 +627,7 @@ export function ProgressPage({
                 laneCount={laid.laneCount}
                 branches={branchList}
                 highlight={hoveredBranch}
+                onOpenCommit={onOpenCommit}
               />
             )}
             <ul className="branchlist">

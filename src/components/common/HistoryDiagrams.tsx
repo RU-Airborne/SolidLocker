@@ -118,12 +118,48 @@ export function BranchDiagram({
   branchName,
   newBranchName,
   commitLabel,
+  fromTip,
 }: {
   branchName: string;
   /** Live from the name input */
   newBranchName?: string;
   commitLabel?: string;
+  fromTip?: boolean;
 }) {
+  if (fromTip) {
+    const tipPath = "M 212 78 C 228 78 226 38 250 38 L 288 38";
+    return (
+      <svg
+        className="branchdiagram"
+        viewBox="0 0 340 118"
+        role="img"
+        aria-label={`Diagram: a new branch splits off from the tip of ${branchName}, right where you are now`}
+      >
+        <line className="bd-main" x1="12" y1="78" x2="314" y2="78" />
+        <ArrowHead x={326} y={78} />
+        {[44, 100, 156].map((x) => (
+          <circle key={x} className="bd-dot" cx={x} cy="78" r="4" />
+        ))}
+
+        {/* the fork happens exactly where you stand */}
+        <HereMarker x={212} y={78} labelY={98} />
+        <path className="bd-new" d="M 212 78 C 228 78 226 38 250 38" />
+        <line className="bd-new" x1="250" y1="38" x2="288" y2="38" />
+        <ArrowHead x={300} y={38} accent />
+        <circle className="bd-comet" r="2.6">
+          <animateMotion dur="2.2s" repeatCount="indefinite" path={tipPath} />
+        </circle>
+
+        <text className="bd-label" x="326" y="66" textAnchor="end">
+          {trunc(branchName, 18)}
+        </text>
+        <text className="bd-labelnew" x="300" y="24" textAnchor="end">
+          {trunc(newBranchName || "Your new branch", 26)}
+        </text>
+      </svg>
+    );
+  }
+
   const forkPath = "M 130 78 C 148 78 146 38 170 38 L 284 38";
   return (
     <svg
@@ -200,6 +236,14 @@ export function MergeDiagram({
       {[44, 100].map((x) => (
         <circle key={x} className="bd-dot" cx={x} cy="78" r="4" />
       ))}
+      {/* You stand at your branch's tip — the merge lands just AHEAD of
+          you, so the marker sits before the merge point, not after it. */}
+      {intoIsCurrent ? (
+        <HereMarker x={132} y={78} labelY={98} />
+      ) : (
+        <circle className="bd-dot" cx="132" cy="78" r="4" />
+      )}
+      <circle className="bd-dot" cx="300" cy="78" r="4" />
 
       {/* The branch being merged: dotted until it joins. */}
       <line className="bd-new" x1="30" y1="34" x2="168" y2="34" />
@@ -217,12 +261,6 @@ export function MergeDiagram({
       <text className="bd-label" x="224" y="98" textAnchor="middle">
         Both together
       </text>
-      {intoIsCurrent ? (
-        <HereMarker x={316} y={78} labelY={98} />
-      ) : (
-        <circle className="bd-dot" cx="316" cy="78" r="4" />
-      )}
-
       <text className="bd-labelnew" x="30" y="22" textAnchor="start">
         {trunc(fromBranch, 26)}
       </text>
@@ -260,9 +298,6 @@ export function InStepDiagram({
       </text>
       <text className="bd-label" x="252" y="68" textAnchor="middle">
         {trunc(intoBranch, 20)}
-      </text>
-      <text className="bd-label" x="342" y="76" textAnchor="end">
-        Nothing to combine
       </text>
     </svg>
   );

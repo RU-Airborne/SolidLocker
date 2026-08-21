@@ -276,6 +276,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
   // waiting-changes push in flight (the no-message Save & Share case)
   const [pushing, setPushing] = useState(false);
   const [createBranchOpen, setCreateBranchOpen] = useState(false);
+  const [historyFocusSha, setHistoryFocusSha] = useState<string | null>(null);
   const [settingUpLocking, setSettingUpLocking] = useState(false);
   const [rowMenu, setRowMenu] = useState<{
     x: number;
@@ -1364,7 +1365,11 @@ export function Dashboard({ appState }: { appState: AppState }) {
           {historyOpen ? (
             <HistoryPage
               currentBranch={currentBranch}
-              onClose={() => setHistoryOpen(false)}
+              focusSha={historyFocusSha}
+              onClose={() => {
+                setHistoryOpen(false);
+                setHistoryFocusSha(null);
+              }}
               onSwitchBranch={(name) => {
                 setHistoryOpen(false);
                 void handleSwitchBranch(name);
@@ -1387,6 +1392,11 @@ export function Dashboard({ appState }: { appState: AppState }) {
               onClose={() => setProgressOpen(false)}
               onOpenBranches={() => {
                 setProgressOpen(false);
+                setHistoryOpen(true);
+              }}
+              onOpenCommit={(sha) => {
+                setProgressOpen(false);
+                setHistoryFocusSha(sha);
                 setHistoryOpen(true);
               }}
             />

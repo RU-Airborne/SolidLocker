@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import {
@@ -67,18 +67,18 @@ export function layoutGraph(commits: GraphCommit[]): {
     let continues = false;
     const forks: number[] = [];
     const forkShas: string[] = [];
-    for (const parent of c.parents) {
+    for (const [pi, parent] of c.parents.entries()) {
+      if (pi === 0) {
+        lanes[lane] = parent;
+        laneChilds[lane] = [c.sha];
+        continues = true;
+        continue;
+      }
       const existing = lanes.findIndex((sha) => sha === parent);
       if (existing >= 0) {
         forks.push(existing);
         forkShas.push(parent);
         (laneChilds[existing] ??= []).push(c.sha);
-        continue;
-      }
-      if (!continues) {
-        lanes[lane] = parent;
-        laneChilds[lane] = [c.sha];
-        continues = true;
         continue;
       }
       const free = lanes.indexOf(null);
@@ -147,13 +147,49 @@ export function laneColor(i: number): string {
   return LANE_COLORS[i % LANE_COLORS.length];
 }
 
-/** The rails and node for one commit row. */
+function FillRails({ lanes, laneCount }: { lanes: number[]; laneCount: number }) {
+  const w = laneCount * COL_W + 4;
+  return (
+    <svg
+      className="gg-fillrails"
+      width={w}
+      viewBox={`0 0 ${w} 10`}
+      preserveAspectRatio="none"
+      aria-hidden="true"
+    >
+      {lanes.map((j) => (
+        <line
+          key={j}
+          x1={j * COL_W + COL_W / 2}
+          y1={0}
+          x2={j * COL_W + COL_W / 2}
+          y2={10}
+          stroke={laneColor(j)}
+          strokeWidth="2"
+        />
+      ))}
+    </svg>
+  );
+}
+
 function RowRails({ row, laneCount }: { row: LaidRow; laneCount: number }) {
   const w = laneCount * COL_W + 4;
   const mid = ROW_H / 2;
   const x = (i: number) => i * COL_W + COL_W / 2;
   const xl = x(row.lane);
+  const topLanes = [
+    ...row.passes,
+    ...(row.hasTop ? [row.lane] : []),
+    ...row.joins,
+  ];
+  const bottomLanes = [
+    ...row.passes,
+    ...(row.continues ? [row.lane] : []),
+    ...row.forks,
+  ];
   return (
+    <span className="gg-railcol" aria-hidden="true">
+    <FillRails lanes={topLanes} laneCount={laneCount} />
     <svg
       className="gg-rails"
       width={w}
@@ -215,6 +251,8 @@ function RowRails({ row, laneCount }: { row: LaidRow; laneCount: number }) {
         <circle cx={xl} cy={mid} r={4} fill={laneColor(row.lane)} />
       )}
     </svg>
+    <FillRails lanes={bottomLanes} laneCount={laneCount} />
+    </span>
   );
 }
 
@@ -381,6 +419,7 @@ function CommitDetail({
 
 export function HistoryPage({
   currentBranch,
+  focusSha,
   onClose,
   onSwitchBranch,
   onBranchOff,
@@ -390,6 +429,7 @@ export function HistoryPage({
   onMergeBranch,
 }: {
   currentBranch: string;
+  focusSha?: string | null;
   onClose: () => void;
   onSwitchBranch: (name: string) => void;
   onBranchOff: (sha: string, label: string) => void;
@@ -418,6 +458,18 @@ export function HistoryPage({
   const [openSha, setOpenSha] = useState<string | null>(null);
   // branch card being hovered — its line in the railway lights up
   const [hoverBranch, setHoverBranch] = useState<string | null>(null);
+
+  // arriving from a Progress-railway node: open that commit and scroll to it
+  useEffect(() => {
+    if (!focusSha) return;
+    setOpenSha(focusSha);
+    const t = window.setTimeout(() => {
+      document
+        .getElementById(`gg-${focusSha}`)
+        ?.scrollIntoView({ block: "center" });
+    }, 120);
+    return () => window.clearTimeout(t);
+  }, [focusSha]);
 
   const laid = useMemo(
     () => layoutGraph(graph.data ?? []),

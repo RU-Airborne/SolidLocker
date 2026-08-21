@@ -128,6 +128,11 @@ export function MergeBranchDialog({
         {confirming ? (
           // last look before anything on disk changes
           <>
+            <MergeDiagram
+              fromBranch={branch}
+              intoBranch={currentBranch}
+              intoIsCurrent
+            />
             <p>
               This will change{" "}
               <strong>
