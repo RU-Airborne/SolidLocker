@@ -12,6 +12,9 @@ import {
 import { githubAvatarFromEmail, UserAvatar } from "../common/UserAvatar";
 import { formatDateTime } from "../../dates";
 import swIconFallback from "../../assets/sw-generic.svg";
+import { FilePreview } from "../common/FilePreview";
+import { RestoreVersionDialog } from "../dialogs/RestoreVersionDialog";
+import type { FileCommit } from "../../api";
 
 /** The installed SolidWorks' own icon */
 function useSwIcon(): string {
@@ -75,6 +78,7 @@ export const FileRow = memo(function FileRow({
   const swIcon = useSwIcon();
   const swInstalled = useSwInstalled();
   const [expanded, setExpanded] = useState(false);
+  const [restoring, setRestoring] = useState<FileCommit | null>(null);
   const isPinned = actions.pinned.has(path.toLowerCase());
 
   const history = useQuery({
@@ -117,6 +121,7 @@ export const FileRow = memo(function FileRow({
         >
           {isPinned ? "★" : "☆"}
         </button>
+        <FilePreview path={path} />
         <button
           className="namebtn"
           title={`${path}\nClick for details`}
@@ -279,6 +284,13 @@ export const FileRow = memo(function FileRow({
                     {c.message}
                   </span>
                   <span className="fh-date">{formatDateTime(c.date)}</span>
+                  <button
+                    className="fh-restore"
+                    onClick={() => setRestoring(c)}
+                    title="Look at this version, and bring it back if it is the one you want"
+                  >
+                    View…
+                  </button>
                 </li>
               );
             })}
@@ -288,6 +300,17 @@ export const FileRow = memo(function FileRow({
           <div>No shared changes recorded for this file yet.</div>
         )}
       </div>
+    )}
+    {restoring && (
+      <RestoreVersionDialog
+        path={path}
+        commit={restoring}
+        onClose={() => setRestoring(null)}
+        onDone={(notice) => {
+          setRestoring(null);
+          actions.notify(notice);
+        }}
+      />
     )}
     </>
   );

@@ -339,3 +339,64 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.branchlist {
+  list-style: none;
+  margin: 0.6rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.branchrow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 7px;
+}
+
+.branchrow:nth-child(odd) {
+  background: color-mix(in srgb, var(--border) 22%, transparent);
+}
+
+.branchname {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.branchtag {
+  font-size: 0.68rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.05rem 0.4rem;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.branchdiv {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  white-space: nowrap;
+  font-size: 0.82rem;
+}
+
+.branchahead {
+  color: var(--success);
+}
+
+.branchbehind {
+  color: var(--warning);
+}
+
+.branchlast {
+  white-space: nowrap;
+}

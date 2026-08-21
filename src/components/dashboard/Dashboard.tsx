@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   isSwitching,
   listRepoBranches,
+  getOpenDocuments,
   openFile,
   pushNow,
   restoreFiles,
@@ -46,6 +47,7 @@ import { ExitDialog } from "../dialogs/ExitDialog";
 import { SignInDialog } from "../dialogs/SignInDialog";
 import { ReleaseDialog } from "../dialogs/ReleaseDialog";
 import { SettingsPage } from "../settings/SettingsPage";
+import { ReleaseAllDialog } from "../dialogs/ReleaseAllDialog";
 import DialLogo from "../DialLogo";
 import { ProgressPage } from "../progress/ProgressPage";
 import { CommitDialog } from "../dialogs/CommitDialog";
@@ -82,6 +84,8 @@ export interface RowActions {
   pinned: Set<string>;
   busyPaths: Set<string>;
   highlightedPath: string | null;
+  /** Report an outcome from a row-level dialog and refresh what it changed. */
+  notify: (text: string) => void;
 }
 
 export function Dashboard({ appState }: { appState: AppState }) {
@@ -186,6 +190,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
   const [claimDialogPath, setClaimDialogPath] = useState<string | null>(null);
   const [releaseDialogPath, setReleaseDialogPath] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [releaseAllOpen, setReleaseAllOpen] = useState(false);
   const [progressOpen, setProgressOpen] = useState(false);
   const [rowMenu, setRowMenu] = useState<{
     x: number;
@@ -422,6 +427,32 @@ export function Dashboard({ appState }: { appState: AppState }) {
 
   const myClaimCount = locks.data?.ours.length ?? 0;
 
+  const openDocs = useQuery({
+    queryKey: ["openDocuments"],
+    queryFn: getOpenDocuments,
+    enabled: swInstalled,
+    refetchInterval: 30_000,
+  });
+
+  const seenTheirLocks = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    const theirs = locks.data?.theirs;
+    if (!theirs) return;
+    const now = new Set(theirs.map((l) => l.path.toLowerCase()));
+    const before = seenTheirLocks.current;
+    seenTheirLocks.current = now;
+    if (!before) return; // first read is the baseline, not news
+
+    const open = new Set((openDocs.data ?? []).map((p) => p.toLowerCase()));
+    if (open.size === 0) return;
+    for (const lock of theirs) {
+      const key = lock.path.toLowerCase();
+      if (before.has(key) || !open.has(key)) continue;
+      warn(copy.lockedWhileOpen(lock.path.split("/").pop() ?? lock.path, lock.owner?.name ?? null));
+      break; // one banner is enough; the panel lists the rest
+    }
+  }, [locks.data, openDocs.data]);
+
   // The "You hold N" filter chip only shows while you hold files. If you unlock
   // your last one with the filter on, the chip vanishes but the filter would
   // stay active and leave the list stuck empty, so turn it off.
@@ -509,6 +540,11 @@ export function Dashboard({ appState }: { appState: AppState }) {
     contextMenu: (e, row) => {
       e.preventDefault();
       setRowMenu({ x: e.clientX, y: e.clientY, row });
+    },
+    notify: (text) => {
+      succeed(text);
+      void queryClient.invalidateQueries({ queryKey: ["files"] });
+      void queryClient.invalidateQueries({ queryKey: ["repoStatus"] });
     },
     claimWithRefs: (path) => setClaimDialogPath(path),
     releaseWithRefs: (path) => setReleaseDialogPath(path),
@@ -720,6 +756,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
         myClaimCount={myClaimCount}
         mineActive={showOnlyMine}
         onToggleMine={() => setShowOnlyMine((v) => !v)}
+        onReleaseMine={() => setReleaseAllOpen(true)}
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenProgress={() => setProgressOpen(true)}
       />
@@ -1005,6 +1042,17 @@ export function Dashboard({ appState }: { appState: AppState }) {
           )}
         </aside>
       </div>
+      {releaseAllOpen && locks.data && locks.data.ours.length > 0 && (
+        <ReleaseAllDialog
+          locks={locks.data.ours}
+          onClose={() => setReleaseAllOpen(false)}
+          onConfirm={() => {
+            const paths = locks.data!.ours.map((l) => l.path);
+            setReleaseAllOpen(false);
+            actions.release(paths);
+          }}
+        />
+      )}
       {(progressOpen || settingsOpen) && (
         <div className="glasspage">
           {progressOpen ? (

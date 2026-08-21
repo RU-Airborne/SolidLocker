@@ -260,3 +260,9 @@ select option:checked {
   opacity: 0.5;
   cursor: default;
 }
+
+.claimgroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}

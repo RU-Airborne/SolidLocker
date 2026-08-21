@@ -42,6 +42,8 @@ export const copy = {
     released > 0
       ? `Unlocked ${released} of ${total}. ${first}${more > 0 ? ` (and ${more} more held back)` : ""}`
       : `${first}${more > 0 ? ` (and ${more} more held back)` : ""}`,
+  lockedWhileOpen: (name: string, owner: string | null) =>
+    `${owner ?? "Someone"} just locked ${name}, and you have it open in SolidWorks. Close it without saving — your copy is no longer the shared one.`,
   freedFiles: (names: string[]) =>
     `Now free: ${names.join(", ")}.`,
   freedNotificationTitle: "A file you were waiting on is now unlocked",

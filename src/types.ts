@@ -39,6 +39,16 @@ export interface Lock {
   locked_at: string | null;
 }
 
+export interface BranchSummary {
+  name: string;
+  last_commit_at: number;
+  author: string;
+  subject: string;
+  ahead: number;
+  behind: number;
+  is_default: boolean;
+}
+
 export interface LocksResult {
   ours: Lock[];
   theirs: Lock[];

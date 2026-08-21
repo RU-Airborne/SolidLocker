@@ -210,6 +210,55 @@ pub async fn run_git_interactive(
     })
 }
 
+/// Like `run_git_stdin`, but hands stdout back as raw bytes. Anything that is
+/// file content rather than text has to come through here: a lossy UTF-8
+/// conversion would quietly corrupt a CAD file.
+pub async fn run_git_bytes(
+    repo: &Path,
+    args: &[&str],
+    stdin_data: Option<&[u8]>,
+    timeout_secs: u64,
+) -> AppResult<(bool, Vec<u8>, String)> {
+    use std::process::Stdio;
+    use tokio::io::AsyncWriteExt;
+
+    let mut cmd = base_command(resolved_git().await, repo);
+    cmd.args(args)
+        .stdin(if stdin_data.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let fut = async {
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| AppError::new("SPAWN", format!("could not run git: {e}")))?;
+        if let Some(data) = stdin_data {
+            let mut stdin = child.stdin.take().expect("stdin piped");
+            stdin.write_all(data).await.map_err(AppError::from)?;
+            drop(stdin);
+        }
+        let output = child.wait_with_output().await.map_err(AppError::from)?;
+        Ok::<_, AppError>((
+            output.status.success(),
+            output.stdout,
+            String::from_utf8_lossy(&output.stderr).into_owned(),
+        ))
+    };
+
+    tokio::time::timeout(Duration::from_secs(timeout_secs), fut)
+        .await
+        .map_err(|_| {
+            AppError::new(
+                "TIMEOUT",
+                format!("git {} timed out after {timeout_secs}s", args.join(" ")),
+            )
+        })?
+}
+
 pub async fn run_git_stdin(
     repo: &Path,
     args: &[&str],

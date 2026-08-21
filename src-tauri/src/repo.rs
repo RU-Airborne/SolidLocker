@@ -551,7 +551,59 @@ pub async fn set_aside_untracked(root: &Path, files: Vec<String>) -> AppResult<S
     Ok(backup_dir.to_string_lossy().into_owned())
 }
 
-/// Clears stuck cross-branch leftovers, once SolidWorks lets go of them.
+/// Clears stuck cross-branch leftovers, once SolidWorks release them
+pub async fn extract_version(root: &Path, path: &str, sha: &str) -> AppResult<std::path::PathBuf> {
+    let ext = std::path::Path::new(path)
+        .extension()
+        .map(|e| e.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "dat".into());
+    let short: String = sha.chars().take(12).collect();
+    let stem: String = path
+        .rsplit('/')
+        .next()
+        .unwrap_or("file")
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .collect();
+    let out_path = std::env::temp_dir().join(format!("solidlocker-{short}-{stem}.{ext}"));
+
+    let spec = format!("{sha}:{path}");
+    let (ok, mut bytes, err) =
+        crate::proc::run_git_bytes(root, &["show", &spec], None, 60).await?;
+    if !ok {
+        return Err(AppError::git(messages::could_not_read_old_version(
+            err.trim(),
+        )));
+    }
+
+    if bytes.starts_with(b"version https://git-lfs.github.com/spec/v1") {
+        let (ok, content, err) =
+            crate::proc::run_git_bytes(root, &["lfs", "smudge"], Some(&bytes), 300).await?;
+        if !ok {
+            return Err(AppError::git(messages::could_not_read_old_version(
+                err.trim(),
+            )));
+        }
+        bytes = content;
+    }
+
+    std::fs::write(&out_path, &bytes).map_err(|e| AppError::new("RESTORE", e.to_string()))?;
+    Ok(out_path)
+}
+
+
+/// Restore by branching forward
+pub async fn restore_version(root: &Path, path: &str, sha: &str) -> AppResult<()> {
+    let out = run_git(root, &["checkout", sha, "--", path], 300).await?;
+    if out.ok() {
+        Ok(())
+    } else {
+        Err(AppError::git(messages::could_not_restore_version(
+            out.stderr.trim(),
+        )))
+    }
+}
+
 pub async fn restore_paths(root: &Path, files: Vec<String>) -> AppResult<()> {
     if files.is_empty() {
         return Ok(());
@@ -685,6 +737,104 @@ pub async fn remote_branches(root: &Path) -> AppResult<Vec<String>> {
         .filter(|b| *b != "HEAD" && !b.is_empty())
         .map(String::from)
         .collect())
+}
+
+/// One line per team branch
+#[derive(serde::Serialize)]
+pub struct BranchSummary {
+    pub name: String,
+    pub last_commit_at: i64,
+    pub author: String,
+    pub subject: String,
+    pub ahead: u32,
+    pub behind: u32,
+    pub is_default: bool,
+}
+
+async fn default_branch(root: &Path) -> String {
+    if let Ok(out) = run_git(root, &["symbolic-ref", "refs/remotes/origin/HEAD"], 15).await {
+        if out.ok() {
+            if let Some(name) = out.stdout.trim().strip_prefix("refs/remotes/origin/") {
+                if !name.is_empty() {
+                    return name.to_string();
+                    
+                }
+            }
+        }
+    }
+    for candidate in ["main", "master"] {
+        let refname = format!("refs/remotes/origin/{candidate}");
+        if run_git(root, &["show-ref", "--verify", "--quiet", &refname], 15)
+            .await
+            .map(|o| o.ok())
+            .unwrap_or(false)
+        {
+            return candidate.to_string();
+        }
+    }
+    "main".to_string()
+}
+
+pub async fn branch_overview(root: &Path) -> AppResult<Vec<BranchSummary>> {
+    let default = default_branch(root).await;
+
+    let out = run_git_ok(
+        root,
+        &[
+            "for-each-ref",
+            "--format=%(refname:short)\t%(committerdate:unix)\t%(authorname)\t%(subject)",
+            "refs/remotes/origin",
+        ],
+        30,
+    )
+    .await?;
+
+    let mut branches = Vec::new();
+    for line in out.stdout.lines() {
+        let mut parts = line.splitn(4, '\t');
+        let (Some(refname), Some(when), Some(author)) =
+            (parts.next(), parts.next(), parts.next())
+        else {
+            continue;
+        };
+        let subject = parts.next().unwrap_or("").trim().to_string();
+        let Some(name) = refname.trim().strip_prefix("origin/") else {
+            continue;
+        };
+        if name.is_empty() || name == "HEAD" {
+            continue;
+        }
+
+        let is_default = name == default;
+        // One rev-list per branch. Teams have a handful, not hundreds.
+        let (ahead, behind) = if is_default {
+            (0, 0)
+        } else {
+            let range = format!("origin/{default}...origin/{name}");
+            match run_git(root, &["rev-list", "--left-right", "--count", &range], 20).await {
+                Ok(counts) if counts.ok() => {
+                    let mut it = counts.stdout.split_whitespace();
+                    let behind = it.next().and_then(|n| n.parse().ok()).unwrap_or(0);
+                    let ahead = it.next().and_then(|n| n.parse().ok()).unwrap_or(0);
+                    (ahead, behind)
+                }
+                _ => (0, 0),                    // No common ancestor
+            }
+        };
+
+        branches.push(BranchSummary {
+            name: name.to_string(),
+            last_commit_at: when.trim().parse().unwrap_or(0),
+            author: author.trim().to_string(),
+            subject,
+            ahead,
+            behind,
+            is_default,
+        });
+    }
+
+    branches.sort_by(|a, b| b.last_commit_at.cmp(&a.last_commit_at));
+    Ok(branches)
 }
 
 /// Reads already-fetched refs, so it is only as accurate as the last fetch.

@@ -108,9 +108,9 @@ if ($proc) {
 /// `doc` goes over in an environment variable rather than spliced into the
 /// script: a path holding a quote or a `$` would otherwise be read as code.
 #[cfg(windows)]
-async fn run_powershell(
+pub(crate) async fn run_powershell(
     script: &str,
-    doc: Option<&Path>,
+    envs: &[(&str, std::ffi::OsString)],
     timeout_secs: u64,
 ) -> AppResult<std::process::Output> {
     use std::process::Stdio;
@@ -123,8 +123,8 @@ async fn run_powershell(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
-    if let Some(path) = doc {
-        cmd.env("SOLIDLOCKER_DOC", path);
+    for (name, value) in envs {
+        cmd.env(name, value);
     }
     cmd.creation_flags(CREATE_NO_WINDOW);
 
@@ -175,7 +175,8 @@ if ($null -ne $deps) {
 "#
     );
 
-    let out = run_powershell(&script, Some(abs_path), 60).await?;
+    let envs = [("SOLIDLOCKER_DOC", abs_path.as_os_str().to_os_string())];
+    let out = run_powershell(&script, &envs, 60).await?;
 
     let stderr = String::from_utf8_lossy(&out.stderr);
     if stderr.contains("SW_NOT_RUNNING") {
@@ -226,7 +227,7 @@ if (-not $early) {
 "#
     );
 
-    match run_powershell(&script, None, 20).await {
+    match run_powershell(&script, &[], 20).await {
         // Ok(out) => {
         //     eprintln!("[swrefs] open docs: {}", String::from_utf8_lossy(&out.stderr));
         //     nonempty_lines(&out.stdout)
@@ -259,7 +260,7 @@ $bmp.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
 [Convert]::ToBase64String($ms.ToArray())
 "#;
 
-    let out = run_powershell(SCRIPT, None, 15).await.ok()?;
+    let out = run_powershell(SCRIPT, &[], 15).await.ok()?;
     if !out.status.success() {
         return None;
     }

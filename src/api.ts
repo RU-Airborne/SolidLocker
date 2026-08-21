@@ -1,5 +1,11 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
-import type { AppState, FileEntry, LocksResult, RepoInfo } from "./types";
+import type {
+  AppState,
+  BranchSummary,
+  FileEntry,
+  LocksResult,
+  RepoInfo,
+} from "./types";
 
 export const getAppState = () => invoke<AppState>("get_app_state");
 
@@ -19,6 +25,11 @@ export const getSwIcon = () => invoke<string | null>("get_sw_icon");
 
 export const getSwInstalled = () => invoke<boolean>("get_sw_installed");
 
+export const getThumbnails = (paths: string[], px: number) =>
+  invoke<Record<string, string>>("get_thumbnails", { paths, px });
+
+export const getOpenDocuments = () => invoke<string[]>("get_open_documents");
+
 export const getSwSound = (name: string) =>
   invoke<string | null>("get_sw_sound", { name });
 
@@ -29,6 +40,12 @@ export interface FileCommit {
   author_email: string;
   date: string;
 }
+
+export const previewVersion = (path: string, sha: string) =>
+  invoke<string | null>("preview_version", { path, sha });
+
+export const restoreVersion = (path: string, sha: string) =>
+  invoke<void>("restore_version", { path, sha });
 
 export const getFileHistory = (path: string) =>
   invoke<FileCommit[]>("get_file_history", { path });
@@ -167,6 +184,9 @@ export const resolveReferences = (path: string) =>
   invoke<RefResolution>("resolve_references", { path });
 
 export const listRepoBranches = () => invoke<string[]>("list_repo_branches");
+
+export const getBranchOverview = () =>
+  invoke<BranchSummary[]>("get_branch_overview");
 
 export interface SwitchResult {
   /** Still holding the old branch's content; safe to restore. */

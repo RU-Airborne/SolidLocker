@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { getActivityAll, getCommitStats } from "../../api";
+import { getActivityAll, getBranchOverview, getCommitStats } from "../../api";
+import { FilePreview } from "../common/FilePreview";
 import type { FileRowData } from "../dashboard/Dashboard";
 import { UserAvatar } from "../common/UserAvatar";
 import { formatPerson, resolveCommitAuthors, useIdentities } from "../../identity";
@@ -80,6 +81,14 @@ export function ProgressPage({
     queryFn: getActivityAll,
     staleTime: 60_000,
   });
+  const branches = useQuery({
+    queryKey: ["branchOverview"],
+    queryFn: getBranchOverview,
+    staleTime: 60_000,
+  });
+  const branchList = branches.data ?? [];
+  const defaultName =
+    branchList.find((b) => b.is_default)?.name ?? "the default branch";
   const identities = useIdentities();
   // One clock for the whole page, ticking once a minute. Every bucket
   // boundary and "quiet for N days" below is measured from it.
@@ -258,6 +267,52 @@ export function ProgressPage({
         </section>
 
         <section className="setupsection">
+          <h3>Branches</h3>
+          <p className="muted">
+            Every branch your team has shared, newest work first. Ahead and
+            behind are counted against {defaultName}.
+          </p>
+          {branches.isLoading ? (
+            <p className="muted">Reading branches…</p>
+          ) : branchList.length === 0 ? (
+            <p className="muted">No branches have been shared yet.</p>
+          ) : (
+            <ul className="branchlist">
+              {branchList.map((b) => (
+                <li key={b.name} className="branchrow">
+                  <span className="branchname">
+                    {b.name}
+                    {b.is_default && (
+                      <span className="branchtag">default</span>
+                    )}
+                  </span>
+                  <span className="branchdiv">
+                    {b.is_default ? (
+                      <span className="muted small">&mdash;</span>
+                    ) : (
+                      <>
+                        {b.ahead > 0 && (
+                          <span className="branchahead">{b.ahead} ahead</span>
+                        )}
+                        {b.behind > 0 && (
+                          <span className="branchbehind">{b.behind} behind</span>
+                        )}
+                        {b.ahead === 0 && b.behind === 0 && (
+                          <span className="muted small">in step</span>
+                        )}
+                      </>
+                    )}
+                  </span>
+                  <span className="muted small branchlast">
+                    {b.author} &middot; {formatDate(b.last_commit_at * 1000)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="setupsection">
           <h3>Most reworked files</h3>
           <p className="muted">
             Files changed more than once in recent history. See which part is being repeatedly reworked.
@@ -271,6 +326,7 @@ export function ProgressPage({
               {churn.map((c) => (
                 <li key={c.path} className="churnrow">
                   <span className="contribname" title={c.path}>
+                    <FilePreview path={c.path} className="fthumb lockthumb" />
                     {c.path.split("/").pop()}
                   </span>
                   <span className="contribbar">

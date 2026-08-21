@@ -8,6 +8,7 @@ mod repo;
 mod messages;
 mod settings;
 mod swrefs;
+mod thumbs;
 mod workflow;
 
 use std::path::{Path, PathBuf};
@@ -143,6 +144,44 @@ async fn get_sw_icon() -> AppResult<Option<String>> {
     }
 }
 
+/// Preview pictures
+#[tauri::command]
+async fn get_thumbnails(
+    app: AppHandle,
+    cache: State<'_, thumbs::ThumbCache>,
+    paths: Vec<String>,
+    px: u32,
+) -> AppResult<std::collections::HashMap<String, String>> {
+    let root = current_repo(&app)?;
+    thumbs::thumbnails(&root, paths, px, &cache).await
+}
+
+#[tauri::command]
+async fn get_open_documents(app: AppHandle) -> AppResult<Vec<String>> {
+    let root = current_repo(&app)?;
+    #[cfg(windows)]
+    {
+        let root_prefix = root.to_string_lossy().replace('\\', "/").to_lowercase();
+        let mut rels = Vec::new();
+        for abs in swrefs::solidworks_open_documents().await {
+            let norm = abs.replace('\\', "/");
+            let lower = norm.to_lowercase();
+            if let Some(rest) = lower.strip_prefix(&root_prefix) {
+                let rel = norm[norm.len() - rest.len()..].trim_start_matches('/');
+                if !rel.is_empty() {
+                    rels.push(rel.to_string());
+                }
+            }
+        }
+        Ok(rels)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = root;
+        Ok(Vec::new())
+    }
+}
+
 #[tauri::command]
 async fn open_file(app: AppHandle, path: String) -> AppResult<()> {
     let root = current_repo(&app)?;
@@ -165,6 +204,75 @@ async fn open_repo_folder(app: AppHandle) -> AppResult<()> {
 async fn list_repo_branches(app: AppHandle) -> AppResult<Vec<String>> {
     let root = current_repo(&app)?;
     repo::remote_branches(&root).await
+}
+
+/// Every team branch with how far it has diverged, for the Progress page.
+/// A picture of a file as it was at an earlier commit, so nobody has to
+/// restore one to find out whether it is the right one.
+#[tauri::command]
+async fn preview_version(
+    app: AppHandle,
+    cache: State<'_, thumbs::ThumbCache>,
+    path: String,
+    sha: String,
+) -> AppResult<Option<String>> {
+    let root = current_repo(&app)?;
+    let scratch = repo::extract_version(&root, &path, &sha).await?;
+    let dir = scratch.parent().unwrap_or(&root).to_path_buf();
+    let name = scratch
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+
+    let drawn = thumbs::thumbnails(&dir, vec![name.clone()], 256, &cache).await?;
+    let _ = std::fs::remove_file(&scratch);
+    Ok(drawn.get(&name).cloned())
+}
+
+/// Brings an earlier version of a file into the working tree as the next
+/// change. History moves forward; nothing is rewritten.
+#[tauri::command]
+async fn restore_version(
+    app: AppHandle,
+    gate: State<'_, gate::RepoGate>,
+    path: String,
+    sha: String,
+) -> AppResult<()> {
+    let root = current_repo(&app)?;
+
+    // Editing a file you do not hold is exactly what the app exists to
+    // prevent, and it would be read-only on disk anyway.
+    let username_hint = settings::get_string(&app, KEY_USERNAME)?;
+    let locks = lfs::get_locks(&root, username_hint.as_deref()).await?;
+    let wanted = path.to_lowercase();
+    if !locks.ours.iter().any(|l| l.path.to_lowercase() == wanted) {
+        return Err(AppError::new("RESTORE", messages::RESTORE_NEEDS_LOCK));
+    }
+
+    #[cfg(windows)]
+    {
+        let abs = root
+            .join(&path)
+            .to_string_lossy()
+            .replace('\\', "/")
+            .to_lowercase();
+        if swrefs::solidworks_open_documents()
+            .await
+            .iter()
+            .any(|p| p.replace('\\', "/").to_lowercase() == abs)
+        {
+            return Err(AppError::new("RESTORE", messages::RESTORE_FILE_OPEN));
+        }
+    }
+
+    let _tree = gate.exclusive().await;
+    repo::restore_version(&root, &path, &sha).await
+}
+
+#[tauri::command]
+async fn get_branch_overview(app: AppHandle) -> AppResult<Vec<repo::BranchSummary>> {
+    let root = current_repo(&app)?;
+    repo::branch_overview(&root).await
 }
 
 #[tauri::command]
@@ -623,6 +731,7 @@ fn report_window_failure(app: &tauri::AppHandle, detail: &str) {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .manage(avatars::AvatarCache::default())
+        .manage(thumbs::ThumbCache::default())
         .manage(gate::RepoGate::default())
         .invoke_handler(tauri::generate_handler![
             get_app_state,
@@ -634,6 +743,8 @@ fn report_window_failure(app: &tauri::AppHandle, detail: &str) {
             get_sw_icon,
             get_sw_installed,
             get_sw_sound,
+            get_thumbnails,
+            get_open_documents,
             open_file,
             open_repo_folder,
             list_files,
@@ -658,6 +769,9 @@ fn report_window_failure(app: &tauri::AppHandle, detail: &str) {
             save_and_share,
             push_now,
             list_repo_branches,
+            get_branch_overview,
+            preview_version,
+            restore_version,
             switch_branch,
             is_switching,
             restore_files,

@@ -54,6 +54,20 @@ pub fn refusing_to_move(file: &str) -> String {
     format!("{file} has saved changes, refusing to move it.")
 }
 
+pub fn could_not_read_old_version(stderr: &str) -> String {
+    format!("Could not read that earlier version from GitHub. ({stderr})")
+}
+
+pub fn could_not_restore_version(stderr: &str) -> String {
+    format!("Could not bring that version back, is the file open in SolidWorks? ({stderr})")
+}
+
+pub const RESTORE_NEEDS_LOCK: &str =
+    "Lock this file before bringing an earlier version back, so nobody else is editing it at the same time.";
+
+pub const RESTORE_FILE_OPEN: &str =
+    "Close this file in SolidWorks first. SolidWorks keeps its own copy in memory and would write it straight back.";
+
 pub fn could_not_fix_files(stderr: &str) -> String {
     format!("Could not fix the files, are they still open in SolidWorks? ({stderr})")
 }

@@ -56,6 +56,7 @@ export function TopBar({
   myClaimCount,
   mineActive,
   onToggleMine,
+  onReleaseMine,
   onOpenSettings,
   onOpenProgress,
   locking,
@@ -81,6 +82,8 @@ export function TopBar({
   myClaimCount: number;
   mineActive: boolean;
   onToggleMine: () => void;
+  /** Hand back every lock this member still holds. */
+  onReleaseMine: () => void;
   onOpenSettings: () => void;
   onOpenProgress: () => void;
 }) {
@@ -181,13 +184,23 @@ export function TopBar({
       <span className="spacer" />
 
       {myClaimCount > 0 && (
-        <button
-          className={`barbtn claimchip${mineActive ? " active" : ""}`}
-          onClick={onToggleMine}
-          title="Show only the files you have locked"
-        >
-          You hold {myClaimCount}
-        </button>
+        <span className="claimgroup">
+          <button
+            className={`barbtn claimchip${mineActive ? " active" : ""}`}
+            onClick={onToggleMine}
+            title="Show only the files you have locked"
+          >
+            You hold {myClaimCount}
+          </button>
+          <button
+            className="barbtn releasemine"
+            onClick={onReleaseMine}
+            disabled={switchingTo !== null}
+            title="Unlock everything you are finished with"
+          >
+            Release all
+          </button>
+        </span>
       )}
 
       {ahead > 0 && dirtyCount === 0 && (
