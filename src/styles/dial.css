@@ -5,7 +5,8 @@
 }
 
 .brandlogo:hover .dialface,
-.settingslogo:hover .dialface {
+.settingslogo:hover .dialface,
+.setuplogo:hover .dialface {
   transform: rotate(72deg);
 }
 
@@ -23,7 +24,8 @@
   }
 
   .brandlogo:hover .dialface,
-  .settingslogo:hover .dialface {
+  .settingslogo:hover .dialface,
+  .setuplogo:hover .dialface {
     transform: none;
   }
 }
