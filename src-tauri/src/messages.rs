@@ -83,6 +83,9 @@ pub fn restore_needs_locks(files: &str) -> String {
     format!("Lock these files before bringing the earlier version back, so nobody else is editing them at the same time: {files}")
 }
 
+pub const SW_NEWER_FORMAT: &str =
+    "This file is in the newer (2015 and later) SolidWorks format, which keeps its list of parts compressed. SolidWorks has to be running to read it.";
+
 pub fn restore_files_open(files: &str) -> String {
     format!("Close these files in SolidWorks first. SolidWorks keeps its own copy in memory and would write it straight back: {files}")
 }

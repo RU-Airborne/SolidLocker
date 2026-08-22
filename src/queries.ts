@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  checkOutsideRefs,
   claimFiles,
   getAppState,
   getLatest,
@@ -9,6 +10,8 @@ import {
   releaseFiles,
   saveAndShare,
   syncAttributes,
+  type LockProgress,
+  type OutsideCheck,
 } from "./api";
 
 export const POLL_LOCKS_MS = 10_000;
@@ -75,10 +78,25 @@ export function useSaveAndShare() {
   });
 }
 
+export interface LockRun {
+  paths: string[];
+  onProgress?: (step: LockProgress) => void;
+}
+
+export function useOutsideRefs(paths: string[], enabled: boolean) {
+  return useQuery<OutsideCheck>({
+    queryKey: ["outsideRefs", paths.join(",")],
+    queryFn: () => checkOutsideRefs(paths),
+    enabled: enabled && paths.length > 0,
+    staleTime: 15 * 60_000,
+    retry: false,
+  });
+}
+
 export function useClaim() {
   const invalidate = useInvalidateLockState();
   return useMutation({
-    mutationFn: claimFiles,
+    mutationFn: (run: LockRun) => claimFiles(run.paths, run.onProgress),
     onSettled: invalidate,
   });
 }
@@ -86,7 +104,7 @@ export function useClaim() {
 export function useRelease() {
   const invalidate = useInvalidateLockState();
   return useMutation({
-    mutationFn: releaseFiles,
+    mutationFn: (run: LockRun) => releaseFiles(run.paths, run.onProgress),
     onSettled: invalidate,
   });
 }

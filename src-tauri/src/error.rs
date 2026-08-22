@@ -19,6 +19,14 @@ impl AppError {
         e
     }
 
+    pub fn quiet(code: &str, message: impl Into<String>) -> Self {
+        Self {
+            code: code.into(),
+            message: message.into(),
+            detail: None,
+        }
+    }
+
     pub fn with_detail(code: &str, message: impl Into<String>, detail: serde_json::Value) -> Self {
         let mut e = Self::new(code, message);
         e.detail = Some(detail);

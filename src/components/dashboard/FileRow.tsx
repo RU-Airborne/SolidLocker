@@ -14,7 +14,18 @@ import { formatDateTime } from "../../dates";
 import swIconFallback from "../../assets/sw-generic.svg";
 import { FilePreview } from "../common/FilePreview";
 import { RestoreVersionDialog } from "../dialogs/RestoreVersionDialog";
+import { OutsideRefsDialog } from "../dialogs/OutsideRefsDialog";
 import type { FileCommit } from "../../api";
+
+
+function runningLabel(
+  running: "lock" | "unlock" | undefined,
+  fallback: string,
+) {
+  if (running === "lock") return "Locking…";
+  if (running === "unlock") return "Unlocking…";
+  return fallback;
+}
 
 /** The installed SolidWorks' own icon */
 function useSwIcon(): string {
@@ -75,6 +86,8 @@ export const FileRow = memo(function FileRow({
 }) {
   const path = row.file.rel_path;
   const busy = actions.busyPaths.has(path);
+  const [showOutside, setShowOutside] = useState(false);
+  const running = actions.busyPaths.get(path);
   const swIcon = useSwIcon();
   const swInstalled = useSwInstalled();
   const [expanded, setExpanded] = useState(false);
@@ -143,6 +156,21 @@ export const FileRow = memo(function FileRow({
       </span>
       <span className="status">
         <StatusBadge status={row.status} writable={row.file.writable} />
+        {row.outside.length > 0 && (
+          <button
+            className="badge badge-broken"
+            title={`Needs ${row.outside.length} file${
+              row.outside.length === 1 ? "" : "s"
+            } from outside the project, so it opens broken for everyone else. Click for details.`}
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowOutside(true);
+            }}
+          >
+            <span aria-hidden="true">!</span>
+            <span className="sr-only">Broken links</span>
+          </button>
+        )}
         {row.edited && (
           <span
             className="badge badge-edited"
@@ -193,7 +221,7 @@ export const FileRow = memo(function FileRow({
               title="Lock this file for yourself. It becomes editable for you and locked for teammates"
               onClick={() => actions.claim([path])}
             >
-              {busy ? "Locking…" : "Lock"}
+              {busy ? runningLabel(running, "Locking…") : "Lock"}
             </button>
           </>
         )}
@@ -224,7 +252,7 @@ export const FileRow = memo(function FileRow({
               title="Give this file back so teammates can lock it. Your latest changes must be shared to GitHub first"
               onClick={() => actions.release([path])}
             >
-              {busy ? "Unlocking…" : "Unlock"}
+              {busy ? runningLabel(running, "Unlocking…") : "Unlock"}
             </button>
           </>
         )}
@@ -300,6 +328,14 @@ export const FileRow = memo(function FileRow({
           <div>No shared changes recorded for this file yet.</div>
         )}
       </div>
+    )}
+    {showOutside && (
+      <OutsideRefsDialog
+        refs={row.outside}
+        // Nothing is being shared from here
+        onShareAnyway={null}
+        onClose={() => setShowOutside(false)}
+      />
     )}
     {restoring && (
       <RestoreVersionDialog

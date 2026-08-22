@@ -140,3 +140,29 @@
   border-color: color-mix(in srgb, #539bf5 55%, transparent);
   background: color-mix(in srgb, #539bf5 8%, transparent);
 }
+
+.badge-broken {
+  color: var(--warning);
+  border-color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+  font-weight: 700;
+  cursor: pointer;
+  padding-inline: 0.42rem;
+  line-height: 1;
+}
+
+.badge-broken:hover {
+  background: color-mix(in srgb, var(--warning) 26%, transparent);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}

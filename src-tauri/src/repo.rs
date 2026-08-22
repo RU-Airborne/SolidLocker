@@ -226,20 +226,182 @@ pub fn parse_status_v2(stdout: &str) -> RepoStatus {
     status
 }
 
+const STATUS_ARGS: &[&str] = &[
+    "status",
+    "--porcelain=v2",
+    "--branch",
+    "-z",
+    "--untracked-files=all",
+];
+
+fn worktree_only_changes(stdout: &str) -> Vec<(String, String)> {
+    let mut found = Vec::new();
+    for entry in stdout.split('\0').filter(|s| !s.is_empty()) {
+        let Some(rest) = entry.strip_prefix("1 ") else {
+            continue;
+        };
+        // 1 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <path>
+        let cols: Vec<&str> = rest.splitn(8, ' ').collect();
+        if cols.len() < 8 || cols[0] != ".M" {
+            continue;
+        }
+        found.push((cols[7].to_string(), cols[5].to_string()));
+    }
+    found
+}
+
+/// A CAD file the locking rules cover is a ~130 byte pointer in history.
+/// Anything bigger than this went in whole.
+const POINTER_MAX_BYTES: u64 = 1024;
+
+/// Files git swears are modified whose bytes on disk are already exactly the
+/// bytes in the last commit.
+///
+/// It happens when a CAD file was committed before the locking rules covered
+/// it: history holds the whole file, while today's rules say that same file
+/// should be stored as a small pointer. The two can never agree, so the file
+/// reads as edited forever, discarding rewrites the same bytes and changes
+/// nothing, and switching branches stays blocked. Nobody touched the file, so
+/// we treat these as clean.
+async fn only_look_changed(root: &Path, candidates: &[(String, String)]) -> Vec<String> {
+    if candidates.is_empty() {
+        return Vec::new();
+    }
+
+    // Sizes narrow the field with one cheap call
+    let mut args = vec!["ls-tree", "-l", "-z", "HEAD", "--"];
+    args.extend(candidates.iter().map(|(path, _)| path.as_str()));
+    let Ok(listing) = run_git(root, &args, 30).await else {
+        return Vec::new();
+    };
+    if !listing.ok() {
+        return Vec::new();
+    }
+
+    let mut suspects: Vec<&(String, String)> = Vec::new();
+    for record in listing.stdout.split('\0').filter(|s| !s.is_empty()) {
+        // <mode> <type> <object> <size>\t<path>
+        let Some((meta, path)) = record.split_once('\t') else {
+            continue;
+        };
+        let mut cols = meta.split_whitespace();
+        let object = cols.nth(2).unwrap_or_default();
+        let size: u64 = cols.next().unwrap_or_default().parse().unwrap_or(0);
+        if size <= POINTER_MAX_BYTES {
+            continue;
+        }
+        if let Some(hit) = candidates
+            .iter()
+            .find(|(p, head)| p == path && head == object)
+        {
+            suspects.push(hit);
+        }
+    }
+    if suspects.is_empty() {
+        return Vec::new();
+    }
+
+    // Hash the file on disk the way it was committed
+    let mut args = vec!["hash-object", "--no-filters"];
+    args.extend(suspects.iter().map(|(path, _)| path.as_str()));
+    let Ok(hashed) = run_git(root, &args, 300).await else {
+        return Vec::new();
+    };
+    if !hashed.ok() {
+        return Vec::new();
+    }
+    hashed
+        .stdout
+        .lines()
+        .zip(suspects.iter())
+        .filter(|(line, (_, head))| line.trim() == head)
+        .map(|(_, (path, _))| path.clone())
+        .collect()
+}
+
 pub async fn get_repo_status(root: &Path) -> AppResult<RepoStatus> {
-    let out = run_git_ok(
-        root,
-        &[
-            "status",
-            "--porcelain=v2",
-            "--branch",
-            "-z",
-            "--untracked-files=all",
-        ],
-        30,
-    )
-    .await?;
-    Ok(parse_status_v2(&out.stdout))
+    let out = run_git_ok(root, STATUS_ARGS, 30).await?;
+    let mut status = parse_status_v2(&out.stdout);
+    let illusions = only_look_changed(root, &worktree_only_changes(&out.stdout)).await;
+    if !illusions.is_empty() {
+        status.dirty.retain(|path| !illusions.contains(path));
+    }
+    Ok(status)
+}
+
+async fn blocked_only_by_illusions(root: &Path, stderr: &str) -> bool {
+    // Untracked files are work that exists nowhere else. If they are what git
+    // is guarding, forcing would delete them, so never do it.
+    if stderr.contains("untracked working tree files") {
+        return false;
+    }
+    let Ok(out) = run_git_ok(root, STATUS_ARGS, 30).await else {
+        return false;
+    };
+    let status = parse_status_v2(&out.stdout);
+    if !status.conflicted.is_empty() {
+        return false;
+    }
+    let illusions = only_look_changed(root, &worktree_only_changes(&out.stdout)).await;
+    if illusions.is_empty() {
+        return false;
+    }
+    status
+        .dirty
+        .iter()
+        .all(|path| illusions.contains(path) || is_sw_temp(path))
+}
+
+/// Take files that only look changed off disk so a merge can land, and say
+/// which ones went. Nothing is lost: their bytes are already in the last
+/// commit, and they are put back the moment the merge is done either way.
+async fn clear_illusions(root: &Path) -> Vec<String> {
+    let Ok(out) = run_git_ok(root, STATUS_ARGS, 30).await else {
+        return Vec::new();
+    };
+    let mut cleared = Vec::new();
+    for path in only_look_changed(root, &worktree_only_changes(&out.stdout)).await {
+        let on_disk = root.join(&path);
+        // Locked CAD files sit read-only, which would refuse the removal.
+        let _ = fsattr::set_readonly(&on_disk, false);
+        if std::fs::remove_file(&on_disk).is_ok() {
+            cleared.push(path);
+        }
+    }
+    cleared
+}
+
+/// Put back what `clear_illusions` took, one at a time so a file the merge
+/// legitimately deleted can't stop the others from coming back.
+async fn put_back_illusions(root: &Path, paths: &[String]) {
+    for path in paths {
+        let _ = run_git(root, &["checkout", "--", path.as_str()], 120).await;
+    }
+}
+
+/// Run a merge, and when the only thing in its way is files that merely look
+/// changed, move those aside and try once more. Whatever the merge decides,
+/// the files come back: the version it wrote, or the one they had before.
+pub async fn merge_past_illusions(
+    root: &Path,
+    args: &[&str],
+    timeout_secs: u64,
+) -> AppResult<crate::proc::GitOutput> {
+    let first = run_git(root, args, timeout_secs).await?;
+    if first.ok() || !first.stderr.contains("would be overwritten by merge") {
+        return Ok(first);
+    }
+    let cleared = clear_illusions(root).await;
+    if cleared.is_empty() {
+        return Ok(first);
+    }
+    crate::logger::info(format!(
+        "merge blocked by {} file(s) that only look changed; their bytes already match the commit, going through",
+        cleared.len()
+    ));
+    let second = run_git(root, args, timeout_secs).await;
+    put_back_illusions(root, &cleared).await;
+    second
 }
 
 /// Heal a branch created without tracking info: if origin has a branch of the
@@ -647,7 +809,10 @@ pub async fn branch_from_commit(root: &Path, name: &str, sha: &str) -> AppResult
         .filter(|out| out.ok())
         .map(|out| out.stdout.trim().to_string());
 
-    let sw = run_git(root, &["switch", "-c", name, sha], 120).await?;
+    let mut sw = run_git(root, &["switch", "-c", name, sha], 120).await?;
+    if !sw.ok() && blocked_only_by_illusions(root, &sw.stderr).await {
+        sw = run_git(root, &["switch", "--force", "-c", name, sha], 120).await?;
+    }
     if !sw.ok() {
         return Err(AppError::git(messages::could_not_branch_off(
             name,
@@ -696,7 +861,10 @@ pub async fn preview_commit(root: &Path, sha: &str) -> AppResult<String> {
     }
     let from = status.branch.clone();
 
-    let sw = run_git(root, &["switch", "--detach", sha], 300).await?;
+    let mut sw = run_git(root, &["switch", "--detach", sha], 300).await?;
+    if !sw.ok() && blocked_only_by_illusions(root, &sw.stderr).await {
+        sw = run_git(root, &["switch", "--force", "--detach", sha], 300).await?;
+    }
     if !sw.ok() {
         return Err(AppError::git(messages::could_not_preview(sw.stderr.trim())));
     }
@@ -708,7 +876,15 @@ pub async fn preview_commit(root: &Path, sha: &str) -> AppResult<String> {
 
 /// Back from a preview to the branch the user was on.
 pub async fn end_preview(root: &Path, branch: &str) -> AppResult<()> {
-    let sw = run_git(root, &["switch", branch], 300).await?;
+    let mut sw = run_git(root, &["switch", branch], 300).await?;
+    // Coming back must never be a trap. A file that only looks changed would
+    // otherwise strand the user on the old version with no way out.
+    if !sw.ok() && blocked_only_by_illusions(root, &sw.stderr).await {
+        crate::logger::info(
+            "return blocked by files that only look changed; their bytes already match the commit, going through",
+        );
+        sw = run_git(root, &["switch", "--force", branch], 300).await?;
+    }
     if !sw.ok() {
         return Err(AppError::git(messages::could_not_switch(branch)));
     }
@@ -1213,6 +1389,17 @@ pub async fn switch_branch(root: &Path, name: &str) -> AppResult<SwitchResult> {
             tokio::time::sleep(std::time::Duration::from_millis(400)).await;
             continue;
         }
+        // Nothing to lose: everything in the way already matches the commit.
+        if blocked_only_by_illusions(root, &last_err).await {
+            crate::logger::info(
+                "switch blocked by files that only look changed; their bytes already match the commit, going through",
+            );
+            let forced = run_git(root, &["switch", "--force", name], 60).await?;
+            if forced.ok() {
+                return Ok(finish_switch(root, prev_head.as_deref()).await);
+            }
+            last_err = forced.stderr.trim().to_string();
+        }
         break;
     }
 
@@ -1253,7 +1440,11 @@ pub async fn switch_branch(root: &Path, name: &str) -> AppResult<SwitchResult> {
         let exists =
             run_git(root, &["rev-parse", "--verify", "--quiet", &remote_ref], 15).await?;
         if exists.ok() {
-            let tracked = run_git(root, &["switch", "--track", &remote_ref], 60).await?;
+            let mut tracked = run_git(root, &["switch", "--track", &remote_ref], 60).await?;
+            if !tracked.ok() && blocked_only_by_illusions(root, &tracked.stderr).await {
+                tracked =
+                    run_git(root, &["switch", "--force", "--track", &remote_ref], 60).await?;
+            }
             if tracked.ok() {
                 return Ok(finish_switch(root, prev_head.as_deref()).await);
             }
@@ -1666,8 +1857,149 @@ pub async fn init_lockable(root: &Path) -> AppResult<InitLockableResult> {
 
 #[cfg(test)]
 mod tests {
+    use super::get_repo_status;
     use super::parse_activity_log;
     use super::parse_slug_from_remote;
+    use super::merge_past_illusions;
+    use super::worktree_only_changes;
+
+    fn git_in(root: &std::path::Path, args: &[&str]) -> std::process::Output {
+        std::process::Command::new("git")
+            .current_dir(root)
+            .args(args)
+            .output()
+            .unwrap()
+    }
+
+    /// Builds the situation that stranded a user: a CAD file committed whole,
+    /// before the locking rules covered its extension. From then on git reads
+    /// it as edited every time even though nobody opened it. None when this
+    /// machine has no LFS, which is what makes the two copies disagree.
+    fn repo_with_a_file_committed_before_the_rules(tag: &str) -> Option<std::path::PathBuf> {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let root = std::env::temp_dir().join(format!("solidlocker-{tag}-{stamp}"));
+        std::fs::create_dir_all(&root).ok()?;
+        git_in(&root, &["init", "-q", "-b", "main", "."]);
+        git_in(&root, &["config", "user.email", "test@example.com"]);
+        git_in(&root, &["config", "user.name", "Test"]);
+        if !git_in(&root, &["lfs", "install", "--local"]).status.success() {
+            let _ = std::fs::remove_dir_all(&root);
+            return None;
+        }
+
+        let part = root.join("Wings/Rib One.SLDPRT");
+        std::fs::create_dir_all(part.parent().unwrap()).ok()?;
+        std::fs::write(&part, vec![7u8; 200_000]).ok()?;
+        git_in(&root, &["add", "-A"]);
+        git_in(&root, &["commit", "-qm", "part committed whole"]);
+        // The rules arrive afterwards, as they did for the real repository.
+        std::fs::write(
+            root.join(".gitattributes"),
+            "*.SLDPRT filter=lfs diff=lfs merge=lfs -text lockable\n",
+        )
+        .ok()?;
+        git_in(&root, &["add", ".gitattributes"]);
+        git_in(&root, &["commit", "-qm", "locking rules"]);
+        Some(root)
+    }
+
+    #[tokio::test]
+    async fn a_file_committed_before_the_rules_is_not_a_change() {
+        let Some(root) = repo_with_a_file_committed_before_the_rules("clean") else {
+            return;
+        };
+        let part = root.join("Wings/Rib One.SLDPRT");
+        let git = |args: &[&str]| git_in(&root, args);
+
+        // git insists the part changed...
+        let seen = String::from_utf8_lossy(&git(&["status", "--porcelain=v1"]).stdout).to_string();
+        assert!(seen.contains("Rib One.SLDPRT"), "git saw no change: {seen}");
+        // ...but not one byte of it did, so we must not say so.
+        let status = get_repo_status(&root).await.unwrap();
+        assert!(
+            !status.dirty.iter().any(|p| p.contains("Rib One")),
+            "reported a change nobody made: {:?}",
+            status.dirty
+        );
+
+        // An actual edit still has to come through as one.
+        let _ = crate::fsattr::set_readonly(&part, false);
+        let mut edited = vec![7u8; 200_000];
+        edited.push(9);
+        std::fs::write(&part, edited).unwrap();
+        let status = get_repo_status(&root).await.unwrap();
+        assert!(
+            status.dirty.iter().any(|p| p.contains("Rib One")),
+            "missed a real edit: {:?}",
+            status.dirty
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Get Latest and Combine both go through a merge, and git refuses those
+    /// over the same file. The teammate's version still has to land.
+    #[tokio::test]
+    async fn a_merge_lands_over_a_file_that_only_looks_changed() {
+        let Some(root) = repo_with_a_file_committed_before_the_rules("merge") else {
+            return;
+        };
+        let part = root.join("Wings/Rib One.SLDPRT");
+
+        // A teammate reworks the same part on their branch, stored the way
+        // today's rules say it should be.
+        let theirs = vec![3u8; 180_000];
+        git_in(&root, &["switch", "-q", "-c", "mate"]);
+        let _ = crate::fsattr::set_readonly(&part, false);
+        std::fs::write(&part, &theirs).unwrap();
+        git_in(&root, &["add", "-A"]);
+        git_in(&root, &["commit", "-qm", "mate reworks the rib"]);
+        git_in(&root, &["switch", "-q", "main"]);
+        git_in(&root, &["lfs", "checkout"]);
+
+        // Plain git will not do it.
+        let refused = git_in(&root, &["merge", "--no-edit", "mate"]);
+        assert!(
+            !refused.status.success(),
+            "expected git to refuse this merge"
+        );
+
+        let landed = merge_past_illusions(&root, &["merge", "--no-edit", "mate"], 300)
+            .await
+            .unwrap();
+        assert!(landed.ok(), "merge still blocked: {}", landed.stderr);
+        git_in(&root, &["lfs", "checkout"]);
+        assert_eq!(
+            std::fs::read(&part).unwrap(),
+            theirs,
+            "the teammate's version did not land"
+        );
+        let status = get_repo_status(&root).await.unwrap();
+        assert!(status.dirty.is_empty(), "left dirty: {:?}", status.dirty);
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn picks_out_files_changed_on_disk_only() {
+        // Real `git status --porcelain=v2 -z` output: one file changed on
+        // disk alone (the candidate), one staged change, one untracked file.
+        let status = concat!(
+            "# branch.head main\0",
+            "1 .M N... 100644 100644 100644 aaa111 aaa111 Wings/My Part.SLDPRT\0",
+            "1 M. N... 100644 100644 100644 bbb222 ccc333 staged.SLDPRT\0",
+            "? new.SLDPRT\0",
+        );
+        let candidates = worktree_only_changes(status);
+        assert_eq!(candidates.len(), 1);
+        // The path keeps its spaces, and arrives paired with the copy in the
+        // last commit, which is what the bytes on disk get compared against.
+        assert_eq!(candidates[0].0, "Wings/My Part.SLDPRT");
+        assert_eq!(candidates[0].1, "aaa111");
+    }
 
     #[test]
     fn parses_activity_records() {

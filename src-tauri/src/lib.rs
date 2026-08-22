@@ -1,4 +1,5 @@
 mod avatars;
+mod deps;
 mod error;
 mod fsattr;
 mod gate;
@@ -7,6 +8,7 @@ mod logger;
 mod proc;
 mod repo;
 mod messages;
+mod people;
 mod settings;
 mod swrefs;
 mod thumbs;
@@ -129,6 +131,15 @@ async fn get_file_history(app: AppHandle, path: String) -> AppResult<Vec<repo::F
 async fn get_commit_stats(app: AppHandle) -> AppResult<Vec<repo::CommitStat>> {
     let root = current_repo(&app)?;
     repo::commit_stats(&root, 400).await
+}
+
+#[tauri::command]
+async fn check_outside_refs(
+    app: AppHandle,
+    paths: Vec<String>,
+) -> AppResult<deps::OutsideCheck> {
+    let root = current_repo(&app)?;
+    deps::outside_references(&root, paths).await
 }
 
 #[tauri::command]
@@ -636,10 +647,14 @@ async fn claim_files(
     app: AppHandle,
     gate: State<'_, gate::RepoGate>,
     paths: Vec<String>,
+    on_progress: tauri::ipc::Channel<workflow::LockProgress>,
 ) -> AppResult<workflow::ClaimResult> {
     let root = current_repo(&app)?;
     let _tree = gate.exclusive().await;
-    workflow::claim_files(&root, paths).await
+    let report = move |step: workflow::LockProgress| {
+        let _ = on_progress.send(step);
+    };
+    workflow::claim_files(&root, paths, &report).await
 }
 
 #[tauri::command]
@@ -647,10 +662,14 @@ async fn release_files(
     app: AppHandle,
     gate: State<'_, gate::RepoGate>,
     paths: Vec<String>,
+    on_progress: tauri::ipc::Channel<workflow::LockProgress>,
 ) -> AppResult<Vec<workflow::ReleaseOutcome>> {
     let root = current_repo(&app)?;
     let _tree = gate.exclusive().await;
-    workflow::release_files(&root, paths).await
+    let report = move |step: workflow::LockProgress| {
+        let _ = on_progress.send(step);
+    };
+    workflow::release_files(&root, paths, &report).await
 }
 
 #[tauri::command]
@@ -674,6 +693,17 @@ async fn get_avatar(
     avatars::get_avatar(&cache, url).await
 }
 
+/// Real names for people the commit history has never seen — someone who
+/// holds a lock but has never committed here is known only by @username.
+#[tauri::command]
+async fn get_profile_names(
+    app: AppHandle,
+    cache: State<'_, people::ProfileNames>,
+    logins: Vec<String>,
+) -> AppResult<std::collections::HashMap<String, String>> {
+    let root = current_repo(&app)?;
+    Ok(people::display_names(&cache, &root, logins).await)
+}
 #[tauri::command]
 async fn get_activity(app: AppHandle) -> AppResult<Vec<repo::CommitInfo>> {
     let root = current_repo(&app)?;
@@ -996,6 +1026,7 @@ fn report_window_failure(app: &tauri::AppHandle, detail: &str) {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .manage(avatars::AvatarCache::default())
+        .manage(people::ProfileNames::default())
         .manage(thumbs::ThumbCache::default())
         .manage(gate::RepoGate::default())
         .invoke_handler(tauri::generate_handler![
@@ -1003,6 +1034,7 @@ fn report_window_failure(app: &tauri::AppHandle, detail: &str) {
             select_existing_repo,
             clone_repo,
             get_commit_identities,
+            check_outside_refs,
             get_commit_stats,
             get_file_history,
             get_sw_icon,
@@ -1021,6 +1053,7 @@ fn report_window_failure(app: &tauri::AppHandle, detail: &str) {
             sync_attributes,
             get_repo_status,
             get_avatar,
+            get_profile_names,
             get_activity,
             get_activity_all,
             fetch_remote,

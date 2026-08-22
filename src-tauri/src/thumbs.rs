@@ -146,12 +146,17 @@ pub async fn thumbnails(
     px: u32,
     cache: &ThumbCache,
 ) -> AppResult<HashMap<String, String>> {
+    let started = std::time::Instant::now();
+    let asked = rels.len();
     let mut found: HashMap<String, String> = HashMap::new();
     let mut todo: Vec<(String, String, String)> = Vec::new(); // rel, cache key, absolute
+    // Kept only so the log can say where a request went.
+    let (mut hits, mut blanks, mut absent) = (0usize, 0usize, 0usize);
 
     for rel in rels {
         let abs = root.join(&rel);
         let Ok(meta) = std::fs::metadata(&abs) else {
+            absent += 1;
             continue;
         };
         let mtime = meta
@@ -165,9 +170,13 @@ pub async fn thumbnails(
         match cache.0.lock().unwrap().get(&key) {
             Some(Some(uri)) => {
                 found.insert(rel, uri.clone());
+                hits += 1;
                 continue;
             }
-            Some(None) => continue,
+            Some(None) => {
+                blanks += 1;
+                continue;
+            }
             None => {}
         }
         // Git hands out forward slashes, so joining leaves a mixed-separator
@@ -177,8 +186,21 @@ pub async fn thumbnails(
     }
 
     if todo.is_empty() {
+        // A request answered entirely from cache is not worth a line, but one
+        // that comes back with nothing is: that is what a grid full of generic
+        // icons looks like from in here.
+        if found.is_empty() && asked > 0 {
+            crate::logger::info(format!(
+                "thumbs: {asked} file(s) at {px}px, no preview for any of them ({blanks} already known blank, {absent} not on disk)"
+            ));
+        }
         return Ok(found);
     }
+
+    crate::logger::info(format!(
+        "thumbs: {asked} file(s) at {px}px - {hits} cached, {blanks} known blank, {absent} not on disk, {} to draw",
+        todo.len()
+    ));
 
     {
         let paths: Vec<(usize, String)> = todo
@@ -203,6 +225,11 @@ pub async fn thumbnails(
         .unwrap_or_default();
 
         if !embedded.is_empty() {
+            crate::logger::info(format!(
+                "thumbs: {} of {} carried their own preview picture",
+                embedded.len(),
+                todo.len()
+            ));
             let mut cached = cache.0.lock().unwrap();
             for (i, b64) in &embedded {
                 let (rel, key, _) = &todo[*i];
@@ -221,6 +248,11 @@ pub async fn thumbnails(
         }
     }
     if todo.is_empty() {
+        crate::logger::info(format!(
+            "thumbs: {} preview(s) for {asked} file(s) in {}ms",
+            found.len(),
+            started.elapsed().as_millis()
+        ));
         return Ok(found);
     }
 
@@ -245,6 +277,12 @@ pub async fn thumbnails(
     #[cfg(not(windows))]
     let _ = BATCH;
 
+    crate::logger::info(format!(
+        "thumbs: {} preview(s) for {asked} file(s) in {}ms",
+        found.len(),
+        started.elapsed().as_millis()
+    ));
+
     Ok(found)
 }
 
@@ -253,6 +291,8 @@ pub async fn thumbnails(
 async fn render_batch(chunk: &[(String, String, String)], px: u32) -> HashMap<usize, String> {
     use std::sync::atomic::{AtomicUsize, Ordering};
     static SEQ: AtomicUsize = AtomicUsize::new(0);
+
+    let started = std::time::Instant::now();
 
     let list = std::env::temp_dir().join(format!(
         "solidlocker-thumbs-{}-{}.txt",
@@ -264,13 +304,11 @@ async fn render_batch(chunk: &[(String, String, String)], px: u32) -> HashMap<us
         .map(|(_, _, abs)| abs.as_str())
         .collect::<Vec<_>>()
         .join("\r\n");
-    if std::fs::write(&list, body).is_err() {
-        return HashMap::new();
-    }
-
-    let script_path = list.with_extension("ps1");
-    if std::fs::write(&script_path, SCRIPT).is_err() {
-        let _ = std::fs::remove_file(&list);
+    if let Err(e) = std::fs::write(&list, body) {
+        crate::logger::error(format!(
+            "thumbs: could not write the batch list to {}: {e}",
+            list.display()
+        ));
         return HashMap::new();
     }
 
@@ -278,17 +316,18 @@ async fn render_batch(chunk: &[(String, String, String)], px: u32) -> HashMap<us
         ("SOLIDLOCKER_LIST", list.clone().into_os_string()),
         ("SOLIDLOCKER_PX", std::ffi::OsString::from(px.to_string())),
     ];
-    // Generous: the first call in a session pays for Add-Type compiling the
-    // interop shim, and a cold thumbnail cache means real rendering work.
-    let command = format!("& '{}'", script_path.display());
-    let out = crate::swrefs::run_powershell(&command, &envs, 90).await;
+    let out = crate::swrefs::run_powershell(SCRIPT, &envs, 90).await;
     let _ = std::fs::remove_file(&list);
-    let _ = std::fs::remove_file(&script_path);
 
     let out = match out {
         Ok(o) => o,
         Err(e) => {
             eprintln!("[thumbs] powershell failed: {e:?}");
+            crate::logger::error(format!(
+                "thumbs: PowerShell would not run for {} file(s): {}",
+                chunk.len(),
+                crate::logger::one_line(&format!("{e:?}"), 200)
+            ));
             return HashMap::new();
         }
     };
@@ -304,19 +343,46 @@ async fn render_batch(chunk: &[(String, String, String)], px: u32) -> HashMap<us
             drawn.insert(idx, b64.to_string());
         }
     }
-    // Silent in normal use. A whole batch coming back empty means the shell
-    // handler or the script broke, which is worth being able to see.
+    let ms = started.elapsed().as_millis();
+    let detail = crate::logger::one_line(&String::from_utf8_lossy(&out.stderr), 400);
+
+    if drawn.len() == chunk.len() && detail.is_empty() {
+        crate::logger::info(format!("thumbs: drew all {} in {ms}ms", chunk.len()));
+        return drawn;
+    }
+
+    let blank: Vec<&str> = chunk
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| !drawn.contains_key(i))
+        .map(|(_, (rel, _, _))| rel.as_str())
+        .collect();
+    let named = blank.iter().take(5).copied().collect::<Vec<_>>().join(", ");
+    let rest = if blank.len() > 5 {
+        format!(" and {} more", blank.len() - 5)
+    } else {
+        String::new()
+    };
+    let line = format!(
+        "thumbs: drew {} of {} in {ms}ms{}{}",
+        drawn.len(),
+        chunk.len(),
+        if blank.is_empty() {
+            String::new()
+        } else {
+            format!("; no preview for {named}{rest}")
+        },
+        if detail.is_empty() {
+            String::new()
+        } else {
+            format!("; stderr: {detail}")
+        }
+    );
     if drawn.is_empty() {
-        let detail: String = String::from_utf8_lossy(&out.stderr)
-            .chars()
-            .take(200)
-            .collect();
-        eprintln!("[thumbs] {} file(s) produced no preview: {detail}", chunk.len());
-        crate::logger::warn(format!(
-            "thumbs: batch of {} produced no preview (provider + Explorer cache): {}",
-            chunk.len(),
-            crate::logger::one_line(&detail, 200)
-        ));
+        eprintln!("[thumbs] {line}");
+        crate::logger::warn(line);
+    } else {
+        crate::logger::info(line);
     }
     drawn
 }

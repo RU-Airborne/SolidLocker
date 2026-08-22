@@ -118,7 +118,14 @@ pub(crate) async fn run_powershell(
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
     let mut cmd = tokio::process::Command::new("powershell.exe");
-    cmd.args(["-NoProfile", "-NonInteractive", "-Command", script])
+    cmd.args([
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        script,
+    ])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -317,12 +324,8 @@ pub fn solidworks_sound(name: &str) -> Option<String> {
 }
 
 pub fn scan_file(abs_path: &Path) -> AppResult<HashSet<String>> {
-    let mut comp = cfb::open(abs_path).map_err(|e| {
-        AppError::new(
-            "SWPARSE",
-            format!("Not a readable SolidWorks file ({}): {e}", abs_path.display()),
-        )
-    })?;
+    let mut comp = cfb::open(abs_path)
+        .map_err(|_| AppError::quiet("SWPARSE", crate::messages::SW_NEWER_FORMAT))?;
 
     let stream_paths: Vec<std::path::PathBuf> = comp
         .walk()

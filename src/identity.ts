@@ -1,6 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
-import { getCommitIdentities, type CommitIdentity } from "./api";
+import {
+  getAppState,
+  getCommitIdentities,
+  getLocks,
+  getProfileNames,
+  type CommitIdentity,
+} from "./api";
 
 /**
  * GitHub's noreply commit emails ("12345+login@users.noreply.github.com")
@@ -127,16 +133,58 @@ export function useIdentities() {
   });
 }
 
+function useSeenLogins(): string[] {
+  const locks = useQuery({ queryKey: ["locks"], queryFn: getLocks, enabled: false });
+  const state = useQuery({ queryKey: ["appState"], queryFn: getAppState, enabled: false });
+  const username = state.data?.username ?? null;
+  return useMemo(() => {
+    const seen = new Set<string>();
+    const held = [...(locks.data?.ours ?? []), ...(locks.data?.theirs ?? [])];
+    for (const lock of held) {
+      if (lock.owner?.name) seen.add(lock.owner.name.toLowerCase());
+    }
+    if (username) seen.add(username.toLowerCase());
+    return [...seen].sort();
+  }, [locks.data, username]);
+}
+
+function useProfileNames() {
+  const logins = useSeenLogins();
+  const identities = useIdentities();
+  const unknown = useMemo(() => {
+    const dir = buildDirectory(identities.data ?? []);
+    return logins.filter((login) => {
+      const id = dir.idByLoginLower.get(login);
+      return !id || !dir.nameById.get(id);
+    });
+  }, [logins, identities.data]);
+
+  return useQuery({
+    queryKey: ["profileNames", unknown.join(",")],
+    queryFn: () => getProfileNames(unknown),
+    enabled: unknown.length > 0,
+    staleTime: 60 * 60_000,
+    retry: false,
+  });
+}
+
 /** Lookup for components that only know a GitHub username (lock owners). */
 export function usePeople() {
   const identities = useIdentities();
+  const profiles = useProfileNames();
   return useMemo(() => {
     const dir = buildDirectory(identities.data ?? []);
+    const fromGitHub = profiles.data ?? {};
     return {
-      /** Real name for a GitHub username, when commit history reveals it. */
+      /**
+       * Real name for a GitHub username. Commit history first, since that is
+       * how the person signs their own work; their GitHub profile fills in
+       * for anyone who has not committed here yet.
+       */
       nameFor(login: string): string | null {
         const id = dir.idByLoginLower.get(login.toLowerCase());
-        return id ? (dir.nameById.get(id) ?? null) : null;
+        const fromCommits = id ? dir.nameById.get(id) : undefined;
+        return fromCommits ?? fromGitHub[login.toLowerCase()] ?? null;
       },
       /** Rename-proof avatar URL for a username; falls back to the login URL. */
       avatarFor(login: string): string {
@@ -147,5 +195,5 @@ export function usePeople() {
         );
       },
     };
-  }, [identities.data]);
+  }, [identities.data, profiles.data]);
 }

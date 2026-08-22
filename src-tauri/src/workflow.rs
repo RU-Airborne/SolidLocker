@@ -111,19 +111,44 @@ async fn roll_back_claims(root: &Path, claimed: &[String]) {
     }
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct LockProgress {
+    /// "working" | "done" | "failed" | "undone"
+    pub state: String,
+    pub path: String,
+    pub total: usize,
+}
+
+impl LockProgress {
+    fn new(state: &str, path: &str, total: usize) -> Self {
+        LockProgress {
+            state: state.to_string(),
+            path: path.to_string(),
+            total,
+        }
+    }
+}
+
 /// All or nothing. Locking an assembly means locking every file it needs
-pub async fn claim_files(root: &Path, paths: Vec<String>) -> AppResult<ClaimResult> {
+pub async fn claim_files(
+    root: &Path,
+    paths: Vec<String>,
+    progress: &(dyn Fn(LockProgress) + Send + Sync),
+) -> AppResult<ClaimResult> {
     let mut paths = paths;
     paths.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
     paths.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
+    let total = paths.len();
 
     let mut claimed: Vec<String> = Vec::new();
 
     for path in &paths {
+        progress(LockProgress::new("working", path, total));
         let err = match lfs::lock_file(root, path).await {
             Ok(()) => {
                 let _ = fsattr::set_readonly(&root.join(path), false);
                 claimed.push(path.clone());
+                progress(LockProgress::new("done", path, total));
                 continue;
             }
             Err(e) => e,
@@ -142,6 +167,7 @@ pub async fn claim_files(root: &Path, paths: Vec<String>) -> AppResult<ClaimResu
             if l.ours.iter().any(|k| k.path.eq_ignore_ascii_case(path)) {
                 let _ = fsattr::set_readonly(&root.join(path), false);
                 claimed.push(path.clone());
+                progress(LockProgress::new("done", path, total));
                 continue;
             }
         }
@@ -151,6 +177,7 @@ pub async fn claim_files(root: &Path, paths: Vec<String>) -> AppResult<ClaimResu
                 .iter()
                 .find(|lock| lock.path.eq_ignore_ascii_case(path))
         });
+        progress(LockProgress::new("failed", path, total));
         let rolled_back = !claimed.is_empty();
         if rolled_back {
             crate::logger::warn(format!(
@@ -162,6 +189,11 @@ pub async fn claim_files(root: &Path, paths: Vec<String>) -> AppResult<ClaimResu
                     .unwrap_or("another member"),
                 claimed.len()
             ));
+            // All or nothing: say so file by file, so the list on screen
+            // matches what the user is left holding, which is nothing.
+            for taken in &claimed {
+                progress(LockProgress::new("undone", taken, total));
+            }
             roll_back_claims(root, &claimed).await;
         }
         return Ok(ClaimResult {
@@ -183,7 +215,12 @@ pub async fn claim_files(root: &Path, paths: Vec<String>) -> AppResult<ClaimResu
     })
 }
 
-pub async fn release_files(root: &Path, paths: Vec<String>) -> AppResult<Vec<ReleaseOutcome>> {
+pub async fn release_files(
+    root: &Path,
+    paths: Vec<String>,
+    progress: &(dyn Fn(LockProgress) + Send + Sync),
+) -> AppResult<Vec<ReleaseOutcome>> {
+    let total = paths.len();
     let status = repo::get_repo_status(root).await?;
     let dirty: HashSet<String> = status.dirty.iter().cloned().collect();
     let untracked: HashSet<String> = status.untracked.iter().cloned().collect();
@@ -268,10 +305,17 @@ pub async fn release_files(root: &Path, paths: Vec<String>) -> AppResult<Vec<Rel
         }
     }
 
+    // Everything turned away above never reaches GitHub, so say so now
+    // rather than leaving those rows spinning until the end.
+    for outcome in &outcomes {
+        progress(LockProgress::new("failed", &outcome.path, total));
+    }
+
     let mut failed_raw: Vec<(String, AppError)> = Vec::new();
     for chunk in to_unlock.chunks(4) {
         let mut handles = Vec::new();
         for path in chunk {
+            progress(LockProgress::new("working", path, total));
             let root = root.to_path_buf();
             let path = path.clone();
             handles.push(tokio::spawn(async move {
@@ -286,6 +330,7 @@ pub async fn release_files(root: &Path, paths: Vec<String>) -> AppResult<Vec<Rel
             match result {
                 Ok(()) => {
                     let _ = fsattr::set_readonly(&root.join(&path), true);
+                    progress(LockProgress::new("done", &path, total));
                     outcomes.push(ReleaseOutcome {
                         path,
                         ok: true,
@@ -293,7 +338,10 @@ pub async fn release_files(root: &Path, paths: Vec<String>) -> AppResult<Vec<Rel
                         message: None,
                     });
                 }
-                Err(e) => failed_raw.push((path, e)),
+                Err(e) => {
+                    progress(LockProgress::new("failed", &path, total));
+                    failed_raw.push((path, e))
+                }
             }
         }
     }
@@ -482,7 +530,7 @@ pub async fn get_latest(root: &Path) -> AppResult<GetLatestResult> {
     }
     let behind_before = status.behind;
 
-    let ff = run_git(root, &["merge", "--ff-only", "@{u}"], 300).await?;
+    let ff = repo::merge_past_illusions(root, &["merge", "--ff-only", "@{u}"], 300).await?;
     if ff.ok() {
         return Ok(GetLatestResult {
             merged: true,
@@ -490,7 +538,7 @@ pub async fn get_latest(root: &Path) -> AppResult<GetLatestResult> {
         });
     }
 
-    let merge = run_git(root, &["merge", "@{u}"], 300).await?;
+    let merge = repo::merge_past_illusions(root, &["merge", "@{u}"], 300).await?;
     if merge.ok() {
         return Ok(GetLatestResult {
             merged: true,
@@ -839,7 +887,7 @@ pub async fn merge_branch(root: &Path, name: &str) -> AppResult<MergeOutcome> {
         name.to_string()
     };
 
-    let merge = run_git(root, &["merge", "--no-edit", &merge_ref], 300).await?;
+    let merge = repo::merge_past_illusions(root, &["merge", "--no-edit", &merge_ref], 300).await?;
     if merge.ok() {
         let already = merge.stdout.contains("Already up to date");
         crate::logger::info(format!("merged {merge_ref} into current branch (already_up_to_date={already})"));

@@ -130,8 +130,32 @@ export interface CommitIdentity {
   email: string;
 }
 
+export interface OutsideRef {
+  from: string;
+  to: string;
+  missing: boolean;
+}
+
+export interface OutsideCheck {
+  refs: OutsideRef[];
+  scanned: number;
+  /** False when SolidWorks could not be asked, so nothing was ruled out. */
+  checked: boolean;
+  why: string | null;
+}
+
+export const checkOutsideRefs = (paths: string[]) =>
+  invoke<OutsideCheck>("check_outside_refs", { paths });
+
 export const getCommitIdentities = () =>
   invoke<CommitIdentity[]>("get_commit_identities");
+
+/**
+ * Display names from GitHub profiles. For people not committed yet, so this is the only
+ * way to learn a lock holder's real name before their first commit.
+ */
+export const getProfileNames = (logins: string[]) =>
+  invoke<Record<string, string>>("get_profile_names", { logins });
 
 export interface CommitStat {
   date: string;
@@ -186,11 +210,35 @@ export interface SyncResult {
   anomalies: { path: string; reason: string }[];
 }
 
-export const claimFiles = (paths: string[]) =>
-  invoke<ClaimResult>("claim_files", { paths });
+export interface LockProgress {
+  state: "working" | "done" | "failed" | "undone";
+  path: string;
+  total: number;
+}
 
-export const releaseFiles = (paths: string[]) =>
-  invoke<ReleaseOutcome[]>("release_files", { paths });
+function progressChannel(onProgress?: (step: LockProgress) => void) {
+  const channel = new Channel<LockProgress>();
+  if (onProgress) channel.onmessage = onProgress;
+  return channel;
+}
+
+export const claimFiles = (
+  paths: string[],
+  onProgress?: (step: LockProgress) => void,
+) =>
+  invoke<ClaimResult>("claim_files", {
+    paths,
+    onProgress: progressChannel(onProgress),
+  });
+
+export const releaseFiles = (
+  paths: string[],
+  onProgress?: (step: LockProgress) => void,
+) =>
+  invoke<ReleaseOutcome[]>("release_files", {
+    paths,
+    onProgress: progressChannel(onProgress),
+  });
 
 export const forceUnlock = (path: string) =>
   invoke<void>("force_unlock", { path });

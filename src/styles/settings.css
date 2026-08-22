@@ -534,3 +534,105 @@
   font-weight: 700;
   fill: var(--accent);
 }
+
+
+.modal.lockprogress {
+  min-width: 24rem;
+}
+
+.locksteps {
+  list-style: none;
+  margin: 0.6rem 0;
+  padding: 0;
+  max-height: 15rem;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.lockstep {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.85rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.lockstep:last-child {
+  border-bottom: none;
+}
+
+.lockstep-mark {
+  width: 1rem;
+  flex: none;
+  text-align: center;
+  color: var(--muted);
+}
+
+.lockstep-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lockstep-state {
+  flex: none;
+}
+
+.lockstep-working {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.lockstep-working .lockstep-mark,
+.lockstep-working .lockstep-name {
+  color: inherit;
+}
+
+.lockstep-done .lockstep-mark {
+  color: var(--success);
+}
+
+.lockstep-failed .lockstep-mark {
+  color: var(--error);
+}
+
+.lockstep-undone .lockstep-mark {
+  color: var(--warning);
+}
+
+.lockstep-waiting .lockstep-name {
+  color: var(--muted);
+}
+
+.outsidelist {
+  list-style: none;
+  margin: 0.5rem 0;
+  padding: 0;
+  max-height: 12rem;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.outsidelist li {
+  padding: 0.35rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.82rem;
+}
+
+.outsidelist li:last-child {
+  border-bottom: none;
+}
+
+.outsidefrom {
+  display: block;
+  font-weight: 600;
+}
+
+.outsideto {
+  display: block;
+  color: var(--warning);
+  word-break: break-all;
+}

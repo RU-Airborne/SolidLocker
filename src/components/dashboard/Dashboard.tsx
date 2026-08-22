@@ -17,10 +17,14 @@ import {
   switchBranch,
   syncAttributes,
   undoMerge,
+  checkOutsideRefs,
   type CommitInfo,
+  type LockProgress,
+  type OutsideRef,
 } from "../../api";
 import {
   useClaim,
+  useOutsideRefs,
   useFiles,
   useGetLatest,
   useLocks,
@@ -69,6 +73,12 @@ import {
 } from "../dialogs/RestoreVersionDialog";
 import { RestoreFilesDialog } from "../dialogs/RestoreFilesDialog";
 import { DiscardChangesDialog } from "../dialogs/DiscardChangesDialog";
+import { OutsideRefsDialog } from "../dialogs/OutsideRefsDialog";
+import {
+  LockProgressDialog,
+  type LockRunKind,
+  type LockRunState,
+} from "../dialogs/LockProgressDialog";
 import { CreateBranchDialog } from "../dialogs/CreateBranchDialog";
 import { isSwTemp } from "../../types";
 import { HistoryPage } from "../history/HistoryPage";
@@ -85,6 +95,9 @@ export interface FileRowData {
   edited: boolean;
   /** Added to the project recently and not yet looked at. */
   isNew: boolean;
+  /** Parts this file needs that live outside the project, so it opens broken
+      for everyone else. Empty for the normal case. */
+  outside: OutsideRef[];
 }
 
 export interface RowActions {
@@ -99,7 +112,7 @@ export interface RowActions {
   watched: Set<string>;
   togglePin: (path: string) => void;
   pinned: Set<string>;
-  busyPaths: Set<string>;
+  busyPaths: Map<string, LockRunKind>;
   highlightedPath: string | null;
   /** Report an outcome from a row-level dialog and refresh what it changed.
       With undoPaths set, the banner offers an Undo that discards the local
@@ -244,12 +257,20 @@ export function Dashboard({ appState }: { appState: AppState }) {
       .catch((e) => warn(String(e)));
   }
 
-  const [busyPaths, setBusyPaths] = useState<Set<string>>(new Set());
+  const [busyPaths, setBusyPaths] = useState<Map<string, LockRunKind>>(
+    new Map(),
+  );
+  const [lockRun, setLockRun] = useState<LockRunState | null>(null);
   const [claimDialogPath, setClaimDialogPath] = useState<string | null>(null);
   const [releaseDialogPath, setReleaseDialogPath] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [releaseAllOpen, setReleaseAllOpen] = useState(false);
   const [progressOpen, setProgressOpen] = useState(false);
+  // Files about to be shared that reach outside the project, hold back until user decides
+  const [outsideRefs, setOutsideRefs] = useState<{
+    refs: OutsideRef[];
+    share: () => void;
+  } | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   // Looking at a file as it was at an older commit (from Activity/History).
   const [versionView, setVersionView] = useState<{
@@ -453,6 +474,25 @@ export function Dashboard({ appState }: { appState: AppState }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locks.dataUpdatedAt]);
 
+  // Only assemblies and drawings reference anything else.
+  const referencing = useMemo(
+    () =>
+      (files.data ?? [])
+        .map((f) => f.rel_path)
+        .filter((p) => /\.(sldasm|slddrw)$/i.test(p))
+        .sort(),
+    [files.data],
+  );
+  const outsideCheck = useOutsideRefs(referencing, true);
+  const outsideByPath = useMemo(() => {
+    const byPath = new Map<string, OutsideRef[]>();
+    for (const ref of outsideCheck.data?.refs ?? []) {
+      const key = ref.from.toLowerCase();
+      byPath.set(key, [...(byPath.get(key) ?? []), ref]);
+    }
+    return byPath;
+  }, [outsideCheck.data]);
+
   const lockStatusByPath = useMemo(() => {
     const byPath = new Map<string, LockStatus>();
     for (const lock of locks.data?.ours ?? []) {
@@ -495,8 +535,9 @@ export function Dashboard({ appState }: { appState: AppState }) {
         file.added > weekAgo &&
         !seenNew.has(file.rel_path.toLowerCase()) &&
         !dirty.has(file.rel_path),
+      outside: outsideByPath.get(file.rel_path.toLowerCase()) ?? [],
     }));
-  }, [files.data, lockStatusByPath, repoStatus.data, seenNew]);
+  }, [files.data, lockStatusByPath, outsideByPath, repoStatus.data, seenNew]);
 
   const visibleRows = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -599,15 +640,36 @@ export function Dashboard({ appState }: { appState: AppState }) {
   });
 
 
-  function withBusy(paths: string[], fn: () => Promise<void>) {
-    setBusyPaths((prev) => new Set([...prev, ...paths]));
+  function withBusy(paths: string[], kind: LockRunKind, fn: () => Promise<void>) {
+    setBusyPaths((prev) => {
+      const next = new Map(prev);
+      for (const p of paths) next.set(p, kind);
+      return next;
+    });
     fn().finally(() => {
       setBusyPaths((prev) => {
-        const next = new Set(prev);
+        const next = new Map(prev);
         for (const p of paths) next.delete(p);
         return next;
       });
     });
+  }
+
+  function watchRun(kind: LockRunKind, paths: string[]) {
+    if (paths.length < 2) return undefined;
+    const listed = [...new Set(paths)].sort((a, b) =>
+      a.toLowerCase().localeCompare(b.toLowerCase()),
+    );
+    setLockRun({ kind, paths: listed, steps: new Map(), finished: false });
+    return (step: LockProgress) =>
+      setLockRun((prev) =>
+        prev ? { ...prev, steps: new Map(prev.steps).set(step.path, step.state) } : prev,
+      );
+  }
+
+  function endRun(clean: boolean) {
+    setLockRun((prev) => (prev ? { ...prev, finished: true } : prev));
+    window.setTimeout(() => setLockRun(null), clean ? 900 : 3200);
   }
 
   // Referentially stable so the memoized FileTree/FileRow components only
@@ -709,10 +771,12 @@ export function Dashboard({ appState }: { appState: AppState }) {
     pinned,
     claim: (paths) => {
       if (switching || previewing) return;
-      withBusy(paths, async () => {
+      const report = watchRun("lock", paths);
+      withBusy(paths, "lock", async () => {
         setNotice(null);
         try {
-          const result = await claim.mutateAsync(paths);
+          const result = await claim.mutateAsync({ paths, onProgress: report });
+          endRun(result.failed.length === 0);
           if (result.failed.length === 0) {
             succeed(copy.claimedOk(result.claimed));
           } else if (result.rolled_back) {
@@ -739,17 +803,20 @@ export function Dashboard({ appState }: { appState: AppState }) {
             );
           }
         } catch (e) {
+          endRun(false);
           setNotice(String(e));
         }
       });
     },
     release: (paths) => {
       if (switching || previewing) return;
-      withBusy(paths, async () => {
+      const report = watchRun("unlock", paths);
+      withBusy(paths, "unlock", async () => {
         setNotice(null);
         try {
-          const outcomes = await release.mutateAsync(paths);
+          const outcomes = await release.mutateAsync({ paths, onProgress: report });
           const blocked = outcomes.filter((o) => !o.ok);
+          endRun(blocked.length === 0);
           if (blocked.length === 0) {
             succeed(copy.releasedOk(outcomes.map((o) => o.path)));
           } else {
@@ -765,6 +832,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
             );
           }
         } catch (e) {
+          endRun(false);
           setNotice(String(e));
         }
       });
@@ -773,14 +841,27 @@ export function Dashboard({ appState }: { appState: AppState }) {
   }), [busyPaths, highlightedPath, watched, pinned, lockStatusByPath, switching, previewing, currentBranch]);
 
   function handleSaveShare(message: string, paths: string[]) {
-    saveShareMut
-      .mutateAsync({ message, paths })
-      .then(() => {
-        playRebuildComplete();
-        setCommitDialogOpen(false);
-        setNotice(copy.sharedOk);
+    const share = () => {
+      setOutsideRefs(null);
+      saveShareMut
+        .mutateAsync({ message, paths })
+        .then(() => {
+          playRebuildComplete();
+          setCommitDialogOpen(false);
+          setNotice(copy.sharedOk);
+        })
+        .catch((e) => warn(isAppError(e) ? e.message : String(e)));
+    };
+
+    checkOutsideRefs(paths)
+      .then((check) => {
+        if (check.checked && check.refs.length > 0) {
+          setOutsideRefs({ refs: check.refs, share });
+        } else {
+          share();
+        }
       })
-      .catch((e) => warn(isAppError(e) ? e.message : String(e)));
+      .catch(() => share());
   }
 
   const branches = useQuery({
@@ -1081,8 +1162,8 @@ export function Dashboard({ appState }: { appState: AppState }) {
           onLockAndOpen={() => {
             const p = openWarning.path;
             setOpenWarning(null);
-            withBusy([p], async () => {
-              const result = await claim.mutateAsync([p]);
+            withBusy([p], "lock", async () => {
+              const result = await claim.mutateAsync({ paths: [p] });
               if (result.claimed.length > 0) doOpen(p);
               else warn(copy.claimPartial(0, 1, p.split("/").pop() ?? p));
             });
@@ -1316,6 +1397,16 @@ export function Dashboard({ appState }: { appState: AppState }) {
           onClose={() => setDiscardOpen(false)}
           onConfirm={handleDiscardChanges}
         />
+      )}
+      {outsideRefs && (
+        <OutsideRefsDialog
+          refs={outsideRefs.refs}
+          onShareAnyway={outsideRefs.share}
+          onClose={() => setOutsideRefs(null)}
+        />
+      )}
+      {lockRun && (
+        <LockProgressDialog run={lockRun} onClose={() => setLockRun(null)} />
       )}
       {multiRestore && (
         <RestoreFilesDialog
