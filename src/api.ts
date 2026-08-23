@@ -44,6 +44,16 @@ export interface FileCommit {
 export const previewVersion = (path: string, sha: string) =>
   invoke<string | null>("preview_version", { path, sha });
 
+export interface UndoPlan {
+  restore: string[];
+  remove: string[];
+  parent: string;
+}
+
+export const planUndo = (sha: string) => invoke<UndoPlan>("plan_undo", { sha });
+
+export const undoChange = (sha: string) => invoke<void>("undo_change", { sha });
+
 export const restoreVersion = (paths: string[], sha: string) =>
   invoke<void>("restore_version", { paths, sha });
 
@@ -151,6 +161,28 @@ export interface OutsideCheck {
   checked: boolean;
   why: string | null;
 }
+
+export interface SetupCheck {
+  id: string;
+  label: string;
+  state: "ok" | "warn" | "fail";
+  detail: string;
+  fix: string | null;
+  fixable: boolean;
+}
+
+export const runSetupChecks = () => invoke<SetupCheck[]>("run_setup_checks");
+
+export interface Collision {
+  branch: string;
+  author: string;
+  last_commit_at: number;
+  files: string[];
+  is_mine: boolean;
+  cad_files: string[];
+}
+
+export const getCollisions = () => invoke<Collision[]>("get_collisions");
 
 export interface SideInfo {
   sha: string;
@@ -304,6 +336,9 @@ export const combineWithPicks = (branch: string, picks: { path: string; side: st
 
 export const abandonConflicts = () => invoke<void>("abandon_conflicts");
 
+export const getUsedBy = (path: string) =>
+  invoke<string[]>("get_used_by", { path });
+
 export const checkOutsideRefs = (paths: string[]) =>
   invoke<OutsideCheck>("check_outside_refs", { paths });
 
@@ -355,6 +390,8 @@ export interface ClaimResult {
   /** A teammate won part of the set mid-claim, so every lock this claim had
       already taken was released again */
   rolled_back: boolean;
+  still_held: string[];
+  cancelled: boolean;
 }
 
 export interface ReleaseOutcome {
@@ -400,10 +437,22 @@ export const releaseFiles = (
     onProgress: progressChannel(onProgress),
   });
 
+export const cancelLockRun = () => invoke<void>("cancel_lock_run");
+
 export const forceUnlock = (path: string) =>
   invoke<void>("force_unlock", { path });
 
 export const syncAttributes = () => invoke<SyncResult>("sync_attributes");
+
+export interface TidyResult {
+  fetched: boolean;
+  swept: string[];
+  made_writable: number;
+  made_readonly: number;
+  anomalies: { path: string; reason: string }[];
+}
+
+export const tidyAndSync = () => invoke<TidyResult>("tidy_and_sync");
 
 export interface RepoStatus {
   branch: string;

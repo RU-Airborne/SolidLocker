@@ -97,6 +97,44 @@ pub async fn ensure_lfs_filters(cwd: &Path) {
     }
 }
 
+/// Ask git-lfs to keep lockable files read-only until they are locked
+async fn set_lockable_readonly(root: &Path) {
+    for attempt in 0..3 {
+        let out = match run_git(
+            root,
+            &["config", "--local", "lfs.setlockablereadonly", "true"],
+            15,
+        )
+        .await
+        {
+            Ok(out) => out,
+            Err(_) => return,
+        };
+        if out.ok() {
+            return;
+        }
+        // another git holds config.lock; it's usually gone in a moment
+        let contended = out.stderr.contains("could not lock config file");
+        if contended && attempt < 2 {
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            continue;
+        }
+        crate::logger::warn(format!(
+            "could not turn on lfs.setlockablereadonly: {}{}",
+            out.stderr.trim(),
+            if contended {
+                format!(
+                    ". Files may not go read-only until this is set. If no git is running, {} is left over from one that was stopped and can be deleted.",
+                    root.join(".git/config.lock").display()
+                )
+            } else {
+                String::new()
+            }
+        ));
+        return;
+    }
+}
+
 pub async fn validate_repo(path: &str) -> AppResult<RepoInfo> {
     let p = PathBuf::from(path);
     if !p.is_dir() {
@@ -128,12 +166,18 @@ pub async fn validate_repo(path: &str) -> AppResult<RepoInfo> {
         AppError::new("REPO", messages::not_a_github_remote(&remote_url))
     })?;
 
-    run_git_ok(
+    // read first: it's set once, so most starts have nothing to write
+    let already_set = run_git(
         &root,
-        &["config", "--local", "lfs.setlockablereadonly", "true"],
+        &["config", "--local", "--get", "lfs.setlockablereadonly"],
         15,
     )
-    .await?;
+    .await
+    .map(|out| out.ok() && out.stdout.trim() == "true")
+    .unwrap_or(false);
+    if !already_set {
+        set_lockable_readonly(&root).await;
+    }
 
     // A repo cloned before the filters existed holds pointer files; checkout
     // rebuilds them from the local cache without touching the network.
@@ -788,6 +832,88 @@ pub async fn files_at_commit(root: &Path, sha: &str) -> AppResult<Vec<String>> {
 }
 
 
+#[allow(dead_code)]
+#[derive(Debug, Serialize)]
+pub struct UndoPlan {
+    /// Changed or deleted by the commit; undoing puts them back.
+    pub restore: Vec<String>,
+    /// Added by the commit; undoing removes them.
+    pub remove: Vec<String>,
+    pub parent: String,
+}
+
+#[allow(dead_code)]
+pub async fn plan_undo(root: &Path, sha: &str) -> AppResult<UndoPlan> {
+    let parent = run_git(root, &["rev-parse", &format!("{sha}^")], 15).await?;
+    if !parent.ok() {
+        return Err(AppError::new("UNDO", messages::UNDO_NO_PARENT));
+    }
+    let parent = parent.stdout.trim().to_string();
+
+    let out = run_git(
+        root,
+        &[
+            "diff",
+            "--name-status",
+            "-z",
+            "--no-renames",
+            &parent,
+            sha,
+        ],
+        60,
+    )
+    .await?;
+    if !out.ok() {
+        return Err(AppError::git(out.stderr.trim().to_string()));
+    }
+
+    let mut restore = Vec::new();
+    let mut remove = Vec::new();
+    let mut fields = out.stdout.split('\0').filter(|f| !f.is_empty());
+    while let Some(status) = fields.next() {
+        let Some(path) = fields.next() else { break };
+        match status.chars().next() {
+            Some('A') => remove.push(path.to_string()),
+            Some('M') | Some('D') | Some('T') => restore.push(path.to_string()),
+            _ => {}
+        }
+    }
+    restore.sort_by_key(|p| p.to_lowercase());
+    remove.sort_by_key(|p| p.to_lowercase());
+    Ok(UndoPlan {
+        restore,
+        remove,
+        parent,
+    })
+}
+
+#[allow(dead_code)]
+pub async fn undo_change(root: &Path, plan: &UndoPlan) -> AppResult<()> {
+    if !plan.restore.is_empty() {
+        restore_version_files(root, &plan.restore, &plan.parent).await?;
+    }
+    for path in &plan.remove {
+        let abs = root.join(path);
+        if !abs.is_file() {
+            continue;
+        }
+        // lockable files sit read-only; caller already checked the locks
+        let _ = fsattr::set_readonly(&abs, false);
+        if let Err(e) = std::fs::remove_file(&abs) {
+            return Err(AppError::new(
+                "UNDO",
+                messages::could_not_remove_added(path, &e.to_string()),
+            ));
+        }
+    }
+    crate::logger::info(format!(
+        "undid a change: {} file(s) put back, {} removed",
+        plan.restore.len(),
+        plan.remove.len()
+    ));
+    Ok(())
+}
+
 pub async fn restore_version_files(root: &Path, paths: &[String], sha: &str) -> AppResult<()> {
     if paths.is_empty() {
         return Err(AppError::new("INVALID", messages::NO_FILES_SELECTED));
@@ -822,9 +948,10 @@ pub async fn branch_from_commit(root: &Path, name: &str, sha: &str) -> AppResult
         .filter(|out| out.ok())
         .map(|out| out.stdout.trim().to_string());
 
-    let mut sw = run_git(root, &["switch", "-c", name, sha], 120).await?;
+    // --no-track: inheriting the start point's upstream breaks pushing later (see push_args)
+    let mut sw = run_git(root, &["switch", "-c", name, "--no-track", sha], 120).await?;
     if !sw.ok() && blocked_only_by_illusions(root, &sw.stderr).await {
-        sw = run_git(root, &["switch", "--force", "-c", name, sha], 120).await?;
+        sw = run_git(root, &["switch", "--force", "-c", name, "--no-track", sha], 120).await?;
     }
     if !sw.ok() {
         return Err(AppError::git(messages::could_not_branch_off(
@@ -833,6 +960,20 @@ pub async fn branch_from_commit(root: &Path, name: &str, sha: &str) -> AppResult
         )));
     }
     crate::logger::info(format!("branched off {name} at {sha}"));
+
+    // share it right away; best effort, offline just means push later
+    let up = run_git(root, &["push", "-u", "origin", "HEAD"], 600).await;
+    match up {
+        Ok(out) if out.ok() => {
+            crate::logger::info(format!("shared branch {name} on GitHub"));
+        }
+        Ok(out) => crate::logger::warn(format!(
+            "branch {name} is not on GitHub yet: {}",
+            crate::logger::one_line(out.stderr.trim(), 200)
+        )),
+        Err(e) => crate::logger::warn(format!("branch {name} is not on GitHub yet: {e}")),
+    }
+
     Ok(finish_switch(root, prev_head.as_deref()).await)
 }
 
@@ -1109,6 +1250,21 @@ pub struct BranchSummary {
     pub forked_at: i64,
 }
 
+pub async fn refresh_default_branch(root: &Path) {
+    let out = run_git(root, &["remote", "set-head", "origin", "--auto"], 60).await;
+    match out {
+        Ok(o) if o.ok() => {
+            // git only prints when it changed
+            let said = o.stdout.trim();
+            if !said.is_empty() {
+                crate::logger::info(format!("default branch: {said}"));
+            }
+        }
+        // offline; the last answer stands
+        _ => {}
+    }
+}
+
 pub async fn default_branch(root: &Path) -> String {
     if let Ok(out) = run_git(root, &["symbolic-ref", "refs/remotes/origin/HEAD"], 15).await {
         if out.ok() {
@@ -1185,7 +1341,6 @@ pub async fn delete_branch(root: &Path, name: &str) -> AppResult<()> {
     crate::logger::info(format!("deleted branch {name}: everything on it was already in {default}"));
     Ok(())
 }
-
 
 pub async fn branch_overview(root: &Path) -> AppResult<Vec<BranchSummary>> {
     let default = default_branch(root).await;
@@ -1272,7 +1427,7 @@ pub async fn branch_overview(root: &Path) -> AppResult<Vec<BranchSummary>> {
         });
     }
 
-    branches.sort_by(|a, b| b.last_commit_at.cmp(&a.last_commit_at));
+    branches.sort_by_key(|b| std::cmp::Reverse(b.last_commit_at));
     Ok(branches)
 }
 
@@ -1343,6 +1498,119 @@ async fn matches_commit(root: &Path, commit: &str, path: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Remove files the switch meant to delete but couldn't .
+async fn sweep_leftovers(root: &Path, prev_head: &str) -> usize {
+    let Ok(status) = get_repo_status(root).await else {
+        return 0;
+    };
+    let mut swept = 0;
+    for path in status.untracked {
+        if is_sw_temp(&path) || !matches_commit(root, prev_head, &path).await {
+            continue;
+        }
+        let abs = root.join(&path);
+        // the read-only flag is what blocked git's removal
+        let _ = fsattr::set_readonly(&abs, false);
+        if std::fs::remove_file(&abs).is_ok() {
+            swept += 1;
+        }
+    }
+    if swept > 0 {
+        crate::logger::info(format!(
+            "switch: cleared {swept} file(s) the previous branch left behind"
+        ));
+    }
+    swept
+}
+
+pub async fn sweep_foreign_files(root: &Path) -> AppResult<Vec<String>> {
+    let status = get_repo_status(root).await?;
+    let loose: Vec<String> = status
+        .untracked
+        .into_iter()
+        .filter(|p| !is_sw_temp(p))
+        .collect();
+    if loose.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let refs = run_git(
+        root,
+        &[
+            "for-each-ref",
+            "--format=%(refname)",
+            "refs/heads",
+            "refs/remotes/origin",
+        ],
+        60,
+    )
+    .await?;
+    if !refs.ok() {
+        return Ok(Vec::new());
+    }
+    let branches: Vec<&str> = refs.stdout.lines().map(str::trim).filter(|r| !r.is_empty()).collect();
+    if branches.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut query = String::new();
+    for path in &loose {
+        for branch in &branches {
+            query.push_str(branch);
+            query.push(':');
+            query.push_str(path);
+            query.push('\n');
+        }
+    }
+    let known = crate::proc::run_git_stdin(
+        root,
+        &["cat-file", "--batch-check=%(objectname)"],
+        query.as_bytes(),
+        120,
+    )
+    .await?;
+    if !known.ok() {
+        return Ok(Vec::new());
+    }
+    // one line per query, same order
+    let answers: Vec<&str> = known.stdout.lines().map(str::trim).collect();
+
+    let mut args = vec!["hash-object", "--"];
+    args.extend(loose.iter().map(String::as_str));
+    let on_disk = run_git(root, &args, 300).await?;
+    if !on_disk.ok() {
+        return Ok(Vec::new());
+    }
+    let disk: Vec<&str> = on_disk.stdout.lines().map(str::trim).collect();
+    if disk.len() != loose.len() {
+        return Ok(Vec::new());
+    }
+
+    let mut swept = Vec::new();
+    for (i, path) in loose.iter().enumerate() {
+        let mine = disk[i];
+        let start = i * branches.len();
+        let seen_in_a_branch = (start..start + branches.len())
+            .filter_map(|k| answers.get(k))
+            .any(|line| *line == mine);
+        if !seen_in_a_branch {
+            continue;
+        }
+        let abs = root.join(path);
+        let _ = fsattr::set_readonly(&abs, false);
+        if std::fs::remove_file(&abs).is_ok() {
+            swept.push(path.clone());
+        }
+    }
+    if !swept.is_empty() {
+        crate::logger::info(format!(
+            "tidy: cleared {} file(s) another branch had left in the folder",
+            swept.len()
+        ));
+    }
+    Ok(swept)
+}
+
 /// The switch guard requires a clean tree, so a dirty file right after a
 /// successful switch is one of two things, and they must not be confused:
 ///
@@ -1356,6 +1624,9 @@ async fn matches_commit(root: &Path, commit: &str, path: &str) -> bool {
 /// is not a verbatim copy of the old branch is left alone and reported.
 async fn finish_switch(root: &Path, prev_head: Option<&str>) -> SwitchResult {
     let _ = heal_upstream(root).await;
+    if let Some(head) = prev_head {
+        sweep_leftovers(root, head).await;
+    }
     let real_dirty = |s: RepoStatus| -> Vec<String> {
         s.dirty.into_iter().filter(|p| !is_sw_temp(p)).collect()
     };
@@ -1928,6 +2199,7 @@ mod tests {
     use super::parse_activity_log;
     use super::parse_slug_from_remote;
     use super::merge_past_illusions;
+    use super::sweep_foreign_files;
     use super::worktree_only_changes;
 
     fn git_in(root: &std::path::Path, args: &[&str]) -> std::process::Output {
@@ -2050,6 +2322,83 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    // a switch leaves another branch's files behind and they look like new work
+    #[tokio::test]
+    async fn clears_what_another_branch_left_but_never_real_work() {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let root = std::env::temp_dir().join(format!("solidlocker-sweep-{stamp}"));
+        std::fs::create_dir_all(&root).unwrap();
+        let git = |args: &[&str]| git_in(&root, args);
+        git(&["init", "-q", "-b", "main", "."]);
+        git(&["config", "user.email", "test@example.com"]);
+        git(&["config", "user.name", "Test"]);
+
+        // space in the name on purpose; that's where path handling usually breaks
+        let folder = root.join("Full Assembly");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("rib.SLDPRT"), b"rib bytes").unwrap();
+        std::fs::write(root.join("base.txt"), b"base").unwrap();
+        git(&["add", "-A"]);
+        git(&["commit", "-qm", "with the assembly"]);
+        git(&["switch", "-q", "-c", "other"]);
+        git(&["rm", "-q", "-r", "--cached", "Full Assembly"]);
+        git(&["commit", "-qm", "without it"]);
+
+        // leftover from the switch, plus a file the user really made here
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("rib.SLDPRT"), b"rib bytes").unwrap();
+        std::fs::write(folder.join("mine.SLDPRT"), b"my own new part").unwrap();
+
+        let swept = sweep_foreign_files(&root).await.unwrap();
+
+        assert_eq!(swept, vec!["Full Assembly/rib.SLDPRT".to_string()]);
+        assert!(
+            !folder.join("rib.SLDPRT").exists(),
+            "the other branch's file should be gone"
+        );
+        assert!(
+            folder.join("mine.SLDPRT").exists(),
+            "a file nobody else has must never be swept"
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_branch_started_from_another_pushes_to_its_own_name() {
+        use super::{push_args, RepoStatus};
+        let make = |branch: &str, upstream: Option<&str>| RepoStatus {
+            branch: branch.to_string(),
+            upstream: upstream.map(str::to_string),
+            ahead: 0,
+            behind: 0,
+            dirty: Vec::new(),
+            untracked: Vec::new(),
+            conflicted: Vec::new(),
+        };
+
+        assert_eq!(
+            push_args(&make("full-assembly", Some("origin/full-assembly"))),
+            vec!["push"]
+        );
+        assert_eq!(
+            push_args(&make("brand-new", None)),
+            vec!["push", "-u", "origin", "HEAD"]
+        );
+        // branched off full-assembly, so it inherited that upstream
+        assert_eq!(
+            push_args(&make("mission-integration", Some("origin/full-assembly"))),
+            vec!["push", "-u", "origin", "HEAD"]
+        );
+        assert_eq!(
+            push_args(&make("wing/ribs", Some("origin/wing/ribs"))),
+            vec!["push"]
+        );
+    }
+
     #[test]
     fn picks_out_files_changed_on_disk_only() {
         // Real `git status --porcelain=v2 -z` output: one file changed on
@@ -2101,37 +2450,5 @@ mod tests {
             Some("org/repo".into())
         );
         assert_eq!(parse_slug_from_remote("https://gitlab.com/org/repo"), None);
-    }
-
-    #[test]
-    fn a_branch_started_from_another_pushes_to_its_own_name() {
-        use super::{push_args, RepoStatus};
-        let make = |branch: &str, upstream: Option<&str>| RepoStatus {
-            branch: branch.to_string(),
-            upstream: upstream.map(str::to_string),
-            ahead: 0,
-            behind: 0,
-            dirty: Vec::new(),
-            untracked: Vec::new(),
-            conflicted: Vec::new(),
-        };
-
-        assert_eq!(
-            push_args(&make("full-assembly", Some("origin/full-assembly"))),
-            vec!["push"]
-        );
-        assert_eq!(
-            push_args(&make("brand-new", None)),
-            vec!["push", "-u", "origin", "HEAD"]
-        );
-        // branched off full-assembly, so it inherited that upstream
-        assert_eq!(
-            push_args(&make("mission-integration", Some("origin/full-assembly"))),
-            vec!["push", "-u", "origin", "HEAD"]
-        );
-        assert_eq!(
-            push_args(&make("wing/ribs", Some("origin/wing/ribs"))),
-            vec!["push"]
-        );
     }
 }

@@ -86,6 +86,19 @@ pub fn restore_needs_locks(files: &str) -> String {
 pub const SW_NEWER_FORMAT: &str =
     "This file is in the newer (2015 and later) SolidWorks format, which keeps its list of parts compressed. SolidWorks has to be running to read it.";
 
+pub fn claim_offline_still_held(files: &str) -> String {
+    format!("Lost connection to GitHub partway through. Nothing was locked, except these, which could not be given back and are still locked to you: {files}. Unlock them when you are back online.")
+}
+
+#[allow(dead_code)]
+pub const UNDO_NO_PARENT: &str =
+    "This is the first change in the project, so there is nothing before it to go back to.";
+
+#[allow(dead_code)]
+pub fn could_not_remove_added(path: &str, why: &str) -> String {
+    format!("Could not remove {path}: {why}. If it is open in SolidWorks, close it and try again.")
+}
+
 pub fn conflicts_changed_underneath(n: usize) -> String {
     format!(
         "The branch changed since this list was drawn: {n} file{} now clash that were not here before. Nothing was combined. Look again to see the current list.",
@@ -101,6 +114,7 @@ pub const CONFLICTS_SETTLED_NOT_SHARED: &str =
 pub fn conflicts_still_open(n: usize) -> String {
     format!("{n} file{} still {} a version chosen.", if n == 1 { "" } else { "s" }, if n == 1 { "needs" } else { "need" })
 }
+
 
 pub const PR_NEEDS_SIGN_IN: &str = "Sign in to GitHub first. Reviews use your GitHub account.";
 
@@ -120,7 +134,6 @@ pub fn pr_not_allowed(detail: &str) -> String {
 pub fn pr_failed(code: u16, detail: &str) -> String {
     format!("GitHub said no ({code}): {detail}")
 }
-
 
 pub fn restore_files_open(files: &str) -> String {
     format!("Close these files in SolidWorks first. SolidWorks keeps its own copy in memory and would write it straight back: {files}")

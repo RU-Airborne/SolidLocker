@@ -175,6 +175,52 @@ fn place(root: &Path, abs: &str) -> (String, bool) {
     }
 }
 
+/// Assemblies and drawings that reference this part. Same COM call as the
+/// reference check, read the other way round.
+pub async fn used_by(root: &Path, target: &str) -> AppResult<Vec<String>> {
+    let docs = documents_in_project(root).await?;
+    if docs.is_empty() {
+        return Ok(Vec::new());
+    }
+    let pairs = match ask_solidworks(&docs, root).await {
+        Ok(pairs) => pairs,
+        // can't ask SolidWorks -> show nothing rather than "used by nobody"
+        Err(_) => return Ok(Vec::new()),
+    };
+
+    let wanted = file_name_of(target);
+    let mut users: Vec<String> = Vec::new();
+    for (idx, abs) in pairs {
+        if file_name_of(&abs) != wanted {
+            continue;
+        }
+        let holder = docs[idx].clone();
+        if !users.contains(&holder) {
+            users.push(holder);
+        }
+    }
+    users.sort_by_key(|p| p.to_lowercase());
+    Ok(users)
+}
+
+/// Assemblies and drawings in the project; nothing else references anything.
+async fn documents_in_project(root: &Path) -> AppResult<Vec<String>> {
+    let out = crate::proc::run_git(root, &["ls-files", "-z"], 60).await?;
+    if !out.ok() {
+        return Ok(Vec::new());
+    }
+    let mut docs: Vec<String> = out
+        .stdout
+        .split('\0')
+        .filter(|p| !p.is_empty())
+        .filter(|p| references_things(p))
+        .filter(|p| root.join(p).is_file())
+        .map(|p| p.to_string())
+        .collect();
+    docs.sort_by_key(|p| p.to_lowercase());
+    Ok(docs)
+}
+
 /// Which of these files reach outside the project for something
 pub async fn outside_references(root: &Path, paths: Vec<String>) -> AppResult<OutsideCheck> {
     let docs: Vec<String> = paths
@@ -227,7 +273,7 @@ pub async fn outside_references(root: &Path, paths: Vec<String>) -> AppResult<Ou
             });
         }
     }
-    refs.sort_by(|a, b| a.from.to_lowercase().cmp(&b.from.to_lowercase()));
+    refs.sort_by_key(|r| r.from.to_lowercase());
 
     if !refs.is_empty() || resolvable > 0 {
         crate::logger::info(format!(

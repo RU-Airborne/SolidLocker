@@ -10,6 +10,7 @@
 .content {
   flex: 1;
   overflow: auto;
+  overscroll-behavior: contain;
   /* No top padding since it would sit above the sticky header and let rows show
      through in the gap */
   padding: 0 1rem 1rem;
@@ -25,6 +26,7 @@
   border-left: 1px solid var(--border);
   padding: 1rem;
   overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .panelresizer {

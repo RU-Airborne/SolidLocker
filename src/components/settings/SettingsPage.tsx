@@ -18,26 +18,35 @@ import { usePeople } from "../../identity";
 import { copy } from "../../copy";
 import { BugReportDialog } from "../dialogs/BugReportDialog";
 import { GlassSelect } from "../common/GlassSelect";
+import { FilterBar } from "../common/FilterBar";
+import { SetupChecks } from "./SetupChecks";
+import { useTheme } from "../../theme";
+
+const THEME_CHOICES = [
+  { value: "system", label: "System" },
+  { value: "light", label: "Light" },
+  { value: "dark", label: "Dark" },
+];
 
 const FETCH_CHOICES = [
-  { seconds: 30, label: "Every 30 seconds" },
-  { seconds: 60, label: "Every minute (recommended)" },
-  { seconds: 120, label: "Every 2 minutes" },
-  { seconds: 300, label: "Every 5 minutes" },
+  { seconds: 30, short: "30 sec", label: "Every 30 seconds" },
+  { seconds: 60, short: "1 min", label: "Every minute (recommended)" },
+  { seconds: 120, short: "2 min", label: "Every 2 minutes" },
+  { seconds: 300, short: "5 min", label: "Every 5 minutes" },
 ];
 
 const STALE_CHOICES = [
-  { days: 1, label: "After 1 day" },
-  { days: 3, label: "After 3 days (recommended)" },
-  { days: 7, label: "After 7 days" },
-  { days: 0, label: "Never remind me" },
+  { days: 1, short: "1 day", label: "After 1 day" },
+  { days: 3, short: "3 days", label: "After 3 days (recommended)" },
+  { days: 7, short: "7 days", label: "After 7 days" },
+  { days: 0, short: "Never", label: "Never remind me" },
 ];
 
 const BIGFILE_CHOICES = [
-  { mb: 5, label: "Over 5 MB (recommended)" },
-  { mb: 25, label: "Over 25 MB" },
-  { mb: 50, label: "Over 50 MB" },
-  { mb: 0, label: "Never warn" },
+  { mb: 5, short: "5 MB", label: "Over 5 MB (recommended)" },
+  { mb: 25, short: "25 MB", label: "Over 25 MB" },
+  { mb: 50, short: "50 MB", label: "Over 50 MB" },
+  { mb: 0, short: "Never", label: "Never warn" },
 ];
 
 export function SettingsPage({
@@ -71,6 +80,7 @@ export function SettingsPage({
   onRepoChanged: (message: string) => void;
   onClose: () => void;
 }) {
+  const [theme, setTheme] = useTheme();
   const [error, setError] = useState<string | null>(null);
   const [url, setUrl] = useState("");
   const [cloning, setCloning] = useState(false);
@@ -364,48 +374,72 @@ export function SettingsPage({
           {progress && <p className="muted progressline">{progress}</p>}
         </section>
 
-        <section className="setupsection">
+        <section className="setupsection settingsplit">
+          <div className="settingtext">
+          <h3>Appearance</h3>
+          <p className="muted">
+            Follow Windows' light or dark setting, or pick one.
+          </p>
+          </div>
+          <FilterBar
+            ariaLabel="App appearance"
+            value={theme}
+            onChange={(v) => setTheme(v as typeof theme)}
+            options={THEME_CHOICES.map((c) => ({
+              value: c.value as typeof theme,
+              label: c.label,
+            }))}
+          />
+        </section>
+
+        <section className="setupsection settingsplit">
+          <div className="settingtext">
           <h3>Checking for team changes</h3>
           <p className="muted">
             How often SolidLocker looks on GitHub for teammates' changes. Lock
             info is always checked every 10 seconds regardless.
           </p>
-          <GlassSelect
-            className="settingselect"
+          </div>
+          <FilterBar
             ariaLabel="How often to check for team changes"
             value={String(fetchIntervalS)}
             onChange={(v) => onFetchIntervalChange(Number(v))}
             options={FETCH_CHOICES.map((c) => ({
               value: String(c.seconds),
-              label: c.label,
+              label: c.short,
+              title: c.label,
             }))}
           />
         </section>
 
-        <section className="setupsection">
+        <section className="setupsection settingsplit">
+          <div className="settingtext">
           <h3>Unlock reminders</h3>
           <p className="muted">
             Remind you to unlock files you have locked but not changed in a
             while, so teammates are not left waiting.
           </p>
-          <GlassSelect
-            className="settingselect"
+          </div>
+          <FilterBar
             ariaLabel="Unlock reminders"
             value={String(staleDays)}
             onChange={(v) => onStaleDaysChange(Number(v))}
             options={STALE_CHOICES.map((c) => ({
               value: String(c.days),
-              label: c.label,
+              label: c.short,
+              title: c.label,
             }))}
           />
         </section>
 
-        <section className="setupsection">
+        <section className="setupsection settingsplit">
+          <div className="settingtext">
           <h3>When you close the window</h3>
           <p className="muted">
             Running in the background keeps protecting your files and lets
             SolidLocker tell you when a file you are waiting on is free.
           </p>
+          </div>
           <GlassSelect
             className="settingselect"
             ariaLabel="When you close the window"
@@ -438,46 +472,68 @@ export function SettingsPage({
           </label>
         </section>
 
-        <section className="setupsection">
+        <section className="setupsection settingsplit">
+          <div className="settingtext">
           <h3>Large file warning</h3>
           <p className="muted">
             Point out unusually large files in Save &amp; Share before they make
             downloads slow for the whole team.
           </p>
-          <GlassSelect
-            className="settingselect"
+          </div>
+          <FilterBar
             ariaLabel="Large file warning"
             value={String(bigFileMb)}
             onChange={(v) => onBigFileMbChange(Number(v))}
             options={BIGFILE_CHOICES.map((c) => ({
               value: String(c.mb),
-              label: c.label,
+              label: c.short,
+              title: c.label,
             }))}
           />
         </section>
 
         <section className="setupsection">
-          <h3>Maintenance</h3>
-          <p className="muted">
-            Makes sure only the files you have locked are editable and sets
-            everything else back to view only. Run this if a file looks
-            editable or locked when it should not be.
-          </p>
-          <div className="setuprow">
-            <button onClick={onFixPerms}>Fix file permissions</button>
-          </div>
-        </section>
+          <h3>When something is wrong</h3>
+          <div className="toollist">
+            <div className="tool">
+              <div className="settingtext">
+                <strong>Fix file permissions</strong>
+                <p className="muted small">
+                  Sets every file back to view-only except the ones you hold.
+                  Run it if a file is editable when it shouldn't be, or won't
+                  open when it should.
+                </p>
+              </div>
+              <div className="setuprow">
+                <button onClick={onFixPerms}>Fix them</button>
+              </div>
+            </div>
 
-        <section className="setupsection">
-          <h3>Troubleshooting</h3>
-          <p className="muted">
-            SolidLocker keeps a log of errors and slow operations. If something
-            misbehaves, attach the log file when reporting it.
-          </p>
-          <div className="setuprow">
-            <button onClick={() => void openLogsFolder().catch(() => {})}>
-              Open log folder
-            </button>
+            <div className="tool">
+              <div className="settingtext">
+                <strong>Open log folder</strong>
+                <p className="muted small">
+                  Errors and slow operations are recorded here. Attach this
+                  when reporting a problem.
+                </p>
+              </div>
+              <div className="setuprow">
+                <button onClick={() => void openLogsFolder().catch(() => {})}>
+                  Open folder
+                </button>
+              </div>
+            </div>
+
+            <div className="tool">
+              <div className="settingtext">
+                <strong>Check this computer</strong>
+                <p className="muted small">
+                  Checks Git, Git LFS, locking, CAD files and previews on this
+                  machine. Run it after setup, or when something is off.
+                </p>
+              </div>
+              <SetupChecks />
+            </div>
           </div>
         </section>
       </div>

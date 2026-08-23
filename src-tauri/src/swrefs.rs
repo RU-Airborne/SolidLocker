@@ -199,6 +199,20 @@ if ($null -ne $deps) {
     Ok(nonempty_lines(&out.stdout))
 }
 
+#[cfg(windows)]
+pub async fn solidworks_running() -> bool {
+    if solidworks_install_dir().is_none() {
+        return false;
+    }
+    let out = run_powershell(
+        "if (Get-Process SLDWORKS -ErrorAction SilentlyContinue) { 'yes' }",
+        &[],
+        20,
+    )
+    .await;
+    matches!(out, Ok(o) if String::from_utf8_lossy(&o.stdout).contains("yes"))
+}
+
 /// Which documents SolidWorks currently has open. Best effort: anything that
 /// goes wrong means "cannot tell", and the callers treat that as "none".
 #[cfg(windows)]
@@ -353,6 +367,7 @@ pub fn scan_file(abs_path: &Path) -> AppResult<HashSet<String>> {
     Ok(names)
 }
 
+// Mass properties tracking
 #[cfg(test)]
 mod tests {
     use super::*;

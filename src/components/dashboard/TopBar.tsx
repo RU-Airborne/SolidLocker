@@ -89,8 +89,6 @@ export function TopBar({
 }) {
   const directory = usePeople();
   // SolidWorks ~$ temp files never count as work worth saving.
-  // only tracked edits can be discarded — brand-new files have no shared
-  // version to go back to
   const trackedDirty = status?.dirty.filter((p) => !isSwTemp(p)).length ?? 0;
   const dirtyCount =
     trackedDirty +
@@ -188,14 +186,20 @@ export function TopBar({
 
       <span className="spacer" />
 
-      {trackedDirty > 0 && (
+      {/* untracked-only counts too: a branch switch can leave files behind
+          with no edits at all, and there was no way to clear them */}
+      {dirtyCount > 0 && (
         <button
           className="barbtn"
           onClick={onDiscard}
           disabled={updating}
-          title="Throw away everything changed since the last Save & Share"
+          title={
+            trackedDirty > 0
+              ? "Throw away everything changed since the last Save & Share"
+              : "Move files that were never shared out of the project"
+          }
         >
-          Discard…
+          {trackedDirty > 0 ? "Discard…" : "Clear out…"}
         </button>
       )}
       <button

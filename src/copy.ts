@@ -1,5 +1,8 @@
 const shortName = (path: string) => path.split("/").pop() ?? path;
 
+export const namesOf = (paths: string[], max = 3): string =>
+  listNames(paths, max);
+
 const listNames = (paths: string[], max = 3): string => {
   const names = paths.slice(0, max).map(shortName).join(", ");
   const more = paths.length > max ? ` and ${paths.length - max} more` : "";
@@ -11,6 +14,10 @@ export const copy = {
   sharedOk: "Shared with your team on GitHub.",
   offlineRetry: "Could not reach GitHub. Will retry automatically.",
   syncedOk: "Checked GitHub. Everything is now up to date.",
+  sweptForeignFiles: (n: number) =>
+    n === 1
+      ? "Cleared 1 file another branch had left in the folder. It is still safe on the branch it belongs to."
+      : `Cleared ${n} files another branch had left in the folder. They are still safe on the branches they belong to.`,
   syncedChanges: (n: number) =>
     `Synced ${n} change${n === 1 ? "" : "s"} from your team.`,
   switchedBranch: (name: string) => `Switched to branch ${name}.`,
@@ -50,16 +57,38 @@ export const copy = {
     "Undone. The files are back to the branch's latest version.",
   undoneMerge:
     "Undone. Your branch is back to how it was before the combine.",
+  clearedWorkingFolder: (reverted: number, moved: number, movedTo: string | null) => {
+    const parts: string[] = [];
+    if (reverted > 0) {
+      parts.push(
+        reverted === 1
+          ? "1 file is back to the last shared version"
+          : `${reverted} files are back to the last shared version`,
+      );
+    }
+    if (moved > 0) {
+      parts.push(
+        `${moved} never-shared file${moved === 1 ? "" : "s"} moved to ${movedTo ?? "a folder beside the project"}`,
+      );
+    }
+    return parts.length > 0 ? `${parts.join(", and ")}.` : "Nothing to clear.";
+  },
   discardedChanges: (n: number) =>
     n === 1
       ? "Discarded. The file is back to the last shared version."
       : `Discarded. ${n} files are back to the last shared version.`,
   previewStarted: (label: string) =>
-    `You're looking at the project as it was at "${label}". Nothing you do here is saved.`,
+    `You're viewing the project as it was at "${label}", read-only. Nothing here can be changed or saved.`,
   previewBanner: (branch: string) =>
     `Every file is showing an older moment of the project. Locking and sharing are off until you go back to ${branch}.`,
   previewEnded: (branch: string) =>
     `Back to ${branch}. Everything is current again.`,
+  claimRolledBackStuck: (name: string, owner: string | null, stuck: string[]) =>
+    `${owner ?? "A teammate"} locked ${name} at the same moment, so this claim was undone. ${listNames(stuck)} could not be given back and ${stuck.length === 1 ? "is" : "are"} still locked to you. Unlock ${stuck.length === 1 ? "it" : "them"} by hand.`,
+  lockRunCancelled: (stuck: string[]) =>
+    stuck.length === 0
+      ? "Stopped. Anything already locked was given back."
+      : `Stopped, but ${listNames(stuck)} could not be given back and ${stuck.length === 1 ? "is" : "are"} still locked to you. Unlock ${stuck.length === 1 ? "it" : "them"} by hand.`,
   claimRolledBack: (name: string, owner: string | null) =>
     `Nothing was locked. ${owner ?? "A teammate"} locked ${name} at the same moment, and an assembly is only useful whole, so the files this claim had already taken were unlocked again. Wait for ${owner ?? "them"} to finish, or talk to ${owner ? "them" : "your team"}.`,
   releasePartial: (released: number, total: number, first: string, more: number) =>
@@ -94,8 +123,9 @@ export const copy = {
     "You're not signed in to GitHub. Locking may not work, and \"Who has what\" may not be up to date. Sign in to GitHub to fix this.",
   offlineStillWorking:
     "You can still open and edit any file you locked before you lost connection. Need to work on a file you did not lock?",
-  locksUnavailable: (detail: string) =>
-    `Couldn't check locks with GitHub. This list may be missing locks held by teammates. ${detail}`,
+  // The git detail is in the log; it means nothing here.
+  locksUnavailable:
+    "Couldn't check locks with GitHub. This list may be missing locks held by teammates.",
 
   // Connection changes
   offlineNotificationTitle: "SolidLocker lost its connection",

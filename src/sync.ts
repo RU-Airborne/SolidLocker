@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { RepoStatus } from "./api";
-import { fetchRemote } from "./api";
+import { fetchRemote, tidyAndSync } from "./api";
 import { copy } from "./copy";
 import { useChoice } from "./persist";
 import { playCheckComplete, playMateFailed } from "./sounds";
@@ -113,9 +113,12 @@ export function useSync(options: SyncOptions): SyncControls {
       if (syncing) return;
       lastAutoPull.current = 0;
       setSyncing(true);
-      fetchRemote()
-        .then(() => {
+      tidyAndSync()
+        .then((tidy) => {
           playCheckComplete();
+          if (tidy.swept.length > 0) {
+            latest.current.onNotice(copy.sweptForeignFiles(tidy.swept.length));
+          }
           setLastFetchAt(Date.now());
           setFailed(false);
           for (const key of ["repoStatus", "locks", "files", "repoBranches"]) {

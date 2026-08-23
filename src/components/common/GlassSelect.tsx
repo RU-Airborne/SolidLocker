@@ -4,7 +4,23 @@ import { createPortal } from "react-dom";
 export interface GlassOption {
   value: string;
   label: string;
+  // color?: string;
 }
+
+// function Label({ o }: { o: GlassOption }) {
+//   return (
+//     <>
+//       {o.color && (
+//         <span
+//           className="gselect-dot"
+//           style={{ background: o.color }}
+//           aria-hidden="true"
+//         />
+//       )}
+//       <span style={o.color ? { color: o.color } : undefined}>{o.label}</span>
+//     </>
+//   );
+// }
 
 /**
  * A custom dropdown menu with translucency and blur
@@ -156,7 +172,7 @@ export function GlassSelect({
         createPortal(
           <ul
           ref={popRef}
-          className="gselect-pop"
+          className={`gselect-pop${flip ? " flipped" : ""}`}
           role="listbox"
           tabIndex={-1}
           onKeyDown={onKeyDown}

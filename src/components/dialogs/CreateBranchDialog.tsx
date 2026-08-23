@@ -108,9 +108,9 @@ export function CreateBranchDialog({
             <span>
               <strong>Start completely fresh</strong>
               <span className="vt-sub">
-                An empty project with no files carried over, Git LFS
-                locking set up from the first commit. For a brand new design in
-                the same repository.
+                Create an empty branch without carrying over any files. Solidlocker will set up 
+                locking automatically on the first commit. This is intended to use when making a brand new design in the same
+                repository.
               </span>
             </span>
           </label>

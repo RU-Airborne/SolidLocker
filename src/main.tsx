@@ -4,6 +4,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
 import { logFrontend } from "./api";
 import "./styles.css";
+import { applySavedTheme } from "./theme";
+applySavedTheme();
 
 function describe(reason: unknown): string {
   if (reason instanceof Error) return reason.stack ?? reason.message;

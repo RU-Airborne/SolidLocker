@@ -1,6 +1,7 @@
 mod avatars;
 mod conflicts;
 mod deps;
+mod doctor;
 mod error;
 mod fsattr;
 mod gate;
@@ -8,6 +9,7 @@ mod lfs;
 mod logger;
 mod proc;
 mod pulls;
+mod radar;
 mod repo;
 mod messages;
 mod people;
@@ -332,6 +334,33 @@ async fn abandon_conflicts(
     conflicts::abandon(&root).await
 }
 
+/// Assemblies that use this part.
+#[tauri::command]
+async fn get_used_by(app: AppHandle, path: String) -> AppResult<Vec<String>> {
+    let root = current_repo(&app)?;
+    deps::used_by(&root, &path).await
+}
+
+/// Stop a lock/unlock in progress; whatever it already did is rolled back.
+#[tauri::command]
+async fn cancel_lock_run(cancel: State<'_, workflow::CancelFlag>) -> AppResult<()> {
+    cancel.request();
+    Ok(())
+}
+
+/// Other branches changing files this branch has also changed.
+#[tauri::command]
+async fn get_collisions(app: AppHandle) -> AppResult<Vec<radar::Collision>> {
+    let root = current_repo(&app)?;
+    radar::collisions(&root).await
+}
+
+#[tauri::command]
+async fn run_setup_checks(app: AppHandle) -> AppResult<Vec<doctor::Check>> {
+    let root = current_repo(&app)?;
+    doctor::run_checks(&root).await
+}
+
 #[tauri::command]
 async fn get_commit_identities(app: AppHandle) -> AppResult<Vec<repo::CommitIdentity>> {
     let root = current_repo(&app)?;
@@ -463,6 +492,49 @@ async fn preview_version(
 /// Brings an earlier version of one or more files into the working tree as
 /// the next change. History moves forward; nothing is rewritten. Restoring an
 /// assembly together with its referenced parts keeps the mating consistent.
+// #[tauri::command]
+// async fn plan_undo(app: AppHandle, sha: String) -> AppResult<repo::UndoPlan> {
+//     let root = current_repo(&app)?;
+//     repo::plan_undo(&root, &sha).await
+// }
+//
+// #[tauri::command]
+// async fn undo_change(
+//     app: AppHandle,
+//     gate: State<'_, gate::RepoGate>,
+//     sha: String,
+// ) -> AppResult<()> {
+//     let root = current_repo(&app)?;
+//     let plan = repo::plan_undo(&root, &sha).await?;
+//
+//     // same rule as restoring a version: only files you hold the lock on
+//     let touched: Vec<String> = plan
+//         .restore
+//         .iter()
+//         .chain(plan.remove.iter())
+//         .cloned()
+//         .collect();
+//     let username_hint = settings::get_string(&app, KEY_USERNAME)?;
+//     let locks = lfs::get_locks(&root, username_hint.as_deref()).await?;
+//     let mine: std::collections::HashSet<String> =
+//         locks.ours.iter().map(|l| l.path.to_lowercase()).collect();
+//     let missing: Vec<&str> = touched
+//         .iter()
+//         .filter(|p| !mine.contains(&p.to_lowercase()))
+//         .map(String::as_str)
+//         .collect();
+//     if !missing.is_empty() {
+//         return Err(AppError::with_detail(
+//             "RESTORE",
+//             messages::restore_needs_locks(&missing.join(", ")),
+//             serde_json::json!({ "files": missing }),
+//         ));
+//     }
+//
+//     let _tree = gate.exclusive().await;
+//     repo::undo_change(&root, &plan).await
+// }
+
 #[tauri::command]
 async fn restore_version(
     app: AppHandle,
@@ -858,30 +930,34 @@ async fn get_locks(app: AppHandle) -> AppResult<LocksResult> {
 async fn claim_files(
     app: AppHandle,
     gate: State<'_, gate::RepoGate>,
+    cancel: State<'_, workflow::CancelFlag>,
     paths: Vec<String>,
     on_progress: tauri::ipc::Channel<workflow::LockProgress>,
 ) -> AppResult<workflow::ClaimResult> {
     let root = current_repo(&app)?;
     let _tree = gate.exclusive().await;
+    cancel.arm();
     let report = move |step: workflow::LockProgress| {
         let _ = on_progress.send(step);
     };
-    workflow::claim_files(&root, paths, &report).await
+    workflow::claim_files(&root, paths, &report, &cancel).await
 }
 
 #[tauri::command]
 async fn release_files(
     app: AppHandle,
     gate: State<'_, gate::RepoGate>,
+    cancel: State<'_, workflow::CancelFlag>,
     paths: Vec<String>,
     on_progress: tauri::ipc::Channel<workflow::LockProgress>,
 ) -> AppResult<Vec<workflow::ReleaseOutcome>> {
     let root = current_repo(&app)?;
     let _tree = gate.exclusive().await;
+    cancel.arm();
     let report = move |step: workflow::LockProgress| {
         let _ = on_progress.send(step);
     };
-    workflow::release_files(&root, paths, &report).await
+    workflow::release_files(&root, paths, &report, &cancel).await
 }
 
 #[tauri::command]
@@ -1029,6 +1105,8 @@ async fn fetch_remote(app: AppHandle, gate: State<'_, gate::RepoGate>) -> AppRes
     };
     // --prune so branches deleted on GitHub stop showing in the picker.
     let out = proc::run_git(&root, &["fetch", "--prune", "origin"], 120).await?;
+    // fetch never updates origin/HEAD
+    repo::refresh_default_branch(&root).await;
     if !out.ok() {
         // Never report a failed fetch as success: the UI would show "In sync"
         // while actually flying blind.
@@ -1113,6 +1191,18 @@ async fn sync_attributes(
     };
     let username_hint = settings::get_string(&app, KEY_USERNAME)?;
     workflow::sync_attributes(&root, username_hint.as_deref()).await
+}
+
+/// Fetch, sweep files another branch left behind, fix read-only flags.
+#[tauri::command]
+async fn tidy_and_sync(
+    app: AppHandle,
+    gate: State<'_, gate::RepoGate>,
+) -> AppResult<workflow::TidyResult> {
+    let root = current_repo(&app)?;
+    let _tree = gate.exclusive().await;
+    let username_hint = settings::get_string(&app, KEY_USERNAME)?;
+    workflow::tidy_and_sync(&root, username_hint.as_deref()).await
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1241,24 +1331,29 @@ fn report_window_failure(app: &tauri::AppHandle, detail: &str) {
         .manage(people::ProfileNames::default())
         .manage(thumbs::ThumbCache::default())
         .manage(gate::RepoGate::default())
+        .manage(workflow::CancelFlag::default())
         .invoke_handler(tauri::generate_handler![
             get_app_state,
             select_existing_repo,
             clone_repo,
             get_commit_identities,
             check_outside_refs,
+            run_setup_checks,
+            get_collisions,
+            cancel_lock_run,
+            get_used_by,
             get_default_branch,
             list_pulls,
             pull_detail,
             create_pull,
             review_pull,
             merge_pull,
-            propose_picks,
-            branch_protection,
             conflict_sides,
             plan_conflicts,
             plan_conflicts_between,
+            propose_picks,
             merged_picks,
+            branch_protection,
             delete_branch,
             combine_with_picks,
             list_conflicts,
@@ -1267,6 +1362,7 @@ fn report_window_failure(app: &tauri::AppHandle, detail: &str) {
             resolve_conflict,
             finish_conflicts,
             abandon_conflicts,
+            tidy_and_sync,
             get_commit_stats,
             get_file_history,
             get_sw_icon,

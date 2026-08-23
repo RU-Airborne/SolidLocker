@@ -14,10 +14,12 @@ import {
   pushNow,
   getDefaultBranch,
   restoreFiles,
+  setAsideFiles,
   selectExistingRepo,
   switchBranch,
   syncAttributes,
   undoMerge,
+  cancelLockRun,
   checkOutsideRefs,
   type CommitInfo,
   type LockProgress,
@@ -25,8 +27,9 @@ import {
 } from "../../api";
 import {
   useClaim,
-  useOutsideRefs,
+  useCollisions,
   useConflicts,
+  useOutsideRefs,
   useFiles,
   useGetLatest,
   useLocks,
@@ -63,6 +66,9 @@ import { ReleaseAllDialog } from "../dialogs/ReleaseAllDialog";
 import DialLogo from "../DialLogo";
 import { ProgressPage } from "../progress/ProgressPage";
 import { PullsPage } from "../pulls/PullsPage";
+import { CollisionNotice } from "./CollisionNotice";
+import { CollisionsDialog } from "../dialogs/CollisionsDialog";
+import { ResolveConflictsDialog } from "../dialogs/ResolveConflictsDialog";
 import { CommitDialog } from "../dialogs/CommitDialog";
 import { ConflictDialog } from "../dialogs/ConflictDialog";
 import { ForceUnlockDialog } from "../dialogs/ForceUnlockDialog";
@@ -70,7 +76,6 @@ import { SetAsideDialog } from "../dialogs/SetAsideDialog";
 import { OfflineHelpDialog } from "../dialogs/OfflineHelpDialog";
 import { BranchOffDialog } from "../dialogs/BranchOffDialog";
 import { MergeBranchDialog } from "../dialogs/MergeBranchDialog";
-import { ResolveConflictsDialog } from "../dialogs/ResolveConflictsDialog";
 import {
   RestoreVersionDialog,
   type VersionRef,
@@ -78,6 +83,7 @@ import {
 import { RestoreFilesDialog } from "../dialogs/RestoreFilesDialog";
 import { DiscardChangesDialog } from "../dialogs/DiscardChangesDialog";
 import { OutsideRefsDialog } from "../dialogs/OutsideRefsDialog";
+import { FolderLockDialog } from "../dialogs/FolderLockDialog";
 import {
   LockProgressDialog,
   type LockRunKind,
@@ -110,6 +116,7 @@ export interface RowActions {
   open: (path: string) => void;
   /** Right-click on a file row. */
   contextMenu: (e: React.MouseEvent, row: FileRowData) => void;
+  confirmFolder: (kind: "lock" | "unlock", folder: string, paths: string[]) => void;
   claimWithRefs: (path: string) => void;
   releaseWithRefs: (path: string) => void;
   toggleWatch: (path: string) => void;
@@ -266,6 +273,11 @@ export function Dashboard({ appState }: { appState: AppState }) {
   );
   const [lockRun, setLockRun] = useState<LockRunState | null>(null);
   const [claimDialogPath, setClaimDialogPath] = useState<string | null>(null);
+  const [folderRun, setFolderRun] = useState<{
+    kind: "lock" | "unlock";
+    folder: string;
+    paths: string[];
+  } | null>(null);
   const [releaseDialogPath, setReleaseDialogPath] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [releaseAllOpen, setReleaseAllOpen] = useState(false);
@@ -680,9 +692,9 @@ export function Dashboard({ appState }: { appState: AppState }) {
       );
   }
 
-  function endRun(clean: boolean) {
+  // dialog stays up until closed so failures can actually be read
+  function endRun(_clean: boolean) {
     setLockRun((prev) => (prev ? { ...prev, finished: true } : prev));
-    window.setTimeout(() => setLockRun(null), clean ? 900 : 3200);
   }
 
   // Referentially stable so the memoized FileTree/FileRow components only
@@ -690,10 +702,13 @@ export function Dashboard({ appState }: { appState: AppState }) {
   // close over state setters and mutateAsync, which React keeps stable.
   const currentBranch = repoStatus.data?.branch ?? appState.repo!.branch;
 
+  const collisions = useCollisions(currentBranch, !!appState.repo);
   const openConflicts = useConflicts(!!appState.repo);
   // plan = branch to combine (nothing merged yet); no plan = merge already half done
   const [resolving, setResolving] = useState<{ plan?: string } | null>(null);
-  // "Look around" mode: the tree is parked on an old commit.
+  const [showCollisions, setShowCollisions] = useState(false);
+
+  // Read-only mode: the tree is parked on an old commit.
   const previewState = useQuery({
     queryKey: ["previewState"],
     queryFn: getPreviewState,
@@ -723,11 +738,17 @@ export function Dashboard({ appState }: { appState: AppState }) {
 
   function handleDiscardChanges() {
     const files = (repoStatus.data?.dirty ?? []).filter((p) => !isSwTemp(p));
+    const fresh = (repoStatus.data?.untracked ?? []).filter((p) => !isSwTemp(p));
     setDiscardOpen(false);
-    restoreFiles(files)
-      .then(() => {
+    // tracked edits are restored; untracked files get moved out instead
+    Promise.resolve()
+      .then(() => (files.length > 0 ? restoreFiles(files) : null))
+      .then(() => (fresh.length > 0 ? setAsideFiles(fresh) : null))
+      .then((movedTo) => {
         queryClient.invalidateQueries();
-        setNotice(copy.discardedChanges(files.length));
+        setNotice(
+          copy.clearedWorkingFolder(files.length, fresh.length, movedTo ?? null),
+        );
       })
       .catch((e) => warn(isAppError(e) ? e.message : String(e)));
   }
@@ -779,6 +800,10 @@ export function Dashboard({ appState }: { appState: AppState }) {
     },
     currentBranch,
     previewing,
+    confirmFolder: (kind, folder, paths) => {
+      if (switching || previewing) return;
+      setFolderRun({ kind, folder, paths });
+    },
     claimWithRefs: (path) => setClaimDialogPath(path),
     releaseWithRefs: (path) => setReleaseDialogPath(path),
     toggleWatch,
@@ -792,12 +817,19 @@ export function Dashboard({ appState }: { appState: AppState }) {
         setNotice(null);
         try {
           const result = await claim.mutateAsync({ paths, onProgress: report });
-          endRun(result.failed.length === 0);
-          if (result.failed.length === 0) {
+          endRun(result.failed.length === 0 && !result.cancelled);
+          if (result.cancelled) {
+            setNotice(copy.lockRunCancelled(result.still_held));
+          } else if (result.failed.length === 0) {
             succeed(copy.claimedOk(result.claimed));
           } else if (result.rolled_back) {
             const f = result.failed[0];
-            warn(copy.claimRolledBack(f.path.split("/").pop() ?? f.path, f.owner));
+            const lost = f.path.split("/").pop() ?? f.path;
+            warn(
+              result.still_held.length > 0
+                ? copy.claimRolledBackStuck(lost, f.owner, result.still_held)
+                : copy.claimRolledBack(lost, f.owner),
+            );
           } else {
             const held = result.failed
               .slice(0, 4)
@@ -948,6 +980,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
     }
   }
 
+  // invalidating alone keeps showing the old repo's data until refetch lands
   function forgetRepoData() {
     queryClient.removeQueries({
       predicate: (q) => q.queryKey[0] !== "appState",
@@ -960,7 +993,10 @@ export function Dashboard({ appState }: { appState: AppState }) {
     setNotice(null);
     setPushing(true);
     pushNow()
-      .then(() => setNotice(copy.sharedOk))
+      .then(() => {
+        playRebuildComplete();
+        setNotice(copy.sharedOk);
+      })
       .catch((e) => warn(isAppError(e) ? e.message : String(e)))
       .finally(() => setPushing(false));
   }
@@ -1038,6 +1074,12 @@ export function Dashboard({ appState }: { appState: AppState }) {
             Sort it out
           </button>
         </div>
+      )}
+      {collisions.data && collisions.data.length > 0 && (
+        <CollisionNotice
+          collisions={collisions.data}
+          onShow={() => setShowCollisions(true)}
+        />
       )}
       {stuckFiles && stuckFiles.length > 0 && (
         <div className="notice warn">
@@ -1427,34 +1469,20 @@ export function Dashboard({ appState }: { appState: AppState }) {
       {discardOpen && (
         <DiscardChangesDialog
           files={(repoStatus.data?.dirty ?? []).filter((p) => !isSwTemp(p))}
-          untrackedCount={
-            (repoStatus.data?.untracked ?? []).filter((p) => !isSwTemp(p))
-              .length
-          }
+          untracked={(repoStatus.data?.untracked ?? []).filter(
+            (p) => !isSwTemp(p),
+          )}
           onClose={() => setDiscardOpen(false)}
           onConfirm={handleDiscardChanges}
         />
       )}
-      {outsideRefs && (
-        <OutsideRefsDialog
-          refs={outsideRefs.refs}
-          onShareAnyway={outsideRefs.share}
-          onClose={() => setOutsideRefs(null)}
-        />
-      )}
-      {lockRun && (
-        <LockProgressDialog run={lockRun} onClose={() => setLockRun(null)} />
-      )}
-      {multiRestore && (
-        <RestoreFilesDialog
-          paths={multiRestore.paths}
-          commit={multiRestore.commit}
-          branchName={currentBranch}
-          onClose={() => setMultiRestore(null)}
-          onDone={(text, restored) => {
-            setMultiRestore(null);
-            setHistoryOpen(false);
-            actions.notify(text, restored);
+      {showCollisions && collisions.data && (
+        <CollisionsDialog
+          collisions={collisions.data.filter((c) => c.cad_files.length > 0)}
+          onClose={() => setShowCollisions(false)}
+          onOpenBranches={() => {
+            setShowCollisions(false);
+            setHistoryOpen(true);
           }}
         />
       )}
@@ -1471,6 +1499,50 @@ export function Dashboard({ appState }: { appState: AppState }) {
           onDone={(notice) => {
             setResolving(null);
             setNotice(notice);
+          }}
+        />
+      )}
+      {outsideRefs && (
+        <OutsideRefsDialog
+          refs={outsideRefs.refs}
+          onShareAnyway={outsideRefs.share}
+          onClose={() => setOutsideRefs(null)}
+        />
+      )}
+      {folderRun && (
+        <FolderLockDialog
+          kind={folderRun.kind}
+          folder={folderRun.folder}
+          paths={folderRun.paths}
+          onClose={() => setFolderRun(null)}
+          onConfirm={() => {
+            const { kind, paths } = folderRun;
+            setFolderRun(null);
+            if (kind === "lock") actions.claim(paths);
+            else actions.release(paths);
+          }}
+        />
+      )}
+      {lockRun && (
+        <LockProgressDialog
+          run={lockRun}
+          onCancel={() => {
+            setLockRun((prev) => (prev ? { ...prev, cancelling: true } : prev));
+            cancelLockRun().catch(() => {});
+          }}
+          onClose={() => setLockRun(null)}
+        />
+      )}
+      {multiRestore && (
+        <RestoreFilesDialog
+          paths={multiRestore.paths}
+          commit={multiRestore.commit}
+          branchName={currentBranch}
+          onClose={() => setMultiRestore(null)}
+          onDone={(text, restored) => {
+            setMultiRestore(null);
+            setHistoryOpen(false);
+            actions.notify(text, restored);
           }}
         />
       )}

@@ -1,3 +1,4 @@
+import { BranchName } from "../common/BranchName";
 import { useState } from "react";
 import { setAsideFiles, switchBranch } from "../../api";
 import { isAppError } from "../../types";
@@ -37,7 +38,7 @@ export function SetAsideDialog({
         <h2>Files in the way of switching</h2>
         <p>
           These files on your computer aren't saved to the project, and{" "}
-          <strong>{branch}</strong> has its own versions of them:
+          <BranchName name={branch} /> has its own versions of them:
         </p>
         <ul>
           {files.map((f) => (

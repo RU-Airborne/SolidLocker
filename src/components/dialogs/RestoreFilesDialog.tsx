@@ -84,7 +84,11 @@ export function RestoreFilesDialog({
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal versionmodal" onClick={(e) => e.stopPropagation()}>
-        <h2>Restore files from this change</h2>
+        <h2>
+          {paths.length === 1
+            ? "Restore this file from this change"
+            : "Restore files from this change"}
+        </h2>
         <p>
           As they were on <strong>{formatDateTime(commit.date)}</strong>, by{" "}
           {commit.author_name}
@@ -97,7 +101,11 @@ export function RestoreFilesDialog({
           .
         </p>
 
-        <p className="small">Pick which files to bring back together:</p>
+        <p className="small">
+          {paths.length === 1
+            ? "This is what the change touched:"
+            : "Pick which files to bring back together:"}
+        </p>
         <div className="ref-list restorepicker">
           {paths.map((p) => (
             <label key={p}>
@@ -124,9 +132,10 @@ export function RestoreFilesDialog({
 
         <RestoreDiagram branchName={branchName} commitLabel={commitLabel} />
         <p className="muted small">
-          Nothing is rewritten: the old versions are copied forward as your{" "}
-          <em>next</em> change, and you can Undo until you Save &amp; Share.
-          You need the selected files locked by you.
+          Nothing is rewritten: the old version{selected.length === 1 ? " is" : "s are"}{" "}
+          copied forward as your <em>next</em> change, and you can Undo until
+          you Save &amp; Share. You need{" "}
+          {selected.length === 1 ? "it" : "the selected files"} locked by you.
         </p>
 
         {error && <p className="errdetail">{error}</p>}

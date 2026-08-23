@@ -7,6 +7,7 @@ export interface LockRunState {
   paths: string[];
   steps: Map<string, LockProgress["state"]>;
   finished: boolean;
+  cancelling?: boolean;
 }
 
 const WORD: Record<LockRunKind, { verb: string; doing: string }> = {
@@ -20,9 +21,11 @@ function shortName(path: string) {
 
 export function LockProgressDialog({
   run,
+  onCancel,
   onClose,
 }: {
   run: LockRunState;
+  onCancel: () => void;
   onClose: () => void;
 }) {
   const { verb, doing } = WORD[run.kind];
@@ -88,6 +91,18 @@ export function LockProgressDialog({
             );
           })}
         </ul>
+
+        <div className="modal-actions">
+          {run.finished ? (
+            <button className="primary" onClick={onClose}>
+              OK
+            </button>
+          ) : (
+            <button onClick={onCancel} disabled={run.cancelling}>
+              {run.cancelling ? "Stopping…" : "Cancel"}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

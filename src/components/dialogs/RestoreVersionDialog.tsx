@@ -1,14 +1,17 @@
+import { BranchName } from "../common/BranchName";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import {
   branchFromCommitFiles,
   getOpenDocuments,
+  getThumbnails,
   openVersion,
   previewVersion,
   resolveReferencesAt,
   restoreVersion,
 } from "../../api";
+import { namesOf } from "../../copy";
 import { formatDate, formatDateTime } from "../../dates";
 import { isAppError } from "../../types";
 import {
@@ -17,6 +20,8 @@ import {
   RestoreGlyph,
 } from "../common/HistoryDiagrams";
 import { BranchOffForm } from "./BranchOffDialog";
+
+const shortName = (p: string) => p.split("/").pop() ?? p;
 
 /** The commit fields the dialog needs; both FileCommit and CommitInfo fit. */
 export interface VersionRef {
@@ -72,6 +77,14 @@ export function RestoreVersionDialog({
     queryFn: () => resolveReferencesAt(path, commit.sha),
     enabled: isAssembly,
     staleTime: Infinity,
+    retry: false,
+  });
+
+  // current version, shown next to the old one
+  const nowPreview = useQuery({
+    queryKey: ["thumbnail", path],
+    queryFn: () => getThumbnails([path], 256).then((m) => m[path] ?? null),
+    staleTime: 60_000,
     retry: false,
   });
 
@@ -142,23 +155,40 @@ export function RestoreVersionDialog({
           {commit.author_name}.
         </p>
 
-        <div className="versionpreview">
-          {preview.isLoading && (
-            <span className="muted small">Fetching this version…</span>
-          )}
-          {preview.isError && (
-            <span className="muted small">
-              Could not read this version from GitHub.
-            </span>
-          )}
-          {preview.isSuccess &&
-            (preview.data ? (
-              <img src={preview.data} alt={`${name} as it was`} />
-            ) : (
+        <div className="versiondiff">
+          <figure className="versionpreview">
+            {preview.isLoading && (
+              <span className="muted small">Fetching this version…</span>
+            )}
+            {preview.isError && (
               <span className="muted small">
-                No preview available for this version.
+                Could not read this version from GitHub.
               </span>
-            ))}
+            )}
+            {preview.isSuccess &&
+              (preview.data ? (
+                <img src={preview.data} alt={`${name} as it was`} />
+              ) : (
+                <span className="muted small">
+                  No preview available for this version.
+                </span>
+              ))}
+            <figcaption className="muted small">
+              {formatDate(commit.date)}
+            </figcaption>
+          </figure>
+
+          {nowPreview.data && (
+            <>
+              <span className="versusarrow" aria-hidden="true">
+                →
+              </span>
+              <figure className="versionpreview">
+                <img src={nowPreview.data} alt={`${name} as it is now`} />
+                <figcaption className="muted small">now</figcaption>
+              </figure>
+            </>
+          )}
         </div>
 
         {/* Two equal ways to use this version — pick a lane. */}
@@ -171,7 +201,7 @@ export function RestoreVersionDialog({
           >
             <RestoreGlyph />
             <span className="vt-text">
-              <span className="vt-title">Bring it back</span>
+              <span className="vt-title">Restore</span>
               <span className="vt-sub">Onto {branchName}, as your next change</span>
             </span>
           </button>
@@ -247,12 +277,22 @@ export function RestoreVersionDialog({
 
             <RestoreDiagram branchName={branchName} commitLabel={commitLabel} />
             <p className="muted small">
-              Bringing a version back never rewrites history. The old version
-              is copied forward as your <em>next</em> change, everything in
+              The old version is copied forward as your <em>next</em> change, everything in
               between stays in the record, and you can Undo until you Save
-              &amp; Share. You need{" "}
-              {restoreSet.length === 1 ? "the file" : "these files"} locked by
-              you.
+              &amp; Share.
+            </p>
+            <p className="muted small">
+              {restoreSet.length === 1 ? (
+                <>
+                  You need <strong>{shortName(restoreSet[0])}</strong> locked by
+                  you.
+                </>
+              ) : (
+                <>
+                  You need all {restoreSet.length} locked by you:{" "}
+                  <strong>{namesOf(restoreSet, 4)}</strong>.
+                </>
+              )}
             </p>
           </>
         )}
@@ -316,7 +356,7 @@ export function RestoreVersionDialog({
               }
             />
             <p className="muted small">
-              Either way, <strong>{branchName}</strong> stays exactly as it is
+              Either way, <BranchName name={branchName} /> stays exactly as it is
               and no lock is needed. Combine the branch back later from the
               Branches page.
             </p>

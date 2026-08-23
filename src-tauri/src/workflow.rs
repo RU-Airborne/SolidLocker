@@ -18,6 +18,8 @@ pub struct ClaimResult {
     pub claimed: Vec<String>,
     pub failed: Vec<FailedClaim>,
     pub rolled_back: bool,
+    pub still_held: Vec<String>,
+    pub cancelled: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -97,20 +99,43 @@ async fn unpushed_paths(root: &Path) -> AppResult<HashSet<String>> {
         .collect())
 }
 
-async fn roll_back_claims(root: &Path, claimed: &[String]) {
+async fn roll_back_claims(root: &Path, claimed: &[String]) -> Vec<String> {
+    let mut still_held = Vec::new();
     for path in claimed {
         match lfs::unlock_file(root, path, false).await {
             Ok(()) => {
                 let _ = fsattr::set_readonly(&root.join(path), true);
             }
-            Err(e) => crate::logger::error(format!(
-                "claim rollback: could not release {path}: {}",
-                e.message
-            )),
+            Err(e) => {
+                crate::logger::error(format!(
+                    "claim rollback: could not release {path}: {}",
+                    e.message
+                ));
+                still_held.push(path.clone());
+            }
         }
+    }
+    still_held
+}
+
+/// Set by Cancel mid-run; checked between files, never during one.
+#[derive(Default)]
+pub struct CancelFlag(pub std::sync::atomic::AtomicBool);
+
+impl CancelFlag {
+    /// Reset at the start of a run so a stale press can't kill the next one.
+    pub fn arm(&self) {
+        self.0.store(false, std::sync::atomic::Ordering::Relaxed);
+    }
+    pub fn request(&self) {
+        self.0.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+    pub fn wanted(&self) -> bool {
+        self.0.load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 
+/// Per-file progress for a long lock or unlock.
 #[derive(Debug, Clone, Serialize)]
 pub struct LockProgress {
     /// "working" | "done" | "failed" | "undone"
@@ -134,15 +159,35 @@ pub async fn claim_files(
     root: &Path,
     paths: Vec<String>,
     progress: &(dyn Fn(LockProgress) + Send + Sync),
+    cancel: &CancelFlag,
 ) -> AppResult<ClaimResult> {
     let mut paths = paths;
-    paths.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+    paths.sort_by_key(|p| p.to_lowercase());
     paths.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
     let total = paths.len();
 
     let mut claimed: Vec<String> = Vec::new();
 
     for path in &paths {
+        if cancel.wanted() {
+            let still_held = roll_back_claims(root, &claimed).await;
+            for taken in &claimed {
+                let state = if still_held.contains(taken) { "done" } else { "undone" };
+                progress(LockProgress::new(state, taken, total));
+            }
+            crate::logger::info(format!(
+                "claim cancelled after {} file(s); {} given back",
+                claimed.len(),
+                claimed.len() - still_held.len()
+            ));
+            return Ok(ClaimResult {
+                claimed: Vec::new(),
+                failed: Vec::new(),
+                rolled_back: !claimed.is_empty(),
+                still_held,
+                cancelled: true,
+            });
+        }
         progress(LockProgress::new("working", path, total));
         let err = match lfs::lock_file(root, path).await {
             Ok(()) => {
@@ -155,8 +200,13 @@ pub async fn claim_files(
         };
 
         if crate::error::looks_offline(&err.message) {
-            roll_back_claims(root, &claimed).await;
-            return Err(AppError::offline(messages::CLAIM_OFFLINE));
+            let still_held = roll_back_claims(root, &claimed).await;
+            if still_held.is_empty() {
+                return Err(AppError::offline(messages::CLAIM_OFFLINE));
+            }
+            return Err(AppError::offline(messages::claim_offline_still_held(
+                &still_held.join(", "),
+            )));
         }
 
         // `git lfs lock` can trip over its local lock cache; recheck against
@@ -179,6 +229,7 @@ pub async fn claim_files(
         });
         progress(LockProgress::new("failed", path, total));
         let rolled_back = !claimed.is_empty();
+        let mut still_held: Vec<String> = Vec::new();
         if rolled_back {
             crate::logger::warn(format!(
                 "claim of {} files lost {} to {}; releasing the {} already taken",
@@ -189,12 +240,16 @@ pub async fn claim_files(
                     .unwrap_or("another member"),
                 claimed.len()
             ));
-            // All or nothing: say so file by file, so the list on screen
-            // matches what the user is left holding, which is nothing.
+            still_held = roll_back_claims(root, &claimed).await;
+            // a file the rollback couldn't release is still locked: report it as done
             for taken in &claimed {
-                progress(LockProgress::new("undone", taken, total));
+                let state = if still_held.contains(taken) {
+                    "done"
+                } else {
+                    "undone"
+                };
+                progress(LockProgress::new(state, taken, total));
             }
-            roll_back_claims(root, &claimed).await;
         }
         return Ok(ClaimResult {
             claimed: Vec::new(),
@@ -205,6 +260,8 @@ pub async fn claim_files(
                 message: err.message,
             }],
             rolled_back,
+            still_held,
+            cancelled: false,
         });
     }
 
@@ -212,13 +269,32 @@ pub async fn claim_files(
         claimed,
         failed: Vec::new(),
         rolled_back: false,
+        still_held: Vec::new(),
+        cancelled: false,
     })
+}
+
+/// Re-lock what a cancelled unlock had already released.
+async fn re_lock(root: &Path, paths: &[String]) -> usize {
+    let mut back = 0;
+    for path in paths {
+        if lfs::lock_file(root, path).await.is_ok() {
+            let _ = fsattr::set_readonly(&root.join(path), false);
+            back += 1;
+        } else {
+            crate::logger::error(format!(
+                "unlock cancelled, but {path} could not be locked again"
+            ));
+        }
+    }
+    back
 }
 
 pub async fn release_files(
     root: &Path,
     paths: Vec<String>,
     progress: &(dyn Fn(LockProgress) + Send + Sync),
+    cancel: &CancelFlag,
 ) -> AppResult<Vec<ReleaseOutcome>> {
     let total = paths.len();
     let status = repo::get_repo_status(root).await?;
@@ -312,7 +388,21 @@ pub async fn release_files(
     }
 
     let mut failed_raw: Vec<(String, AppError)> = Vec::new();
+    let mut released: Vec<String> = Vec::new();
     for chunk in to_unlock.chunks(4) {
+        // checked between batches; anything already released is taken back
+        if cancel.wanted() {
+            let back = re_lock(root, &released).await;
+            crate::logger::info(format!(
+                "unlock cancelled after {} file(s); {back} locked again",
+                released.len()
+            ));
+            for path in &released {
+                progress(LockProgress::new("undone", path, total));
+            }
+            outcomes.retain(|o| !o.ok);
+            return Ok(outcomes);
+        }
         let mut handles = Vec::new();
         for path in chunk {
             progress(LockProgress::new("working", path, total));
@@ -331,6 +421,7 @@ pub async fn release_files(
                 Ok(()) => {
                     let _ = fsattr::set_readonly(&root.join(&path), true);
                     progress(LockProgress::new("done", &path, total));
+                    released.push(path.clone());
                     outcomes.push(ReleaseOutcome {
                         path,
                         ok: true,
@@ -394,6 +485,44 @@ pub async fn release_files(
         }
     }
     Ok(outcomes)
+}
+
+/// "Sync now": fetch, sweep files another branch left behind, and put the
+/// read-only flags back in line with the locks. Offline only skips the parts
+/// that need GitHub.
+pub async fn tidy_and_sync(
+    root: &Path,
+    username_hint: Option<&str>,
+) -> AppResult<TidyResult> {
+    // fetch first so the sweep sees current branches
+    let fetched = run_git(root, &["fetch", "--prune", "origin"], 600)
+        .await
+        .map(|o| o.ok())
+        .unwrap_or(false);
+    // fetch never updates origin/HEAD
+    repo::refresh_default_branch(root).await;
+
+    let swept = repo::sweep_foreign_files(root).await.unwrap_or_default();
+
+    let attrs = sync_attributes(root, username_hint).await.ok();
+
+    Ok(TidyResult {
+        fetched,
+        swept,
+        made_writable: attrs.as_ref().map(|a| a.made_writable.len()).unwrap_or(0),
+        made_readonly: attrs.as_ref().map(|a| a.made_readonly.len()).unwrap_or(0),
+        anomalies: attrs.map(|a| a.anomalies).unwrap_or_default(),
+    })
+}
+
+#[derive(Debug, Serialize)]
+pub struct TidyResult {
+    pub fetched: bool,
+    /// Files another branch had left in the folder, now removed.
+    pub swept: Vec<String>,
+    pub made_writable: usize,
+    pub made_readonly: usize,
+    pub anomalies: Vec<Anomaly>,
 }
 
 pub async fn sync_attributes(root: &Path, username_hint: Option<&str>) -> AppResult<SyncResult> {
@@ -1007,6 +1136,7 @@ pub async fn merge_preview(root: &Path, name: &str) -> AppResult<MergePreview> {
     merge_preview_into(root, "HEAD", name).await
 }
 
+/// What `name` would bring into `base`: the files, and which would clash.
 pub async fn merge_preview_between(
     root: &Path,
     base: &str,

@@ -348,9 +348,12 @@ function BranchRailway({
                     <circle className="gg-halo" cx={x} cy={y} r={13} fill="var(--accent)" />
                     <circle cx={x} cy={y} r={8} fill="none" stroke="var(--accent)" strokeWidth={3} />
                     <circle cx={x} cy={y} r={4.2} fill="var(--accent)" />
-                    <text className="rr-here" x={x} y={y + 28} textAnchor="middle">
-                      You are here
-                    </text>
+                    {/* SVG text can't blur what's behind it, so the pill is HTML. */}
+                    <foreignObject x={x - 50} y={y + 14} width={100} height={24}>
+                      <div className="rr-herebox">
+                        <span className="gg-youarehere">You are here</span>
+                      </div>
+                    </foreignObject>
                   </g>
                 ) : (
                   <>
@@ -601,18 +604,18 @@ export function ProgressPage({
 
         <section className="setupsection">
           <div className="sectionhead">
-            <h3>Branches</h3>
+            <h3>Branch Timeline</h3>
             <button
               className="branchoffbtn"
               onClick={onOpenBranches}
-              title="The full picture: every branch and change on one railway, with branch off, restore and combine"
+              title="Every branch and change on one railway, with branch off, restore and combine"
             >
               <BranchGlyph />
               Explore branches
             </button>
           </div>
           <p className="muted">
-            Every branch your team has shared, newest work first. Ahead and
+            Every branch your team has shared with newest work first. Ahead and
             behind are counted against {defaultName}.
           </p>
           {branches.isLoading ? (

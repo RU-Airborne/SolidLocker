@@ -2,12 +2,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   checkOutsideRefs,
   claimFiles,
+  listConflicts,
+  getCollisions,
   getAppState,
   getLatest,
   getLocks,
   getRepoStatus,
   listFiles,
-  listConflicts,
   releaseFiles,
   saveAndShare,
   syncAttributes,
@@ -94,6 +95,28 @@ export function useOutsideRefs(paths: string[], enabled: boolean) {
   });
 }
 
+// Teammates editing the same CAD files. Costs a few git calls, so cached.
+export function useCollisions(branch: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["collisions", branch],
+    queryFn: getCollisions,
+    enabled,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+}
+
+// Files a half-finished merge left behind. Cheap to poll.
+export function useConflicts(enabled: boolean) {
+  return useQuery({
+    queryKey: ["conflicts"],
+    queryFn: listConflicts,
+    enabled,
+    refetchInterval: 10_000,
+    retry: false,
+  });
+}
+
 export function useClaim() {
   const invalidate = useInvalidateLockState();
   return useMutation({
@@ -115,16 +138,5 @@ export function useSyncAttributes() {
   return useMutation({
     mutationFn: syncAttributes,
     onSettled: invalidate,
-  });
-}
-
-// Files a half-finished merge left behind. Cheap to poll.
-export function useConflicts(enabled: boolean) {
-  return useQuery({
-    queryKey: ["conflicts"],
-    queryFn: listConflicts,
-    enabled,
-    refetchInterval: 10_000,
-    retry: false,
   });
 }

@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { getFileHistory, getSwIcon, getSwInstalled } from "../../api";
+import { getFileHistory, getSwIcon, getSwInstalled, getUsedBy } from "../../api";
 import { type FileRowData, type RowActions } from "./Dashboard";
 import { rowDomId } from "./rowid";
 import { StatusBadge } from "./StatusBadge";
@@ -93,6 +93,14 @@ export const FileRow = memo(function FileRow({
   const [expanded, setExpanded] = useState(false);
   const [restoring, setRestoring] = useState<FileCommit | null>(null);
   const isPinned = actions.pinned.has(path.toLowerCase());
+
+  const usedBy = useQuery({
+    queryKey: ["usedBy", path],
+    queryFn: () => getUsedBy(path),
+    enabled: expanded && /\.sldprt$/i.test(path),
+    staleTime: 10 * 60_000,
+    retry: false,
+  });
 
   const history = useQuery({
     queryKey: ["fileHistory", path],
@@ -288,6 +296,18 @@ export const FileRow = memo(function FileRow({
         style={{ paddingLeft: `${depth * 1.1 + 1.6}rem` }}
       >
         <div className="filedetail-path">{path}</div>
+        {usedBy.data && usedBy.data.length > 0 && (
+          <div className="usedby">
+            Used by {usedBy.data.length}{" "}
+            {usedBy.data.length === 1 ? "assembly" : "assemblies"}:{" "}
+            {usedBy.data
+              .slice(0, 3)
+              .map((p) => p.split("/").pop())
+              .join(", ")}
+            {usedBy.data.length > 3 ? ` and ${usedBy.data.length - 3} more` : ""}
+            . Changing it changes {usedBy.data.length === 1 ? "that one" : "all of them"}.
+          </div>
+        )}
         {history.isLoading && <div>Reading document history…</div>}
         {history.data && history.data.length > 0 && (
           <ul className="filehistory">

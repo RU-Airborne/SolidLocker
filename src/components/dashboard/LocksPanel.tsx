@@ -73,7 +73,7 @@ export function LocksPanel({
   return (
     <div className="lockslist">
       {lockError && (
-        <p className="warn-inline">{copy.locksUnavailable(lockError)}</p>
+        <p className="warn-inline">{copy.locksUnavailable}</p>
       )}
       {!lockError && locks && !locks.fresh && (
         <p className="warn-inline">{copy.locksMayBeStale}</p>

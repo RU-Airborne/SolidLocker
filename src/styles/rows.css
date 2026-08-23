@@ -166,3 +166,8 @@
   white-space: nowrap;
   border: 0;
 }
+
+.usedby {
+  margin: 0.15rem 0 0.35rem;
+  color: var(--muted);
+}

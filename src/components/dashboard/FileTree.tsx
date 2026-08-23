@@ -134,7 +134,9 @@ const Folder = memo(function Folder({
           {claimable.length > 0 && (
             <button
               title={`Locks every available file under ${node.name}${node.folders.length > 0 ? ", including its subfolders" : ""}`}
-              onClick={() => actions.claim(claimable)}
+              onClick={() =>
+                actions.confirmFolder("lock", node.name, claimable)
+              }
             >
               {node.folders.length > 0
                 ? `Lock folder + subfolders (${claimable.length})`
@@ -144,7 +146,9 @@ const Folder = memo(function Folder({
           {mine.length > 0 && (
             <button
               title={`Unlocks your locked files under ${node.name}${node.folders.length > 0 ? ", including its subfolders" : ""}`}
-              onClick={() => actions.release(mine)}
+              onClick={() =>
+                actions.confirmFolder("unlock", node.name, mine)
+              }
             >
               Unlock mine ({mine.length})
             </button>
