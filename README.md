@@ -40,6 +40,39 @@ reviews inside the app where a teammate can accept your picks or choose
 differently before the work joins the main branch. Branching off and restoring
 an earlier version are buttons too.
 
+## Getting started
+
+### Requirements
+
+- Windows 10 or 11.
+- Git and Git LFS, signed in to GitHub (GitHub Desktop provides all of this).
+- A GitHub repository that uses Git LFS with SolidWorks files marked
+  `lockable`.
+- SolidWorks, for the "lock with parts" detection.
+
+### Install
+
+1. Download the latest `SolidLocker_x64-setup.exe` from the [Releases](https://github.com/RU-Airborne/SolidLocker/releases) page
+   and run it.
+2. Open SolidLocker and point it at your team's project folder (a local clone of
+   the GitHub repository).
+
+### Notes on Windows SmartScreen
+
+  <p align="center">
+  <img src="docs/images/smartscreen.png" alt="Branch timeline railway on the Progress page" width="400">
+  <br>
+  <em>Windows SmartScreen would block installation due to unrecognized publisher</em>
+  </p>
+
+When you run the installer, Windows may show a blue "Windows protected your PC" box. That is
+SmartScreen, and it appears because the installer is not signed with a paid code signing
+certificate, not because anything is wrong with it. Click **More info**, then **Run anyway**.
+
+If you would rather not take our word for it, everything is here in the open: clone the
+repository and read the source yourself (or have an AI read it for you), then build the
+installer or run it in dev mode on your own machine. See [Building from source](#building-from-source).
+
 ## Feature Highlights
 
 - **Everyday words, not Git words**: Nobody on the team needs to know Git. You "Save & Share"
@@ -154,38 +187,6 @@ an earlier version are buttons too.
 - **Runs in the background**: Closing the window keeps SolidLocker in the system tray, so it still
   protects your files and can tell you when a file you are waiting on comes free.
 
-## Getting started
-
-### Requirements
-
-- Windows 10 or 11.
-- Git and Git LFS, signed in to GitHub (GitHub Desktop provides all of this).
-- A GitHub repository that uses Git LFS with SolidWorks files marked
-  `lockable`.
-- SolidWorks, for the "lock with parts" detection.
-
-### Install
-
-1. Download the latest `SolidLocker_x64-setup.exe` from the [Releases](https://github.com/RU-Airborne/SolidLocker/releases) page
-   and run it.
-2. Open SolidLocker and point it at your team's project folder (a local clone of
-   the GitHub repository).
-
-### Windows SmartScreen
-
-  <p align="center">
-  <img src="docs/images/smartscreen.png" alt="Branch timeline railway on the Progress page" width="300">
-  <br>
-  <em>Windows SmartScreen would block installation due to unrecognized publisher</em>
-  </p>
-
-When you run the installer, Windows may show a blue "Windows protected your PC" box. That is
-SmartScreen, and it appears because the installer is not signed with a paid code signing
-certificate, not because anything is wrong with it. Click **More info**, then **Run anyway**.
-
-If you would rather not take our word for it, everything is here in the open: clone the
-repository and read the source yourself (or have an AI read it for you), then build the
-installer or run it in dev mode on your own machine. See [Building from source](#building-from-source).
 
 ### First run
 
@@ -217,7 +218,7 @@ SolidLocker uses everyday words in the app. If you know Git, this is what they m
 
 | In SolidLocker | In Git / Git LFS |
 | --- | --- |
-| Lock / Release | `git lfs lock` / `git lfs unlock` on the file. Files stay read-only until locked. |
+| Lock / Unlock | `git lfs lock` / `git lfs unlock` on the file. Files stay read-only until locked. |
 | Lock with parts | One `git lfs lock` per referenced part, found by asking SolidWorks for the file's references. |
 | Force unlock | `git lfs unlock --force` |
 | Save & Share | `git add`, `git commit`, `git push` (LFS objects upload with the push). |
