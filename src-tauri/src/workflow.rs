@@ -1142,6 +1142,8 @@ pub async fn merge_preview_between(
     base: &str,
     name: &str,
 ) -> AppResult<MergePreview> {
+    // Fresh copies of both, so the request describes what GitHub has now.
+    let _ = run_git(root, &["fetch", "--quiet", "origin", base, name], 120).await;
     let base_ref = merge_ref_for(root, base).await;
     merge_preview_into(root, &base_ref, name).await
 }

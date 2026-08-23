@@ -219,6 +219,20 @@ pub async fn plan(root: &Path, branch: &str) -> AppResult<Vec<Conflict>> {
 
 /// Same as `plan`, between any two refs; independent of the working copy.
 pub async fn plan_between(root: &Path, base_ref: &str, head_ref: &str) -> AppResult<Vec<Conflict>> {
+    // Bring both remote branches up to date first, so the list matches what
+    // GitHub has right now and not the last auto-sync. Offline just means
+    // we plan against what we have.
+    let mut to_fetch: Vec<&str> = Vec::new();
+    for r in [base_ref, head_ref] {
+        if let Some(name) = r.strip_prefix("origin/") {
+            to_fetch.push(name);
+        }
+    }
+    if !to_fetch.is_empty() {
+        let mut args = vec!["fetch", "--quiet", "origin"];
+        args.extend(to_fetch);
+        let _ = run_git(root, &args, 120).await;
+    }
     let mt = run_git(
         root,
         &[

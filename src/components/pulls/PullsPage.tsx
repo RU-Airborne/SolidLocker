@@ -622,12 +622,13 @@ function PullView({
   const onBase = d ? currentBranch === d.base : false;
   const lanes = useClashLayout(d?.base ?? "", d?.head ?? "").laid?.colors;
 
-  // From origin/* so the table reads the same on any branch.
+  // From origin/* so the table reads the same on any branch. Keyed on the head commit and last update, 
+  // so a push makes a fresh list.
   const clashes = useQuery<Conflict[]>({
-    queryKey: ["planConflictsBetween", d?.base ?? "", d?.head ?? ""],
+    queryKey: ["planConflictsBetween", d?.base ?? "", d?.head ?? "", d?.head_sha ?? "", d?.updated_at ?? ""],
     queryFn: () => planConflictsBetween(`origin/${d!.base}`, `origin/${d!.head}`),
     enabled: !!d && d.mergeable === false,
-    staleTime: Infinity,
+    staleTime: 60_000,
     retry: false,
   });
   const clashFiles = clashes.data ?? [];
