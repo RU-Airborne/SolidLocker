@@ -299,6 +299,32 @@ export function RailDrawing({
   useEffect(() => {
     if (lit) setSel(null);
   }, [lit]);
+  const selLine = useMemo(() => {
+    if (!sel) return null;
+    const bySha = new Map(rows.map((r) => [r.commit.sha, r]));
+    const set = new Set<string>();
+    let sha: string | undefined = sel;
+    while (sha && bySha.has(sha) && !set.has(sha)) {
+      set.add(sha);
+      sha = bySha.get(sha)!.commit.parents[0];
+    }
+    const lane = bySha.get(sel)?.lane;
+    let cur = sel;
+    for (;;) {
+      const kids = rows.filter(
+        (r) => r.commit.parents[0] === cur && !set.has(r.commit.sha),
+      );
+      if (kids.length === 0) break;
+      const pick = kids.find((r) => r.lane === lane) ?? kids[0];
+      set.add(pick.commit.sha);
+      cur = pick.commit.sha;
+    }
+    return set;
+  }, [sel, rows]);
+  const parentsOf = useMemo(
+    () => new Map(rows.map((r) => [r.commit.sha, r.commit.parents])),
+    [rows],
+  );
   const ourTip = Object.keys(tips).find((sha) => tips[sha] === ours);
   const theirTip = Object.keys(tips).find((sha) => tips[sha] === theirs);
   const ghost =
@@ -339,7 +365,7 @@ export function RailDrawing({
   ]);
 
   const on = (sha: string) =>
-    sel !== null ? sha === sel : lit === null || lit.has(sha);
+    selLine ? selLine.has(sha) : lit === null || lit.has(sha);
   const dim = (bright: boolean) => (bright ? undefined : "rr-dim");
   const rail = dim(lit === null && sel === null);
 
@@ -384,7 +410,18 @@ export function RailDrawing({
           return (
             <polyline
               key={`${e.child}-${e.parent}`}
-              className={rail}
+              className={
+                selLine
+                  ? dim(
+                      (selLine.has(e.child) && selLine.has(e.parent)) ||
+                        // the merge that carried this line into the other side
+                        (selLine.has(e.parent) &&
+                          (parentsOf.get(e.child)?.length ?? 0) > 1 &&
+                          (parentsOf.get(e.child)?.slice(1).includes(e.parent) ??
+                            false)),
+                    )
+                  : rail
+              }
               points={points}
               fill="none"
               stroke={e.color}
@@ -465,7 +502,11 @@ export function RailDrawing({
                     {`${c.subject}\n${who} · ${new Date(c.date).toLocaleString()}`}
                   </title>
                   <circle cx={x} cy={y} r={11} fill="transparent" />
-                  {((sel ? sel === c.sha : isLit) || converge.has(c.sha)) && (
+                  {(sel !== null
+                    ? sel === c.sha
+                    : lit !== null
+                      ? isLit
+                      : converge.has(c.sha)) && (
                     <circle
                       className="gg-halo"
                       cx={x}
@@ -493,7 +534,7 @@ export function RailDrawing({
               )}
               {tip && converge.has(c.sha) && (
                 <text
-                  className={`rr-label ${rail ?? ""}`}
+                  className={`rr-label ${(selLine ? dim(on(c.sha)) : rail) ?? ""}`}
                   x={x + 14}
                   y={y + 4.5}
                   fill="var(--accent)"
@@ -503,7 +544,7 @@ export function RailDrawing({
               )}
               {tip && !converge.has(c.sha) && !hasChild.has(c.sha) && !(ghost && c.sha === ourTip) && (
                 <text
-                  className={`rr-label ${rail ?? ""}`}
+                  className={`rr-label ${(selLine ? dim(on(c.sha)) : rail) ?? ""}`}
                   x={x + 12}
                   y={y + 4.5}
                   fill={colorOf(c.sha)}
@@ -513,7 +554,7 @@ export function RailDrawing({
               )}
               {tip && hasChild.has(c.sha) && !(ghost && c.sha === ourTip) && (
                 <text
-                  className={`rr-label ${rail ?? ""}`}
+                  className={`rr-label ${(selLine ? dim(on(c.sha)) : rail) ?? ""}`}
                   x={x + 12}
                   y={above ? y - 12 : y + 20}
                   fill={colorOf(c.sha)}
@@ -523,7 +564,7 @@ export function RailDrawing({
               )}
               {small && !tip && (
                 <text
-                  className={`rr-minor ${rail ?? ""}`}
+                  className={`rr-minor ${(selLine ? dim(on(c.sha)) : rail) ?? ""}`}
                   x={above ? x + 5 : x - 6}
                   y={above ? y - 8 : y + 5}
                   textAnchor={above ? "start" : "end"}

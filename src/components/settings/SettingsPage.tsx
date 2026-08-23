@@ -4,6 +4,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import DialLogo from "../DialLogo";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  checkForUpdate,
   cloneRepo,
   githubSignIn,
   githubSignedIn,
@@ -48,6 +49,42 @@ const BIGFILE_CHOICES = [
   { mb: 50, short: "50 MB", label: "Over 50 MB" },
   { mb: 0, short: "Never", label: "Never warn" },
 ];
+
+/** Asks GitHub whether a newer release exists on demand. */
+function UpdateTool() {
+  const [busy, setBusy] = useState(false);
+  const [word, setWord] = useState<string | null>(null);
+  const [link, setLink] = useState<string | null>(null);
+  function look() {
+    setBusy(true);
+    setWord(null);
+    setLink(null);
+    checkForUpdate()
+      .then((u) => {
+        if (u.newer) {
+          setWord(`${u.latest} is out. Right now you have ${u.current}. Update soon to get the latest features and fixes.`);
+          setLink(u.url);
+        } else {
+          setWord(`You are on the newest version (${u.current}).`);
+        }
+      })
+      .catch((e) => setWord(isAppError(e) ? e.message : String(e)))
+      .finally(() => setBusy(false));
+  }
+  return (
+    <div className="setuprow updatetool">
+      <button onClick={look} disabled={busy}>
+        {busy ? "Checking…" : "Check now"}
+      </button>
+      {word && <span className="muted small">{word}</span>}
+      {link && (
+        <button className="notice-ok" onClick={() => void openUrl(link)}>
+          Open the release page
+        </button>
+      )}
+    </div>
+  );
+}
 
 export function SettingsPage({
   appState,
@@ -533,6 +570,16 @@ export function SettingsPage({
                 </p>
               </div>
               <SetupChecks />
+            </div>
+            <div className="tool">
+              <div className="settingtext">
+                <strong>Check for updates</strong>
+                <p className="muted small">
+                  Asks GitHub whether a newer SolidLocker release is out. The
+                  app also checks automatically once a day on its own.
+                </p>
+              </div>
+              <UpdateTool />
             </div>
           </div>
         </section>

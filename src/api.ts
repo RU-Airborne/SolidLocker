@@ -272,6 +272,15 @@ export interface PullDetail {
 
 export const getDefaultBranch = () => invoke<string>("get_default_branch");
 
+export interface UpdateCheck {
+  current: string;
+  latest: string;
+  url: string;
+  newer: boolean;
+}
+
+export const checkForUpdate = () => invoke<UpdateCheck>("check_for_update");
+
 export const listPulls = () => invoke<PullSummary[]>("list_pulls");
 
 export const pullDetail = (number: number) =>

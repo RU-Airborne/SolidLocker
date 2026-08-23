@@ -240,13 +240,45 @@ function BranchRailway({
     }
     return set;
   }, [highlight, rows]);
-  const dim = (on: boolean, sha?: string) => {
-    if (sel !== null) return sha === sel ? undefined : "rr-dim";
-    return hl === null || on ? undefined : "rr-dim";
-  };
+  const selLine = useMemo(() => {
+    if (!sel) return null;
+    const bySha = new Map(rows.map((r) => [r.commit.sha, r]));
+    const set = new Set<string>();
+    let sha: string | undefined = sel;
+    while (sha && bySha.has(sha) && !set.has(sha)) {
+      set.add(sha);
+      sha = bySha.get(sha)!.commit.parents[0];
+    }
+    const lane = bySha.get(sel)?.lane;
+    let cur = sel;
+    for (;;) {
+      const kids = rows.filter(
+        (r) => r.commit.parents[0] === cur && !set.has(r.commit.sha),
+      );
+      if (kids.length === 0) break;
+      const pick = kids.find((r) => r.lane === lane) ?? kids[0];
+      set.add(pick.commit.sha);
+      cur = pick.commit.sha;
+    }
+    return set;
+  }, [sel, rows]);
+  const line = selLine ?? hl;
+  const dim = (on: boolean, _sha?: string) =>
+    line === null || on ? undefined : "rr-dim";
+  const parentsOf = useMemo(
+    () => new Map(rows.map((r) => [r.commit.sha, r.commit.parents])),
+    [rows],
+  );
+  const mergedOut = (childs: string[] | undefined, parent: string) =>
+    line !== null &&
+    line.has(parent) &&
+    (childs ?? []).some((ch) => {
+      const ps = parentsOf.get(ch);
+      return !!ps && ps.length > 1 && ps.slice(1).includes(parent);
+    });
   const edgeLit = (childs: string[] | undefined, parent: string) =>
-    hl === null ||
-    (hl.has(parent) && (childs ?? []).some((ch) => hl.has(ch)));
+    line === null ||
+    (line.has(parent) && (childs ?? []).some((ch) => line.has(ch)));
 
   return (
     <div className="railscroll" ref={scrollRef}>
@@ -291,19 +323,23 @@ function BranchRailway({
           const tipName = c.refs[0]?.startsWith("origin/")
             ? c.refs[0].slice(7)
             : c.refs[0];
-          const on = hl === null || hl.has(c.sha);
-          const labelOn =
-            hl === null ||
-            (highlight !== null &&
-              c.refs.some(
-                (r) => r === highlight || r === `origin/${highlight}`,
-              ));
+          const on = line === null || line.has(c.sha);
+          const labelOn = sel
+            ? on
+            : hl === null ||
+              (highlight !== null &&
+                c.refs.some(
+                  (r) => r === highlight || r === `origin/${highlight}`,
+                ));
           return (
             <g key={c.sha}>
               {row.passes.map((j, k) => (
                 <line
                   key={`p${j}`}
-                  className={dim(edgeLit(row.passChilds[k], row.passShas[k]))}
+                  className={dim(
+                    edgeLit(row.passChilds[k], row.passShas[k]) ||
+                      mergedOut(row.passChilds[k], row.passShas[k]),
+                  )}
                   x1={xl}
                   y1={yOf(j)}
                   x2={xr}
@@ -314,7 +350,10 @@ function BranchRailway({
               ))}
               {row.hasTop && (
                 <line
-                  className={dim(edgeLit(row.topChilds, c.sha))}
+                  className={dim(
+                    edgeLit(row.topChilds, c.sha) ||
+                      mergedOut(row.topChilds, c.sha),
+                  )}
                   x1={x}
                   y1={y}
                   x2={xr}
@@ -326,7 +365,10 @@ function BranchRailway({
               {row.joins.map((j, k) => (
                 <line
                   key={`j${j}`}
-                  className={dim(edgeLit(row.joinChilds[k], c.sha))}
+                  className={dim(
+                    edgeLit(row.joinChilds[k], c.sha) ||
+                      mergedOut(row.joinChilds[k], c.sha),
+                  )}
                   x1={xr}
                   y1={yOf(j)}
                   x2={x}
@@ -341,7 +383,14 @@ function BranchRailway({
               {row.forks.map((m, k) => (
                 <line
                   key={`f${m}`}
-                  className={dim(edgeLit([c.sha], row.forkShas[k]))}
+                  className={dim(
+                    edgeLit([c.sha], row.forkShas[k]) ||
+                      // this "fork" is really the line merging in and ending
+                      (line !== null &&
+                        line.has(row.forkShas[k]) &&
+                        c.parents.length > 1 &&
+                        c.parents.slice(1).includes(row.forkShas[k])),
+                  )}
                   x1={x}
                   y1={y}
                   x2={xl}

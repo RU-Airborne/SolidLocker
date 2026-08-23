@@ -1854,3 +1854,12 @@
   align-items: center;
   gap: 0.3rem;
 }
+
+.updatetool {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.4rem;
+  max-width: 16rem;
+  text-align: right;
+}

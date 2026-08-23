@@ -16,6 +16,7 @@ mod people;
 mod settings;
 mod swrefs;
 mod thumbs;
+mod updates;
 mod workflow;
 
 use std::path::{Path, PathBuf};
@@ -147,6 +148,11 @@ async fn check_outside_refs(
 }
 
 /// From origin/HEAD; the fetches keep it current.
+#[tauri::command]
+async fn check_for_update() -> AppResult<updates::UpdateCheck> {
+    updates::check().await
+}
+
 #[tauri::command]
 async fn get_default_branch(app: AppHandle) -> AppResult<String> {
     let root = current_repo(&app)?;
@@ -1349,6 +1355,7 @@ fn report_window_failure(app: &tauri::AppHandle, detail: &str) {
             cancel_lock_run,
             get_used_by,
             get_default_branch,
+            check_for_update,
             list_pulls,
             pull_detail,
             create_pull,

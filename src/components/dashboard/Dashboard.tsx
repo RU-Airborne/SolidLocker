@@ -12,6 +12,7 @@ import {
   openFile,
   previewCommit,
   pushNow,
+  checkForUpdate,
   getDefaultBranch,
   restoreFiles,
   setAsideFiles,
@@ -65,6 +66,7 @@ import { SettingsPage } from "../settings/SettingsPage";
 import { ReleaseAllDialog } from "../dialogs/ReleaseAllDialog";
 import DialLogo from "../DialLogo";
 import { ProgressPage } from "../progress/ProgressPage";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { PullsPage } from "../pulls/PullsPage";
 import { CollisionNotice } from "./CollisionNotice";
 import { CollisionsDialog } from "../dialogs/CollisionsDialog";
@@ -291,6 +293,16 @@ export function Dashboard({ appState }: { appState: AppState }) {
     queryFn: getDefaultBranch,
     staleTime: 5 * 60_000,
   });
+  const update = useQuery({
+    queryKey: ["updateCheck"],
+    queryFn: checkForUpdate,
+    staleTime: 24 * 60 * 60_000,
+    refetchInterval: 24 * 60 * 60_000,
+    retry: false,
+  });
+  const [skippedUpdate, setSkippedUpdate] = useState(
+    () => localStorage.getItem("skippedUpdate") ?? "",
+  );
   // Files about to be shared that reach outside the project, hold back until user decides
   const [outsideRefs, setOutsideRefs] = useState<{
     refs: OutsideRef[];
@@ -1068,6 +1080,29 @@ export function Dashboard({ appState }: { appState: AppState }) {
         onOpenPulls={() => setPullsOpen(true)}
         defaultBranch={defaultBranch.data ?? "main"}
       />
+      {update.data?.newer && update.data.latest !== skippedUpdate && (
+        <div className="notice">
+          <span>
+            SolidLocker {update.data.latest} is out. Right now you have {" "}
+            {update.data.current}. Update soon to get the latest features and fixes.
+          </span>
+          <button
+            className="notice-ok"
+            onClick={() => void openUrl(update.data!.url)}
+          >
+            See what&rsquo;s new
+          </button>
+          <button
+            className="notice-ok"
+            onClick={() => {
+              localStorage.setItem("skippedUpdate", update.data!.latest);
+              setSkippedUpdate(update.data!.latest);
+            }}
+          >
+            Later
+          </button>
+        </div>
+      )}
       {(openConflicts.data?.length ?? 0) > 0 && !resolving && (
         <div className="notice warn">
           <span>
