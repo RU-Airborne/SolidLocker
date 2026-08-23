@@ -1790,3 +1790,67 @@
 .prreviewrow .prclose {
   margin-right: auto;
 }
+
+.rr-card .rr-cardbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.4rem;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.78rem;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.rr-card .rr-cardbtn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent),
+    0 0 10px color-mix(in srgb, var(--accent) 35%, transparent),
+    0 6px 20px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.branchlist .branchname .branchword {
+  font-weight: inherit;
+}
+
+.rr-card.rr-clickable {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.8rem;
+}
+
+.rr-cardmain {
+  min-width: 0;
+}
+
+.rr-cardfiles {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+  flex: none;
+  margin-top: 0.15rem;
+}
+
+.rr-cardcount {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.rr-cardcount .st {
+  flex: none;
+}
+
+.rr-cardcount {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}

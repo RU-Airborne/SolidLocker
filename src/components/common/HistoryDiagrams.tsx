@@ -47,6 +47,94 @@ export function BulbGlyph() {
   );
 }
 
+/** Pull request: two rails, the curve arrowed where it leaves the branch. */
+export function PullRequestGlyph({ size = 18 }: { size?: number }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="18" cy="18" r="3" />
+      <circle cx="6" cy="6" r="3" />
+      <path d="M12 6h4a2 2 0 0 1 2 2v7" />
+      <polyline points="15 3 12 6 15 9" />
+      <line x1="6" y1="9" x2="6" y2="21" />
+    </svg>
+  );
+}
+
+/** Histogram. */
+export function HistogramGlyph({ size = 14 }: { size?: number }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      aria-hidden="true"
+    >
+      <line x1="5" y1="20" x2="5" y2="12" />
+      <line x1="10" y1="20" x2="10" y2="4" />
+      <line x1="15" y1="20" x2="15" y2="9" />
+      <line x1="20" y1="20" x2="20" y2="14" />
+    </svg>
+  );
+}
+
+/** Two chasing arrows: sync. */
+export function SyncGlyph({ size = 14 }: { size?: number }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4 11a8 8 0 0 1 14.9-3" />
+      <polyline points="19 3 19 8 14 8" />
+      <path d="M20 13a8 8 0 0 1-14.9 3" />
+      <polyline points="5 21 5 16 10 16" />
+    </svg>
+  );
+}
+
+/** A cloud with the work heading up into it: save, then share. */
+export function ShareGlyph({ size = 14 }: { size?: number }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {/* cloud with the work heading up into it */}
+      <path d="M4 14.9A7 7 0 1 1 15.7 8h1.8a4.5 4.5 0 0 1 2.5 8.2" />
+      <line x1="12" y1="21" x2="12" y2="12" />
+      <polyline points="8 16 12 12 16 16" />
+    </svg>
+  );
+}
+
 /** Bin. */
 export function TrashGlyph() {
   return (

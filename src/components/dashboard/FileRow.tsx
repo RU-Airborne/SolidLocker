@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { getFileHistory, getSwIcon, getSwInstalled, getUsedBy } from "../../api";
 import { type FileRowData, type RowActions } from "./Dashboard";
+import { BranchGlyph } from "../common/HistoryDiagrams";
 import { rowDomId } from "./rowid";
 import { StatusBadge } from "./StatusBadge";
 import {
@@ -329,7 +330,14 @@ export const FileRow = memo(function FileRow({
                       : c.author_name}
                   </span>
                   <span className="fh-msg" title={c.message}>
-                    {c.message}
+                    <span className="fh-msgtext">{c.message}</span>
+                    <button
+                      className="fh-branches"
+                      onClick={() => actions.openCommit(c.sha)}
+                      title="Open this change on the Branches page"
+                    >
+                      <BranchGlyph />
+                    </button>
                   </span>
                   <span className="fh-date">{formatDateTime(c.date)}</span>
                   <button
@@ -339,6 +347,7 @@ export const FileRow = memo(function FileRow({
                   >
                     View…
                   </button>
+
                 </li>
               );
             })}

@@ -1,3 +1,4 @@
+import { StatusMark } from "../common/StatusMark";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { getActivity, type CommitInfo } from "../../api";
@@ -49,10 +50,9 @@ function FileLine({
   const parts = path.split("/");
   const name = parts.pop();
   const folder = parts.join("/");
-  const s = status.toLowerCase();
   return (
     <li className="commitfile" title={`${STATUS_TITLE[status] ?? "Changed"} : ${path}`}>
-      <span className={`st st-${s}`}>{status}</span>
+      <StatusMark status={status} />
       <button
         className="commitfilejump"
         disabled={!onBranch}

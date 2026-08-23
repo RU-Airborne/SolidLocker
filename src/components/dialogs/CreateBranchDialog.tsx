@@ -3,6 +3,7 @@ import { useState } from "react";
 import { createBranch } from "../../api";
 import { isAppError } from "../../types";
 import { GlassSelect } from "../common/GlassSelect";
+import { useBranchColors } from "../common/BranchName";
 import {
   BranchDiagram,
   FreshBranchDiagram,
@@ -27,6 +28,7 @@ export function CreateBranchDialog({
   onCreated: (name: string, fresh: boolean) => void;
   onClose: () => void;
 }) {
+  const branchColorOf = useBranchColors();
   const [name, setName] = useState("");
   const [mode, setMode] = useState<"from" | "fresh">("from");
   const [source, setSource] = useState(currentBranch);
@@ -93,6 +95,7 @@ export function CreateBranchDialog({
                   options={sourceOptions.map((b) => ({
                     value: b,
                     label: b === currentBranch ? `${b} (current)` : b,
+                    color: branchColorOf(b),
                   }))}
                 />
               )}

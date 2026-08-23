@@ -291,6 +291,7 @@ export function ConflictPicker({
           people={people}
           onOpenCommit={onOpenCommit}
           at={at}
+          onBlankClick={() => light(null)}
         />
       </section>
 
@@ -377,7 +378,7 @@ export function ConflictPicker({
                   onClick={() => light(isLit ? null : c.path)}
                 >
                   <BulbGlyph />
-                  <span>{isLit ? "Lit in railway" : "Highlight in railway"}</span>
+                  <span>Highlight in railway</span>
                 </button>
               </span>
               <SideCell

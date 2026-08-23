@@ -1,3 +1,4 @@
+import { StatusMark } from "../common/StatusMark";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createPortal } from "react-dom";
@@ -44,6 +45,8 @@ interface LaidRow {
   topChilds: string[];
   joinChilds: string[][];
   below: number[];
+  belowShas: string[];
+  belowChilds: string[][];
 }
 
 export function layoutGraph(commits: GraphCommit[]): {
@@ -112,8 +115,14 @@ export function layoutGraph(commits: GraphCommit[]): {
     });
 
     const below: number[] = [];
+    const belowShas: string[] = [];
+    const belowChilds: string[][] = [];
     lanes.forEach((sha, i) => {
-      if (sha !== null) below.push(i);
+      if (sha !== null) {
+        below.push(i);
+        belowShas.push(sha);
+        belowChilds.push(laneChilds[i] ?? []);
+      }
     });
 
     rows.push({
@@ -130,6 +139,8 @@ export function layoutGraph(commits: GraphCommit[]): {
       passShas,
       passChilds,
       below,
+      belowShas,
+      belowChilds,
     });
     laneCount = Math.max(laneCount, lanes.length);
   }
@@ -163,7 +174,7 @@ export function laneColor(i: number): string {
   return LANE_COLORS[i % LANE_COLORS.length];
 }
 
-function FillRails({ lanes, laneCount }: { lanes: number[]; laneCount: number }) {
+function FillRails({ lanes, laneCount }: { lanes: { lane: number; on: boolean }[]; laneCount: number }) {
   const w = laneCount * COL_W + 4;
   return (
     <svg
@@ -173,9 +184,10 @@ function FillRails({ lanes, laneCount }: { lanes: number[]; laneCount: number })
       preserveAspectRatio="none"
       aria-hidden="true"
     >
-      {lanes.map((j) => (
+      {lanes.map(({ lane: j, on }) => (
         <line
           key={j}
+          className={on ? undefined : "gg-quiet"}
           x1={j * COL_W + COL_W / 2}
           y1={0}
           x2={j * COL_W + COL_W / 2}
@@ -188,20 +200,41 @@ function FillRails({ lanes, laneCount }: { lanes: number[]; laneCount: number })
   );
 }
 
-function RowRails({ row, laneCount }: { row: LaidRow; laneCount: number }) {
+function RowRails({
+  row,
+  laneCount,
+  open,
+  lit,
+}: {
+  row: LaidRow;
+  laneCount: number;
+  open?: boolean;
+  /** The one line of history that stays bright; null lights everything. */
+  lit?: Set<string> | null;
+}) {
   const w = laneCount * COL_W + 4;
   const mid = ROW_H / 2;
   const x = (i: number) => i * COL_W + COL_W / 2;
   const xl = x(row.lane);
+  const c = row.commit;
+  const edgeOn = (childs: string[], parent: string) =>
+    !lit || (lit.has(parent) && childs.some((ch) => lit.has(ch)));
+  const passOn = (k: number) => edgeOn(row.passChilds[k] ?? [], row.passShas[k]);
+  const topOn = edgeOn(row.topChilds, c.sha);
+  const joinOn = (k: number) => edgeOn(row.joinChilds[k] ?? [], c.sha);
+  const contOn = !lit || (lit.has(c.sha) && lit.has(c.parents[0] ?? ""));
+  const forkOn = (k: number) => edgeOn([c.sha], row.forkShas[k]);
+  const nodeOn = !lit || lit.has(c.sha);
+  const cls = (on: boolean) => (on ? undefined : "gg-quiet");
   const topLanes = [
-    ...row.passes,
-    ...(row.hasTop ? [row.lane] : []),
-    ...row.joins,
+    ...row.passes.map((j, k) => ({ lane: j, on: passOn(k) })),
+    ...(row.hasTop ? [{ lane: row.lane, on: topOn }] : []),
+    ...row.joins.map((j, k) => ({ lane: j, on: joinOn(k) })),
   ];
   const bottomLanes = [
-    ...row.passes,
-    ...(row.continues ? [row.lane] : []),
-    ...row.forks,
+    ...row.passes.map((j, k) => ({ lane: j, on: passOn(k) })),
+    ...(row.continues ? [{ lane: row.lane, on: contOn }] : []),
+    ...row.forks.map((m, k) => ({ lane: m, on: forkOn(k) })),
   ];
   return (
     <span className="gg-railcol" aria-hidden="true">
@@ -213,9 +246,10 @@ function RowRails({ row, laneCount }: { row: LaidRow; laneCount: number }) {
       viewBox={`0 0 ${w} ${ROW_H}`}
       aria-hidden="true"
     >
-      {row.passes.map((j) => (
+      {row.passes.map((j, k) => (
         <line
           key={`p${j}`}
+          className={cls(passOn(k))}
           x1={x(j)}
           y1={0}
           x2={x(j)}
@@ -225,11 +259,12 @@ function RowRails({ row, laneCount }: { row: LaidRow; laneCount: number }) {
         />
       ))}
       {row.hasTop && (
-        <line x1={xl} y1={0} x2={xl} y2={mid} stroke={laneColor(row.lane)} strokeWidth="2" />
+        <line className={cls(topOn)} x1={xl} y1={0} x2={xl} y2={mid} stroke={laneColor(row.lane)} strokeWidth="2" />
       )}
-      {row.joins.map((j) => (
+      {row.joins.map((j, k) => (
         <path
           key={`j${j}`}
+          className={cls(joinOn(k))}
           d={`M ${x(j)} 0 C ${x(j)} ${mid} ${xl} ${mid * 0.4} ${xl} ${mid}`}
           fill="none"
           stroke={laneColor(j)}
@@ -237,11 +272,12 @@ function RowRails({ row, laneCount }: { row: LaidRow; laneCount: number }) {
         />
       ))}
       {row.continues && (
-        <line x1={xl} y1={mid} x2={xl} y2={ROW_H} stroke={laneColor(row.lane)} strokeWidth="2" />
+        <line className={cls(contOn)} x1={xl} y1={mid} x2={xl} y2={ROW_H} stroke={laneColor(row.lane)} strokeWidth="2" />
       )}
-      {row.forks.map((m) => (
+      {row.forks.map((m, k) => (
         <path
           key={`f${m}`}
+          className={cls(forkOn(k))}
           d={`M ${xl} ${mid} C ${xl} ${(mid + ROW_H) / 2} ${x(m)} ${(mid + ROW_H) / 2} ${x(m)} ${ROW_H}`}
           fill="none"
           stroke={laneColor(m)}
@@ -264,7 +300,12 @@ function RowRails({ row, laneCount }: { row: LaidRow; laneCount: number }) {
           <circle cx={xl} cy={mid} r={3.4} fill="var(--accent)" />
         </g>
       ) : (
-        <circle cx={xl} cy={mid} r={4} fill={laneColor(row.lane)} />
+        <g className={cls(nodeOn)}>
+          {open && (
+            <circle className="gg-halo" cx={xl} cy={mid} r={10} fill={laneColor(row.lane)} />
+          )}
+          <circle cx={xl} cy={mid} r={open ? 5 : 4} fill={laneColor(row.lane)} />
+        </g>
       )}
     </svg>
     <FillRails lanes={bottomLanes} laneCount={laneCount} />
@@ -276,7 +317,7 @@ function DetailRails({
   lanes,
   laneCount,
 }: {
-  lanes: number[];
+  lanes: { lane: number; on: boolean }[];
   laneCount: number;
 }) {
   const w = laneCount * COL_W + 4;
@@ -288,9 +329,10 @@ function DetailRails({
       preserveAspectRatio="none"
       aria-hidden="true"
     >
-      {lanes.map((j) => (
+      {lanes.map(({ lane: j, on }) => (
         <line
           key={j}
+          className={on ? undefined : "gg-quiet"}
           x1={j * COL_W + COL_W / 2}
           y1={0}
           x2={j * COL_W + COL_W / 2}
@@ -363,9 +405,7 @@ function CommitDetail({
         <ul className="gg-files">
           {files.data.map((f) => (
             <li key={f.path}>
-              <span className={`st st-${f.status.toLowerCase()}`}>
-                {f.status}
-              </span>
+              <StatusMark status={f.status} />
               <span className="gg-filepath">{f.path}</span>
               {CAD_FILE.test(f.path) && f.status !== "D" && !commit.is_head && (
                 <button
@@ -500,6 +540,8 @@ export function HistoryPage({
   const [openSha, setOpenSha] = useState<string | null>(null);
   // branch card being hovered — its line in the railway lights up
   const [hoverBranch, setHoverBranch] = useState<string | null>(null);
+  // clicked card: stays highlighted and shows its buttons until clicked again
+  const [pickedBranch, setPickedBranch] = useState<string | null>(null);
 
   // arriving from a Progress-railway node: open that commit and scroll to it
   useEffect(() => {
@@ -518,6 +560,50 @@ export function HistoryPage({
     [graph.data],
   );
 
+  // The branch the open commit sits on: first parents downwards, and the
+  // same line carried upwards. Everything off it goes quiet.
+  const litLine = useMemo(() => {
+    if (!openSha) return null;
+    const bySha = new Map(laid.rows.map((r) => [r.commit.sha, r]));
+    const set = new Set<string>();
+    let sha: string | undefined = openSha;
+    while (sha && bySha.has(sha) && !set.has(sha)) {
+      set.add(sha);
+      sha = bySha.get(sha)!.commit.parents[0];
+    }
+    const openLane = bySha.get(openSha)?.lane;
+    let cur = openSha;
+    for (;;) {
+      const kids = laid.rows.filter(
+        (r) => r.commit.parents[0] === cur && !set.has(r.commit.sha),
+      );
+      if (kids.length === 0) break;
+      const pick = kids.find((r) => r.lane === openLane) ?? kids[0];
+      set.add(pick.commit.sha);
+      cur = pick.commit.sha;
+    }
+    return set;
+  }, [openSha, laid]);
+
+  // Same idea for a hovered or picked branch card: its line stays lit.
+  const focusBranch = hoverBranch ?? pickedBranch;
+  const hoverLine = useMemo(() => {
+    if (!focusBranch) return null;
+    const bySha = new Map(laid.rows.map((r) => [r.commit.sha, r]));
+    const tip = laid.rows.find((r) =>
+      r.commit.refs.some((x) => x === focusBranch || x === `origin/${focusBranch}`),
+    );
+    if (!tip) return null;
+    const set = new Set<string>();
+    let sha: string | undefined = tip.commit.sha;
+    while (sha && bySha.has(sha) && !set.has(sha)) {
+      set.add(sha);
+      sha = bySha.get(sha)!.commit.parents[0];
+    }
+    return set;
+  }, [focusBranch, laid]);
+  const quietSet = litLine ?? hoverLine;
+
   // Where each branch's tip sits in the railway, so the card list and the
   // diagram share colors and can point at each other.
   const tips = useMemo(() => {
@@ -529,6 +615,24 @@ export function HistoryPage({
       }
     }
     return map;
+  }, [laid.rows]);
+
+  // Where each branch's local and GitHub copies sit, to spot divergence.
+  const refSpots = useMemo(() => {
+    const local = new Map<string, string>();
+    const remote = new Map<string, string>();
+    for (const row of laid.rows) {
+      for (const r of row.commit.refs) {
+        if (r === "HEAD" || r.startsWith("tag: ")) continue;
+        if (r.startsWith("origin/")) {
+          const n = r.slice(7);
+          if (!remote.has(n)) remote.set(n, row.commit.sha);
+        } else if (!local.has(r)) {
+          local.set(r, row.commit.sha);
+        }
+      }
+    }
+    return { local, remote };
   }, [laid.rows]);
 
   function jumpToBranch(name: string) {
@@ -574,6 +678,11 @@ export function HistoryPage({
           {(branches.data ?? []).map((b) => {
             const tip = tips.get(b.name);
             const color = tip ? laneColor(tip.lane) : "var(--muted)";
+            // same name and picture as the railway, via GitHub identities
+            const person = tip ? authors.get(tip.sha) : undefined;
+            const who = person
+              ? formatPerson(person.name, person.login)
+              : b.author;
             const twins = (branches.data ?? [])
               .filter(
                 (o) => o.name !== b.name && tips.get(o.name)?.sha === tip?.sha,
@@ -582,13 +691,33 @@ export function HistoryPage({
             return (
             <div
               key={b.name}
-              className={`branchcard${b.name === currentBranch ? " current" : ""}`}
+              className={`branchcard${b.name === currentBranch ? " current" : ""}${pickedBranch === b.name ? " picked" : ""}${pickedBranch && pickedBranch !== b.name ? " quiet" : ""}`}
               // soft wash of the branch's color instead of a hard bar
-              style={tip ? { boxShadow: `inset 0 0 44px ${color}1c` } : undefined}
+              style={
+                pickedBranch === b.name
+                  ? ({
+                      "--pick": color,
+                      borderColor: color,
+                      background: `${color}1a`,
+                    } as React.CSSProperties)
+                  : tip
+                    ? ({
+                        "--pick": color,
+                        boxShadow: `inset 0 0 44px ${color}1c`,
+                      } as React.CSSProperties)
+                    : undefined
+              }
               onMouseEnter={() => setHoverBranch(b.name)}
               onMouseLeave={() =>
                 setHoverBranch((prev) => (prev === b.name ? null : prev))
               }
+              onClick={(e) => {
+                // buttons inside do their own thing
+                if ((e.target as HTMLElement).closest("button")) return;
+                const picking = pickedBranch !== b.name;
+                setPickedBranch(picking ? b.name : null);
+                if (picking) jumpToBranch(b.name);
+              }}
             >
               <div className="branchname">
                 <button
@@ -605,26 +734,42 @@ export function HistoryPage({
                   <span className="badge badge-mine">you are here</span>
                 )}
               </div>
-              <div className="muted small branchmeta">
-                {b.subject || "—"}
-                <br />
-                {b.author} · {relativeTime(new Date(b.last_commit_at * 1000).toISOString())}
-                {!b.is_default && (b.ahead > 0 || b.behind > 0) && (
-                  <>
-                    <br />
-                    {b.ahead} ahead · {b.behind} behind{" "}
-                    {(branches.data ?? []).find((x) => x.is_default)?.name ?? "main"}
-                  </>
-                )}
-                {twins.length > 0 && (
-                  <>
-                    <br />
-                    same point as {twins.slice(0, 3).join(", ")}
-                    {twins.length > 3 ? ` +${twins.length - 3}` : ""}: no work
-                    of its own yet
-                  </>
-                )}
-              </div>
+              {pickedBranch === b.name ? (
+                <div className="muted small branchmeta">
+                  <span className="branchsubject">{b.subject || "—"}</span>
+                  <span className="branchwho">
+                    <UserAvatar url={person?.avatarUrl ?? null} name={who} size={16} />
+                    <span>
+                      {who} ·{" "}
+                      {formatDateTime(new Date(b.last_commit_at * 1000).toISOString())}
+                    </span>
+                  </span>
+                  {!b.is_default && (b.ahead > 0 || b.behind > 0) && (
+                    <>
+                      <br />
+                      {b.ahead} ahead · {b.behind} behind{" "}
+                      {(branches.data ?? []).find((x) => x.is_default)?.name ?? "main"}
+                    </>
+                  )}
+                  {twins.length > 0 && (
+                    <>
+                      <br />
+                      same point as {twins.slice(0, 3).join(", ")}
+                      {twins.length > 3 ? ` +${twins.length - 3}` : ""}: no work
+                      of its own yet
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div className="muted small branchmeta branchwho">
+                  <UserAvatar url={person?.avatarUrl ?? null} name={who} size={16} />
+                  <span>
+                    Last change by {who} ·{" "}
+                    {relativeTime(new Date(b.last_commit_at * 1000).toISOString())}
+                  </span>
+                </div>
+              )}
+              {pickedBranch === b.name && (
               <div className="branchcardactions">
                 {b.name !== currentBranch && (
                   <button
@@ -666,6 +811,7 @@ export function HistoryPage({
                   </button>
                 )}
               </div>
+              )}
             </div>
             );
           })}
@@ -713,6 +859,7 @@ export function HistoryPage({
               <div
                 key={c.sha}
                 id={`gg-${c.sha}`}
+                style={{ "--lane": laneColor(row.lane) } as React.CSSProperties}
                 className={`gg-row${open ? " open" : ""}${c.is_head ? " here" : ""}${
                   hoverBranch &&
                   c.refs.some(
@@ -726,20 +873,50 @@ export function HistoryPage({
                   className="gg-line"
                   onClick={() => setOpenSha(open ? null : c.sha)}
                 >
-                  <RowRails row={row} laneCount={laid.laneCount} />
+                  <RowRails
+                    row={row}
+                    laneCount={laid.laneCount}
+                    open={
+                      open ||
+                      (focusBranch !== null &&
+                        tips.get(focusBranch)?.sha === c.sha)
+                    }
+                    lit={quietSet}
+                  />
                   <span className="gg-refs">
                     {c.is_head && (
                       <span className="gg-youarehere">You are here</span>
                     )}
-                    {c.refs.map((r) => (
-                      <span
-                        key={r}
-                        className={`gg-chip${r === currentBranch ? " here" : ""}`}
-                        style={{ borderColor: laneColor(row.lane) }}
-                      >
-                        {r}
-                      </span>
-                    ))}
+                    {(() => {
+                      // One chip per branch; git's local and GitHub copies
+                      // only get told apart when they sit on different rows.
+                      const seen = new Set<string>();
+                      return c.refs.flatMap((r) => {
+                        const name = r.startsWith("origin/") ? r.slice(7) : r;
+                        if (name === "HEAD" || seen.has(name)) return [];
+                        seen.add(name);
+                        const localAt = refSpots.local.get(name);
+                        const remoteAt = refSpots.remote.get(name);
+                        const diverged =
+                          localAt !== undefined &&
+                          remoteAt !== undefined &&
+                          localAt !== remoteAt;
+                        const label = diverged
+                          ? remoteAt === c.sha
+                            ? `${name} (GitHub)`
+                            : `${name} (here)`
+                          : name;
+                        return [
+                          <span
+                            key={name}
+                            className={`gg-chip${name === currentBranch ? " here" : ""}`}
+                            style={{ borderColor: laneColor(row.lane) }}
+                          >
+                            {label}
+                          </span>,
+                        ];
+                      });
+                    })()}
                   </span>
                   <span className="gg-subject" title={c.subject}>
                     {c.subject}
@@ -764,7 +941,16 @@ export function HistoryPage({
                 </button>
                 {open && (
                   <div className="gg-open">
-                    <DetailRails lanes={row.below} laneCount={laid.laneCount} />
+                    <DetailRails
+                      lanes={row.below.map((j, k) => ({
+                        lane: j,
+                        on:
+                          !quietSet ||
+                          (quietSet.has(row.belowShas[k]) &&
+                            (row.belowChilds[k] ?? []).some((ch) => quietSet.has(ch))),
+                      }))}
+                      laneCount={laid.laneCount}
+                    />
                     <CommitDetail
                       commit={c}
                       onBranchOff={onBranchOff}

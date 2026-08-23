@@ -4,23 +4,24 @@ import { createPortal } from "react-dom";
 export interface GlassOption {
   value: string;
   label: string;
-  // color?: string;
+  /** A small dot in this colour before the label */
+  color?: string;
 }
 
-// function Label({ o }: { o: GlassOption }) {
-//   return (
-//     <>
-//       {o.color && (
-//         <span
-//           className="gselect-dot"
-//           style={{ background: o.color }}
-//           aria-hidden="true"
-//         />
-//       )}
-//       <span style={o.color ? { color: o.color } : undefined}>{o.label}</span>
-//     </>
-//   );
-// }
+function Label({ o }: { o: GlassOption }) {
+  return (
+    <>
+      {o.color && (
+        <span
+          className="gselect-dot"
+          style={{ background: o.color }}
+          aria-hidden="true"
+        />
+      )}
+      <span className="gselect-word">{o.label}</span>
+    </>
+  );
+}
 
 /**
  * A custom dropdown menu with translucency and blur
@@ -161,7 +162,9 @@ export function GlassSelect({
         aria-haspopup="listbox"
         aria-expanded={open}
       >
-        <span className="gselect-label">{current?.label ?? value}</span>
+        <span className="gselect-label">
+          {current ? <Label o={current} /> : value}
+        </span>
         <span className="gselect-chevron" aria-hidden="true">
           ▾
         </span>
@@ -203,7 +206,7 @@ export function GlassSelect({
                 onMouseEnter={() => setActive(i)}
                 onClick={() => choose(o.value)}
               >
-                {o.label}
+                <Label o={o} />
               </button>
             </li>
             ))}

@@ -95,3 +95,17 @@ body {
 .muted {
   color: var(--muted);
 }
+
+button {
+  --border: #4d5661;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) button {
+    --border: #9aa4af;
+  }
+}
+
+:root[data-theme="light"] button {
+  --border: #9aa4af;
+}

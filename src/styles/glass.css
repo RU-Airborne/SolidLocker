@@ -247,6 +247,22 @@
   box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 25%, transparent);
 }
 
+.pinbtn,
+.namebtn {
+  border-radius: 6px;
+  transition:
+    box-shadow 0.16s ease,
+    background-color 0.16s ease,
+    color 0.16s ease;
+}
+
+.pinbtn:hover,
+.namebtn:hover {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
 /* Toolbar buttons: the label follows the border into the accent, so Sync
    now and Progress read as live the way the row buttons do. */
 .barbtn:hover:not(:disabled) {
@@ -556,13 +572,22 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
+  margin-right: 0.45rem;
 }
 
-.gselect-opt {
-  display: flex;
+/* Dot + word on one line in the closed switcher too. */
+.gselect-label {
+  display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  min-width: 0;
 }
+
+.gselect-label .gselect-word {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 
 .gselect-chevron {
   font-size: 0.7em;
@@ -601,7 +626,8 @@
 }
 
 .gselect-opt {
-  display: block;
+  display: flex;
+  align-items: center;
   width: 100%;
   text-align: left;
   border: none;

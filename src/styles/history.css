@@ -40,7 +40,7 @@
 .branchlist {
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding-right: 0.4rem;
+  padding: 0.3rem 0.6rem 0 0.95rem;
 }
 
 .branchlist h3 {
@@ -56,6 +56,32 @@
   flex-direction: column;
   gap: 0.35rem;
   align-items: flex-start;
+}
+
+.branchcard {
+  cursor: pointer;
+}
+
+.branchcard {
+  transition: opacity 0.2s ease, box-shadow 0.2s ease;
+}
+
+.branchcard.picked {
+  box-shadow:
+    inset 0 0 44px color-mix(in srgb, var(--pick) 11%, transparent),
+    0 0 0 1px var(--pick),
+    0 0 12px color-mix(in srgb, var(--pick) 45%, transparent);
+}
+
+.branchcard.quiet {
+  opacity: 0.45;
+}
+
+.branchcard:hover:not(.picked):not(.quiet) {
+  border-color: color-mix(in srgb, var(--pick, var(--accent)) 60%, var(--border));
+  box-shadow:
+    inset 0 0 44px color-mix(in srgb, var(--pick, var(--accent)) 11%, transparent),
+    0 0 10px color-mix(in srgb, var(--pick, var(--accent)) 35%, transparent) !important;
 }
 
 .branchcard.current {
@@ -77,6 +103,9 @@
 }
 
 .branchjump {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
@@ -101,8 +130,9 @@
   flex: none;
 }
 
-.gg-row.hl .gg-line {
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
+/* Same box as an open row, so the two highlights line up. */
+.gg-row.hl {
+  background: color-mix(in srgb, var(--lane, var(--accent)) 12%, transparent);
   border-radius: 7px;
 }
 
@@ -130,6 +160,7 @@
 }
 
 .gg-line {
+  border-radius: 7px;
   display: grid;
   grid-template-columns: auto auto 1fr auto;
   align-items: center;
@@ -144,13 +175,14 @@
   cursor: pointer;
 }
 
-.gg-line:hover {
-  background: color-mix(in srgb, var(--accent) 7%, transparent);
+/* Hover tints the whole row, the same box the open state uses. */
+.gg-row:not(.open):hover {
+  background: color-mix(in srgb, var(--lane, var(--accent)) 7%, transparent);
   border-radius: 7px;
 }
 
 .gg-row.open {
-  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  background: color-mix(in srgb, var(--lane, var(--accent)) 9%, transparent);
   border-radius: 7px;
 }
 
@@ -772,4 +804,55 @@ button.linkish:hover {
   height: 100%;
   min-height: 0;
   padding: 1rem;
+}
+
+.gg-rails line,
+.gg-rails path,
+.gg-fillrails line,
+.gg-detailrails line,
+.branchrail line,
+.branchrail path,
+.branchrail polyline {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.gg-rails line,
+.gg-rails path,
+.gg-rails g,
+.gg-fillrails line,
+.gg-detailrails line {
+  transition: opacity 0.25s ease;
+}
+
+.gg-quiet {
+  opacity: 0.22;
+}
+
+.branchsubject {
+  display: block;
+  color: CanvasText;
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.branchwho {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.branchwho .avatar-img {
+  flex: none;
+  border-radius: 50%;
+}
+
+.gg-line:focus-visible {
+  outline-offset: 0.45rem;
+  border-radius: 7px;
+}
+
+.gg-line:focus:not(:focus-visible) {
+  outline: none;
 }

@@ -130,6 +130,7 @@ export interface RowActions {
       change on those files (possible until Save & Share). */
   notify: (text: string, undoPaths?: string[]) => void;
   branchedOff: (name: string) => void;
+  openCommit: (sha: string) => void;
   currentBranch: string;
   previewing: boolean;
 }
@@ -787,6 +788,10 @@ export function Dashboard({ appState }: { appState: AppState }) {
     contextMenu: (e, row) => {
       e.preventDefault();
       setRowMenu({ x: e.clientX, y: e.clientY, row });
+    },
+    openCommit: (sha) => {
+      setHistoryFocusSha(sha);
+      setHistoryOpen(true);
     },
     notify: (text, undoPaths) => {
       playCheckComplete();

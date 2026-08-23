@@ -153,9 +153,33 @@
 }
 
 .fh-msg {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.fh-msgtext {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.fh-branches {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  padding: 0.1rem 0.3rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.fh-branches:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .fh-date {

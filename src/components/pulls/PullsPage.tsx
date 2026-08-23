@@ -1,3 +1,4 @@
+import { StatusMark } from "../common/StatusMark";
 import { BranchName } from "../common/BranchName";
 import { MergeDiagram, TrashGlyph } from "../common/HistoryDiagrams";
 import { useEffect, useReducer, useRef, useState } from "react";
@@ -345,7 +346,7 @@ function OpenPullDialog({
                 <ul className="gg-files">
                   {files.map((f, i) => (
                     <li key={f.path} className={clashes.includes(f.path) ? "askclash" : ""}>
-                      <span className={`st st-${f.status.toLowerCase()}`}>{f.status}</span>
+                      <StatusMark status={f.status} />
                       {i < 12 && CAD_FILE.test(f.path) && f.status !== "D" && (
                         <AskThumb path={f.path} rev={`origin/${head}`} />
                       )}

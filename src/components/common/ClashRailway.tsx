@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getGraph, type GraphCommit } from "../../api";
-import { formatDateTime } from "../../dates";
+import { RailCard } from "./RailCard";
 import { formatPerson, type Person } from "../../identity";
 import { laneColor, layoutGraph } from "../history/HistoryPage";
-import { githubAvatarFromEmail, UserAvatar } from "./UserAvatar";
+import { githubAvatarFromEmail } from "./UserAvatar";
 
 // Branch name from a merge commit's subject line.
 function mergedName(subject: string): string | null {
@@ -200,7 +200,7 @@ export function clashLayout(
 
   const tips: Record<string, string> = { [a.sha]: ours };
   tips[b.sha] = tips[b.sha] ? `${tips[b.sha]}, ${theirs}` : theirs;
-  if (merge) tips[merge] = "merged";
+  if (merge) tips[merge] = "Merged";
 
   const minor: Record<string, string[]> = {};
   for (const c of commits) {
@@ -271,6 +271,7 @@ export function RailDrawing({
   people,
   onOpenCommit,
   preview,
+  onBlankClick,
 }: {
   laid: ClashLaid;
   ours: string;
@@ -280,8 +281,24 @@ export function RailDrawing({
   onOpenCommit?: (sha: string) => void;
   /** Nothing merged yet: sketch where the merge would land, dotted. */
   preview?: boolean;
+  /** A click on empty railway; the host can drop its file highlight. */
+  onBlankClick?: () => void;
 }) {
   const { rows, laneCount, edges, tips, minor, colorOf, stubs, converge } = laid;
+  // A clicked node: its card floats beside it and the rest goes dark.
+  const [sel, setSel] = useState<string | null>(null);
+  useEffect(() => {
+    if (!sel) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSel(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [sel]);
+  // Lighting a file is the newer action: it takes over from a clicked node.
+  useEffect(() => {
+    if (lit) setSel(null);
+  }, [lit]);
   const ourTip = Object.keys(tips).find((sha) => tips[sha] === ours);
   const theirTip = Object.keys(tips).find((sha) => tips[sha] === theirs);
   const ghost =
@@ -294,7 +311,8 @@ export function RailDrawing({
   const TILT = Math.round(longest * 3.8) + Math.max(0, stacked - 1) * 10;
   const minorAbove = rows.some((r) => r.lane === 0 && minor[r.commit.sha]);
   const minorBelow = rows.some((r) => r.lane !== 0 && minor[r.commit.sha]);
-  const TOP = 22 + NOTE + (minorAbove ? TILT : 0);
+  // Enough headroom that the top lane's labels aren't jammed against the edge.
+  const TOP = 36 + NOTE + (minorAbove ? TILT : 0);
   const PAD = Math.max(24, Math.round(longest * 3.8) + 12);
   const RIGHT = 16;
   const H = TOP + laneCount * LANE + 30 + NOTE + (minorBelow ? TILT : 0);
@@ -320,9 +338,10 @@ export function RailDrawing({
     ...(ghost ? [ourTip!, theirTip!] : []),
   ]);
 
-  const on = (sha: string) => lit === null || lit.has(sha);
+  const on = (sha: string) =>
+    sel !== null ? sha === sel : lit === null || lit.has(sha);
   const dim = (bright: boolean) => (bright ? undefined : "rr-dim");
-  const rail = dim(lit === null);
+  const rail = dim(lit === null && sel === null);
 
   return (
     <div className="railstage" style={{ width: W, height: H }}>
@@ -333,6 +352,10 @@ export function RailDrawing({
         className="branchrail"
         role="img"
         aria-label={`${ours} and ${theirs}, back to where they parted`}
+        onClick={() => {
+          setSel(null);
+          onBlankClick?.();
+        }}
       >
         {rows.map((row, i) => {
           const d = shortDate(row.commit.date);
@@ -426,16 +449,23 @@ export function RailDrawing({
             <g key={c.sha}>
               {!stubs.has(c.sha) && (
                 <g
-                  className={`rr-node${onOpenCommit ? "" : " still"}`}
-                  onClick={() => onOpenCommit?.(c.sha)}
-                  role={onOpenCommit ? "button" : undefined}
-                  aria-label={`Open ${c.subject} in Branches`}
+                  className="rr-node"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const picking = sel !== c.sha;
+                    setSel(picking ? c.sha : null);
+                    // the node is the newer action: the file highlight (and
+                    // its button) switch off
+                    if (picking) onBlankClick?.();
+                  }}
+                  role="button"
+                  aria-label={`Show ${c.subject}`}
                 >
                   <title>
                     {`${c.subject}\n${who} · ${new Date(c.date).toLocaleString()}`}
                   </title>
                   <circle cx={x} cy={y} r={11} fill="transparent" />
-                  {(isLit || converge.has(c.sha)) && (
+                  {((sel ? sel === c.sha : isLit) || converge.has(c.sha)) && (
                     <circle
                       className="gg-halo"
                       cx={x}
@@ -513,7 +543,7 @@ export function RailDrawing({
       </svg>
 
       {/* Lit-commit cards: above lane 0, below the rest, away from the nearer edge. */}
-      {lit &&
+      {lit && !sel &&
         rows.map((row, i) => {
           const c = row.commit;
           if (!lit.has(c.sha)) return null;
@@ -533,20 +563,53 @@ export function RailDrawing({
             ...(above ? { bottom: H - y + 12 } : { top: y + 12 }),
           };
           return (
-            <div key={`n${c.sha}`} className="rr-card" style={style}>
-              <div className="rr-cardsubject">{c.subject}</div>
-              <div className="rr-cardwho muted small">
-                <UserAvatar
-                  url={person?.avatarUrl ?? githubAvatarFromEmail(c.author_email)}
-                  name={who}
-                  size={16}
-                />
-                <span>{who}</span>
-              </div>
-              <div className="rr-cardwhen muted small">{formatDateTime(c.date)}</div>
-            </div>
+            <RailCard
+              key={`n${c.sha}`}
+              commit={c}
+              style={style}
+              who={who}
+              avatar={person?.avatarUrl ?? githubAvatarFromEmail(c.author_email)}
+              onOpen={
+                onOpenCommit
+                  ? () => onOpenCommit(c.sha)
+                  : undefined
+              }
+            />
           );
         })}
+
+      {sel && (() => {
+        const i = rows.findIndex((r) => r.commit.sha === sel);
+        if (i < 0) return null;
+        const c = rows[i]!.commit;
+        const x = xOf(i);
+        const y = yOf(rows[i]!.lane);
+        const left = x < W / 2;
+        const room = left ? W - (x - 8) : x + 8;
+        const style: React.CSSProperties = {
+          borderColor: colorOf(c.sha),
+          maxWidth: Math.min(300, room - 4),
+          ...(left ? { left: x - 8 } : { right: W - x - 8 }),
+          ...(y < H / 2 ? { top: y + 16 } : { bottom: H - y + 16 }),
+        };
+        const person = people?.get(c.sha);
+        return (
+          <RailCard
+            commit={c}
+            style={style}
+            who={person ? formatPerson(person.name, person.login) : undefined}
+            avatar={person?.avatarUrl ?? githubAvatarFromEmail(c.author_email)}
+            onOpen={
+              onOpenCommit
+                ? () => {
+                    setSel(null);
+                    onOpenCommit(c.sha);
+                  }
+                : undefined
+            }
+          />
+        );
+      })()}
     </div>
   );
 }
@@ -562,6 +625,7 @@ export function ClashRailway({
   people,
   onOpenCommit,
   at,
+  onBlankClick,
 }: {
   ours: string;
   theirs: string;
@@ -569,6 +633,7 @@ export function ClashRailway({
   at?: { ours: string; theirs: string; merge?: string };
   people?: Map<string, Person>;
   onOpenCommit?: (sha: string) => void;
+  onBlankClick?: () => void;
 }) {
   const { laid, loading } = useClashLayout(ours, theirs, at);
 
@@ -605,6 +670,7 @@ export function ClashRailway({
         people={people}
         onOpenCommit={onOpenCommit}
         preview={!at}
+        onBlankClick={onBlankClick}
       />
     </div>
   );

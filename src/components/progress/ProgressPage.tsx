@@ -12,6 +12,8 @@ import { laneColor, layoutGraph } from "../history/HistoryPage";
 import type { BranchSummary } from "../../types";
 import type { FileRowData } from "../dashboard/Dashboard";
 import { UserAvatar } from "../common/UserAvatar";
+import { BranchName } from "../common/BranchName";
+import { RailCard } from "../common/RailCard";
 import { formatPerson, resolveCommitAuthors, useIdentities } from "../../identity";
 import { formatDate, useNow } from "../../dates";
 
@@ -212,6 +214,17 @@ function BranchRailway({
     if (el) el.scrollLeft = el.scrollWidth;
   }, [rows.length]);
 
+  const [sel, setSel] = useState<string | null>(null);
+  useEffect(() => {
+    if (!sel) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSel(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [sel]);
+  const selRow = sel ? rows.find((r) => r.commit.sha === sel) : undefined;
+
   const hl = useMemo(() => {
     if (!highlight) return null;
     const bySha = new Map(rows.map((r) => [r.commit.sha, r.commit]));
@@ -227,13 +240,17 @@ function BranchRailway({
     }
     return set;
   }, [highlight, rows]);
-  const dim = (on: boolean) => (hl === null || on ? undefined : "rr-dim");
+  const dim = (on: boolean, sha?: string) => {
+    if (sel !== null) return sha === sel ? undefined : "rr-dim";
+    return hl === null || on ? undefined : "rr-dim";
+  };
   const edgeLit = (childs: string[] | undefined, parent: string) =>
     hl === null ||
     (hl.has(parent) && (childs ?? []).some((ch) => hl.has(ch)));
 
   return (
     <div className="railscroll" ref={scrollRef}>
+      <div className="railstage" style={{ width: W, height: H }}>
       <svg
         className="branchrail"
         width={W}
@@ -241,6 +258,7 @@ function BranchRailway({
         viewBox={`0 0 ${W} ${H}`}
         role="img"
         aria-label="Every branch and merge in the project, newest at the right"
+        onClick={() => setSel(null)}
       >
         {/* timeline: a date tick wherever the day changes, oldest to newest */}
         {rows.map((row, i) => {
@@ -336,15 +354,18 @@ function BranchRailway({
                   the Branches page */}
               <g
                 className="rr-node"
-                onClick={() => onOpenCommit(c.sha)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSel(sel === c.sha ? null : c.sha);
+                }}
                 role="button"
-                aria-label={`Open ${c.subject} on the Branches page`}
+                aria-label={`Show ${c.subject}`}
               >
                 <title>
                   {`${c.subject}\n${c.author_name} · ${new Date(c.date).toLocaleString()}`}
                 </title>
                 {c.is_head ? (
-                  <g className={`gg-head ${dim(on) ?? ""}`}>
+                  <g className={`gg-head ${dim(on, c.sha) ?? ""}`}>
                     <circle className="gg-halo" cx={x} cy={y} r={13} fill="var(--accent)" />
                     <circle cx={x} cy={y} r={8} fill="none" stroke="var(--accent)" strokeWidth={3} />
                     <circle cx={x} cy={y} r={4.2} fill="var(--accent)" />
@@ -359,8 +380,11 @@ function BranchRailway({
                   <>
                     {/* a roomier invisible target than the dot itself */}
                     <circle cx={x} cy={y} r={11} fill="transparent" />
+                    {sel === c.sha && (
+                      <circle className="gg-halo" cx={x} cy={y} r={11} fill={laneColor(row.lane)} />
+                    )}
                     <circle
-                      className={dim(on)}
+                      className={dim(on, c.sha)}
                       cx={x}
                       cy={y}
                       r={tipName ? 6 : 4.2}
@@ -389,6 +413,33 @@ function BranchRailway({
           );
         })}
       </svg>
+
+      {/* The clicked change, next to its node. */}
+      {selRow && (() => {
+        const i = rows.indexOf(selRow);
+        const x = xOf(i);
+        const y = yOf(selRow.lane);
+        const c = selRow.commit;
+        const left = x < W / 2;
+        const room = left ? W - (x - 8) : x + 8;
+        const style: React.CSSProperties = {
+          borderColor: laneColor(selRow.lane),
+          maxWidth: Math.min(300, room - 4),
+          ...(left ? { left: x - 8 } : { right: W - x - 8 }),
+          ...(y < H / 2 ? { top: y + 16 } : { bottom: H - y + 16 }),
+        };
+        return (
+          <RailCard
+            commit={c}
+            style={style}
+            onOpen={() => {
+              setSel(null);
+              onOpenCommit(c.sha);
+            }}
+          />
+        );
+      })()}
+      </div>
     </div>
   );
 }
@@ -430,6 +481,25 @@ export function ProgressPage({
   });
   const laid = useMemo(() => layoutGraph(graph.data ?? []), [graph.data]);
   const identities = useIdentities();
+  // Branch tip -> the same resolved person the railway and Branches page show.
+  const tipPerson = useMemo(() => {
+    const authors = resolveCommitAuthors(
+      (graph.data ?? []).map((c) => ({
+        sha: c.sha,
+        author_name: c.author_name,
+        author_email: c.author_email,
+      })),
+      identities.data ?? [],
+    );
+    const map = new Map<string, ReturnType<typeof authors.get>>();
+    for (const row of laid.rows) {
+      for (const r of row.commit.refs) {
+        const name = r.startsWith("origin/") ? r.slice(7) : r;
+        if (!map.has(name)) map.set(name, authors.get(row.commit.sha));
+      }
+    }
+    return map;
+  }, [graph.data, identities.data, laid.rows]);
   const now = useNow();
   const [hoveredBranch, setHoveredBranch] = useState<string | null>(null);
   const [range, setRange] = useState<RangeKey>("month");
@@ -528,6 +598,10 @@ export function ProgressPage({
         <div className="settingsbrand">
           <div className="settingstitle">
             <h2>Progress</h2>
+            <p className="muted small">
+              What the team has been up to across every branch: recent
+              changes, the most reworked parts, and who has been busy.
+            </p>
           </div>
         </div>
       </div>
@@ -616,7 +690,7 @@ export function ProgressPage({
           </div>
           <p className="muted">
             Every branch your team has shared with newest work first. Ahead and
-            behind are counted against {defaultName}.
+            behind are counted against <BranchName name={defaultName} />.
           </p>
           {branches.isLoading ? (
             <p className="muted">Reading branches…</p>
@@ -644,7 +718,7 @@ export function ProgressPage({
                   }
                 >
                   <span className="branchname">
-                    {b.name}
+                    <BranchName name={b.name} />
                     {b.is_default && (
                       <span className="branchtag">default</span>
                     )}
@@ -666,8 +740,21 @@ export function ProgressPage({
                       </>
                     )}
                   </span>
-                  <span className="muted small branchlast">
-                    {b.author} &middot; {formatDate(b.last_commit_at * 1000)}
+                  <span className="muted small branchlast branchwho">
+                    <UserAvatar
+                      url={tipPerson.get(b.name)?.avatarUrl ?? null}
+                      name={tipPerson.get(b.name)?.name ?? b.author}
+                      size={16}
+                    />
+                    <span>
+                      {tipPerson.get(b.name)
+                        ? formatPerson(
+                            tipPerson.get(b.name)!.name,
+                            tipPerson.get(b.name)!.login,
+                          )
+                        : b.author}{" "}
+                      &middot; {formatDate(b.last_commit_at * 1000)}
+                    </span>
                   </span>
                 </li>
               ))}

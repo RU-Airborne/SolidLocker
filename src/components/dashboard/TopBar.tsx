@@ -5,7 +5,15 @@ import { isSwTemp } from "../../types";
 import { githubAvatarUrl, UserAvatar } from "../common/UserAvatar";
 import { usePeople } from "../../identity";
 import { GlassSelect } from "../common/GlassSelect";
+import { useBranchColors } from "../common/BranchName";
 import DialLogo from "../DialLogo";
+import {
+  BranchGlyph,
+  HistogramGlyph,
+  PullRequestGlyph,
+  ShareGlyph,
+  SyncGlyph,
+} from "../common/HistoryDiagrams";
 
 function agoText(seconds: number): string {
   if (seconds < 60) return `${seconds}s ago`;
@@ -88,6 +96,7 @@ export function TopBar({
   defaultBranch: string;
 }) {
   const directory = usePeople();
+  const branchColorOf = useBranchColors();
   // SolidWorks ~$ temp files never count as work worth saving.
   const trackedDirty = status?.dirty.filter((p) => !isSwTemp(p)).length ?? 0;
   const dirtyCount =
@@ -164,8 +173,18 @@ export function TopBar({
           options={[
             ...(branches?.includes(currentBranch)
               ? []
-              : [{ value: currentBranch, label: currentBranch }]),
-            ...(branches ?? []).map((b) => ({ value: b, label: b })),
+              : [
+                  {
+                    value: currentBranch,
+                    label: currentBranch,
+                    color: branchColorOf(currentBranch),
+                  },
+                ]),
+            ...(branches ?? []).map((b) => ({
+              value: b,
+              label: b,
+              color: branchColorOf(b),
+            })),
             // not a branch — intercepted upstream to open the create dialog
             { value: "__create__", label: "＋ New branch…" },
           ]}
@@ -175,12 +194,15 @@ export function TopBar({
       <div className="seg seg-sync">
         <span className={`cap${syncWarn ? " warn" : ""}`}>{syncCap}</span>
         <button
-          className="minibtn"
+          className="minibtn syncbtn"
           onClick={onSyncNow}
           disabled={updating || syncing}
-          title="Check GitHub for team changes right now"
+          title={syncing ? "Syncing…" : "Check GitHub for team changes right now"}
+          aria-label="Sync now"
         >
-          {syncing ? "Syncing…" : "Sync now"}
+          <span className={syncing ? "spinicon" : "stillicon"}>
+            <SyncGlyph />
+          </span>
         </button>
       </div>
 
@@ -218,6 +240,7 @@ export function TopBar({
           "Sharing…"
         ) : (
           <>
+            <ShareGlyph />
             Save &amp; Share
             {dirtyCount > 0
               ? ` (${dirtyCount})`
@@ -232,6 +255,7 @@ export function TopBar({
         onClick={onOpenPulls}
         title={`Branches waiting to be merged into ${defaultBranch}, and the ones already dealt with`}
       >
+        <PullRequestGlyph size={14} />
         Merge Requests
       </button>
       <button
@@ -239,6 +263,7 @@ export function TopBar({
         onClick={onOpenHistory}
         title="Explore every branch and change, look at old versions, branch off, and merge branches"
       >
+        <BranchGlyph />
         Branches
       </button>
       <button
@@ -246,6 +271,7 @@ export function TopBar({
         onClick={onOpenProgress}
         title="See what the team has been working on"
       >
+        <HistogramGlyph />
         Progress
       </button>
       <button
