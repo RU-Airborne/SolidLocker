@@ -899,7 +899,7 @@ function PullView({
                 <h2>Delete this branch?</h2>
                 <p className="muted">
                   <BranchName name={d.head} /> is removed from GitHub and from
-                  this computer. Nothing is lost; all of it is in{" "}
+                  this computer. Nothing is lost, everything is in{" "}
                   <BranchName name={d.base} /> already.
                 </p>
                 <div className="modal-actions">

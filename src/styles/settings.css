@@ -495,7 +495,8 @@
 
 .railscroll {
   overflow-x: auto;
-  overscroll-behavior: contain;
+  overscroll-behavior-x: contain;
+  overscroll-behavior-y: auto;
   margin: 0.5rem 0 0.9rem;
   padding-bottom: 0.3rem;
   border: 1px solid var(--border);
@@ -959,6 +960,10 @@
   margin: 0.6rem 0 0.8rem;
 }
 
+.clashrail .railstage {
+  margin: 0 auto;
+}
+
 .rr-node.still {
   cursor: default;
 }
@@ -1034,8 +1039,8 @@
 
 .cfrow.lit {
   border-radius: 8px;
-  background: color-mix(in srgb, var(--keep) 6%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--keep) 35%, transparent);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
 /* Nothing between the row and the page may clip the highlight. */

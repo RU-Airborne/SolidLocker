@@ -229,13 +229,6 @@ export function TopBar({
       </button>
       <button
         className="barbtn"
-        onClick={onOpenProgress}
-        title="See what the team has been working on"
-      >
-        Progress
-      </button>
-      <button
-        className="barbtn"
         onClick={onOpenPulls}
         title={`Branches waiting to be merged into ${defaultBranch}, and the ones already dealt with`}
       >
@@ -247,6 +240,13 @@ export function TopBar({
         title="Explore every branch and change, look at old versions, branch off, and merge branches"
       >
         Branches
+      </button>
+      <button
+        className="barbtn"
+        onClick={onOpenProgress}
+        title="See what the team has been working on"
+      >
+        Progress
       </button>
       <button
         className="barbtn avatarbtn"

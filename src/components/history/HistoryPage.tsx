@@ -683,7 +683,7 @@ export function HistoryPage({
                   name={(branches.data ?? []).find((x) => x.is_default)?.name ?? "main"}
                 />
                 , so nothing is lost. The branch is removed from GitHub and
-                this computer; its commits stay in the history.
+                this computer. Its commits stay in the history.
               </p>
               {deleteError && <p className="errdetail">{deleteError}</p>}
               <div className="modal-actions">

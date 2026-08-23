@@ -180,9 +180,7 @@ export function clashLayout(
     if (stubs.has(c.sha)) continue;
     for (const p of c.parents) {
       if (!shown.has(p)) continue;
-      const lc = lane.get(c.sha)!;
-      const lp = lane.get(p)!;
-      const along = lc < lp ? "parent" : "child";
+      const along = stubs.has(p) || onOurs.has(c.sha) ? "parent" : "child";
       const owner = along === "child" ? c.sha : p;
       edges.push({
         child: c.sha,
@@ -292,15 +290,20 @@ export function RailDrawing({
   const LANE = 30;
   const NOTE = lit ? 104 : 0; // room for the lit-commit card
   const stacked = Math.max(0, ...Object.values(minor).map((n) => n.length));
-  const TOP = 22 + NOTE + Math.max(0, stacked - 1) * 10;
   const longest = Math.max(0, ...Object.values(minor).flat().map((n) => n.length));
-  const PAD = Math.max(24, longest * 3 + 8);
+  const TILT = Math.round(longest * 3.8) + Math.max(0, stacked - 1) * 10;
+  const minorAbove = rows.some((r) => r.lane === 0 && minor[r.commit.sha]);
+  const minorBelow = rows.some((r) => r.lane !== 0 && minor[r.commit.sha]);
+  const TOP = 22 + NOTE + (minorAbove ? TILT : 0);
+  const PAD = Math.max(24, Math.round(longest * 3.8) + 12);
   const RIGHT = 16;
-  const H = TOP + laneCount * LANE + 30 + NOTE;
+  const H = TOP + laneCount * LANE + 30 + NOTE + (minorBelow ? TILT : 0);
   const yOf = (l: number) => TOP + l * LANE;
   // With the ghost merge drawn, the tip names move under their nodes and the
   // room on the right only has to fit the ghost and its label.
-  const labelRoom = ghost ? 130 : 7 * Math.max(ours.length, theirs.length) + 20;
+  const labelRoom = ghost
+    ? Math.max(120, 7 * ours.length + 70)
+    : 7 * Math.max(ours.length, theirs.length) + 20;
   const W = PAD + rows.length * COL + labelRoom + RIGHT;
   const colOf = new Map(rows.map((r, i) => [r.commit.sha, i]));
   const xOf = (i: number) => W - RIGHT - labelRoom - i * COL - COL / 2;
@@ -375,10 +378,15 @@ export function RailDrawing({
           const xg = xOf(0) + COL;
           return (
             <g className={`rr-ghost ${rail ?? ""}`} aria-label="Where the merge would land">
+              {/* Runs on past the ghost node, arrow at the end: this is the branch that stays. */}
               <line
                 className="rr-ghostline"
-                x1={o.x} y1={o.y} x2={xg} y2={o.y}
+                x1={o.x} y1={o.y} x2={xg + COL * 0.7} y2={o.y}
                 stroke={colorOf(ourTip!)} strokeWidth={2} strokeLinecap="round"
+              />
+              <polygon
+                points={`${xg + COL * 0.7 + 9},${o.y} ${xg + COL * 0.7 - 1},${o.y - 4.5} ${xg + COL * 0.7 - 1},${o.y + 4.5}`}
+                fill={colorOf(ourTip!)}
               />
               <polyline
                 className="rr-ghostline"
@@ -393,16 +401,12 @@ export function RailDrawing({
                   path={`M ${t.x},${t.y} L ${xg - COL / 2},${t.y} L ${xg},${o.y}`}
                 />
               </circle>
-              <circle className="bd-comet" r={2.6}>
-                <animateMotion
-                  dur="2.2s"
-                  repeatCount="indefinite"
-                  path={`M ${o.x},${o.y} L ${xg},${o.y}`}
-                />
-              </circle>
               <circle cx={xg} cy={o.y} r={6} fill="none" stroke="var(--accent)" strokeWidth={2} strokeDasharray="2 2.5" />
-              <text className="rr-label" x={xg + 12} y={o.y + 4.5} fill="var(--accent)">
-                after merging
+              <text className="rr-label" x={xg} y={o.y - 12} textAnchor="middle" fill="var(--accent)">
+                After merging
+              </text>
+              <text className="rr-label" x={xg + COL * 0.7 + 16} y={o.y + 4.5} fill={colorOf(ourTip!)}>
+                {ours}
               </text>
             </g>
           );
@@ -440,23 +444,34 @@ export function RailDrawing({
                       fill={converge.has(c.sha) ? "var(--accent)" : colorOf(c.sha)}
                     />
                   )}
-                  <circle
-                    className={dim(on(c.sha))}
-                    cx={x}
-                    cy={y}
-                    r={tip ? 6 : 4.2}
-                    fill={converge.has(c.sha) ? "var(--accent)" : colorOf(c.sha)}
-                  />
+                  {converge.has(c.sha) ? (
+                    // the merge itself: a ring with a dot, like "you are here"
+                    <g className={dim(on(c.sha))}>
+                      <circle cx={x} cy={y} r={6} fill="none" stroke="var(--accent)" strokeWidth={2} />
+                      <circle cx={x} cy={y} r={3.2} fill="var(--accent)" />
+                    </g>
+                  ) : (
+                    <circle
+                      className={dim(on(c.sha))}
+                      cx={x}
+                      cy={y}
+                      r={tip ? 6 : 4.2}
+                      fill={colorOf(c.sha)}
+                    />
+                  )}
                 </g>
               )}
               {tip && converge.has(c.sha) && (
-                <foreignObject x={x + 10} y={y - 12} width={90} height={24}>
-                  <div className="rr-herebox left">
-                    <span className="gg-youarehere">{tip}</span>
-                  </div>
-                </foreignObject>
+                <text
+                  className={`rr-label ${rail ?? ""}`}
+                  x={x + 14}
+                  y={y + 4.5}
+                  fill="var(--accent)"
+                >
+                  {tip}
+                </text>
               )}
-              {tip && !converge.has(c.sha) && !hasChild.has(c.sha) && (
+              {tip && !converge.has(c.sha) && !hasChild.has(c.sha) && !(ghost && c.sha === ourTip) && (
                 <text
                   className={`rr-label ${rail ?? ""}`}
                   x={x + 12}
@@ -466,7 +481,7 @@ export function RailDrawing({
                   {tip}
                 </text>
               )}
-              {tip && hasChild.has(c.sha) && (
+              {tip && hasChild.has(c.sha) && !(ghost && c.sha === ourTip) && (
                 <text
                   className={`rr-label ${rail ?? ""}`}
                   x={x + 12}
@@ -479,13 +494,14 @@ export function RailDrawing({
               {small && !tip && (
                 <text
                   className={`rr-minor ${rail ?? ""}`}
-                  x={x}
-                  y={above ? y - 10 - (small.length - 1) * 10 : y + 16}
-                  textAnchor="middle"
+                  x={above ? x + 5 : x - 6}
+                  y={above ? y - 8 : y + 5}
+                  textAnchor={above ? "start" : "end"}
+                  transform={`rotate(-45 ${above ? x + 5 : x - 6} ${above ? y - 8 : y + 5})`}
                   fill={colorOf(c.sha)}
                 >
                   {small.map((name, k) => (
-                    <tspan key={name} x={x} dy={k === 0 ? 0 : 10}>
+                    <tspan key={name} x={above ? x + 5 : x - 6} dy={k === 0 ? 0 : 10}>
                       {name}
                     </tspan>
                   ))}
