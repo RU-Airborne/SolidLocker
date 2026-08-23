@@ -120,5 +120,5 @@ export default function App() {
     );
   }
 
-  return <Dashboard appState={state} />;
+  return <Dashboard key={state.repo?.repo_path ?? ""} appState={state} />;
 }

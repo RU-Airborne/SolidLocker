@@ -12,6 +12,7 @@ import {
   openFile,
   previewCommit,
   pushNow,
+  getDefaultBranch,
   restoreFiles,
   selectExistingRepo,
   switchBranch,
@@ -61,6 +62,7 @@ import { SettingsPage } from "../settings/SettingsPage";
 import { ReleaseAllDialog } from "../dialogs/ReleaseAllDialog";
 import DialLogo from "../DialLogo";
 import { ProgressPage } from "../progress/ProgressPage";
+import { PullsPage } from "../pulls/PullsPage";
 import { CommitDialog } from "../dialogs/CommitDialog";
 import { ConflictDialog } from "../dialogs/ConflictDialog";
 import { ForceUnlockDialog } from "../dialogs/ForceUnlockDialog";
@@ -268,6 +270,14 @@ export function Dashboard({ appState }: { appState: AppState }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [releaseAllOpen, setReleaseAllOpen] = useState(false);
   const [progressOpen, setProgressOpen] = useState(false);
+  const [pullsOpen, setPullsOpen] = useState(false);
+  // set by the Combine dialog; Reviews opens with the new-review dialog up
+  const [pullsAsk, setPullsAsk] = useState<{ head: string; base: string } | null>(null);
+  const defaultBranch = useQuery({
+    queryKey: ["defaultBranch"],
+    queryFn: getDefaultBranch,
+    staleTime: 5 * 60_000,
+  });
   // Files about to be shared that reach outside the project, hold back until user decides
   const [outsideRefs, setOutsideRefs] = useState<{
     refs: OutsideRef[];
@@ -635,6 +645,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
       [createBranchOpen, () => setCreateBranchOpen(false)],
       [commitDialogOpen, () => setCommitDialogOpen(false)],
       [progressOpen, () => setProgressOpen(false)],
+      [pullsOpen, () => setPullsOpen(false)],
       [settingsOpen, () => setSettingsOpen(false)],
       [historyOpen, () => setHistoryOpen(false)],
       [searchQuery !== "", () => setSearchQuery("")],
@@ -931,10 +942,17 @@ export function Dashboard({ appState }: { appState: AppState }) {
     if (typeof dir !== "string") return;
     try {
       await selectExistingRepo(dir);
-      queryClient.invalidateQueries();
+      forgetRepoData();
     } catch (e) {
       setNotice(isAppError(e) ? e.message : String(e));
     }
+  }
+
+  function forgetRepoData() {
+    queryClient.removeQueries({
+      predicate: (q) => q.queryKey[0] !== "appState",
+    });
+    queryClient.invalidateQueries();
   }
 
   function handlePushOnly() {
@@ -1006,6 +1024,8 @@ export function Dashboard({ appState }: { appState: AppState }) {
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenProgress={() => setProgressOpen(true)}
         onOpenHistory={() => setHistoryOpen(true)}
+        onOpenPulls={() => setPullsOpen(true)}
+        defaultBranch={defaultBranch.data ?? "main"}
       />
       {(openConflicts.data?.length ?? 0) > 0 && !resolving && (
         <div className="notice warn">
@@ -1459,8 +1479,13 @@ export function Dashboard({ appState }: { appState: AppState }) {
           branch={mergeTarget.branch}
           currentBranch={currentBranch}
           defaultBranch={mergeTarget.defaultBranch}
-          repoSlug={appState.repo!.repo_slug}
           onClose={() => setMergeTarget(null)}
+          onReview={(head, base) => {
+            setMergeTarget(null);
+            setHistoryOpen(false);
+            setPullsAsk({ head, base });
+            setPullsOpen(true);
+          }}
           onResolve={(branch) => {
             setMergeTarget(null);
             setResolving({ plan: branch });
@@ -1490,9 +1515,21 @@ export function Dashboard({ appState }: { appState: AppState }) {
           }}
         />
       )}
-      {(progressOpen || settingsOpen || historyOpen) && (
+      {(progressOpen || settingsOpen || historyOpen || pullsOpen) && (
         <div className="glasspage">
-          {historyOpen ? (
+          {pullsOpen ? (
+            <PullsPage
+              currentBranch={currentBranch}
+              onClose={() => setPullsOpen(false)}
+              ask={pullsAsk}
+              onAsked={() => setPullsAsk(null)}
+              onOpenCommit={(sha) => {
+                setPullsOpen(false);
+                setHistoryFocusSha(sha);
+                setHistoryOpen(true);
+              }}
+            />
+          ) : historyOpen ? (
             <HistoryPage
               currentBranch={currentBranch}
               focusSha={historyFocusSha}
@@ -1550,7 +1587,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
               onRepoChanged={(message) => {
                 setSettingsOpen(false);
                 setNotice(message);
-                queryClient.invalidateQueries();
+                forgetRepoData();
               }}
               onClose={() => setSettingsOpen(false)}
             />

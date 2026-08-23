@@ -2,8 +2,12 @@ import { BranchName } from "../common/BranchName";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
-import { openUrl } from "@tauri-apps/plugin-opener";
-import { mergeBranch, mergePreview, previewVersion } from "../../api";
+import {
+  branchProtection,
+  mergeBranch,
+  mergePreview,
+  previewVersion,
+} from "../../api";
 import { isAppError } from "../../types";
 import { InStepDiagram, MergeDiagram } from "../common/HistoryDiagrams";
 
@@ -69,7 +73,7 @@ export function MergeBranchDialog({
   currentBranch,
   defaultBranch,
   onMerged,
-  repoSlug,
+  onReview,
   onResolve,
   onClose,
 }: {
@@ -77,7 +81,7 @@ export function MergeBranchDialog({
   currentBranch: string;
   defaultBranch: string;
   onMerged: (notice: string, undoable: boolean) => void;
-  repoSlug: string;
+  onReview: (branch: string, into: string) => void;
   /** clash: hand over to the picker */
   onResolve: (branch: string) => void;
   onClose: () => void;
@@ -86,8 +90,11 @@ export function MergeBranchDialog({
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
 
-  const canPullRequest = branch !== defaultBranch;
   const canLocalMerge = branch !== currentBranch;
+  // A review goes into the branch you are on. Opened on that branch itself,
+  // the only place left to propose it is the default branch.
+  const reviewInto = canLocalMerge ? currentBranch : defaultBranch;
+  const canPullRequest = branch !== reviewInto;
 
   const preview = useQuery({
     queryKey: ["mergePreview", branch],
@@ -99,13 +106,20 @@ export function MergeBranchDialog({
   const hasConflicts = (preview.data?.conflicts.length ?? 0) > 0;
   const upToDate = preview.data?.up_to_date === true;
 
+  // unknown (offline, no remote) leaves the button on; push will say no anyway
+  const guard = useQuery({
+    queryKey: ["branchProtection", currentBranch],
+    queryFn: () => branchProtection(currentBranch),
+    enabled: canLocalMerge,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const guarded = guard.data?.requires_review === true;
   const incoming = preview.data?.files ?? [];
-  const diagramInto = canLocalMerge ? currentBranch : defaultBranch;
+  const diagramInto = reviewInto;
 
   function openPullRequest() {
-    void openUrl(
-      `https://github.com/${repoSlug}/compare/${encodeURIComponent(defaultBranch)}...${encodeURIComponent(branch)}?expand=1`,
-    );
+    onReview(branch, reviewInto);
   }
 
   async function mergeNow() {
@@ -238,6 +252,16 @@ export function MergeBranchDialog({
                 )}
               </>
             )}
+            {guarded && (
+              <p className="error">
+                <BranchName name={currentBranch} /> is protected on GitHub:
+                changes have to come through a review
+                {guard.data!.approvals > 0
+                  ? ` with ${guard.data!.approvals} approval${guard.data!.approvals === 1 ? "" : "s"}`
+                  : ""}
+                , so merging here is off.
+              </p>
+            )}
             {hasConflicts && (
               <p className="error">
                 Both branches changed{" "}
@@ -252,9 +276,8 @@ export function MergeBranchDialog({
         )}
 
         <div className="mergeoptions">
-          {/* In-step with the current branch AND the current branch is the
-              main line: a pull request would be empty too — offer nothing. */}
-          {canPullRequest && !(upToDate && currentBranch === defaultBranch) && (
+          {/* nothing to review if the target already has it all */}
+          {canPullRequest && !upToDate && (
             <button
               className="mergecard recommended"
               onClick={openPullRequest}
@@ -263,12 +286,12 @@ export function MergeBranchDialog({
               <PullRequestGlyph />
               <span className="vt-text">
                 <span className="vt-title">
-                  Propose merging into {defaultBranch}
+                  Propose merging into <BranchName name={reviewInto} />
                   <span className="mergetag">team reviews first</span>
                 </span>
                 <span className="vt-sub">
-                  Opens GitHub, where teammates see exactly what would change
-                  and approve it before it lands.
+                  Opens a review here. Teammates see what would change and
+                  approve it before it lands.
                 </span>
               </span>
             </button>
@@ -278,7 +301,7 @@ export function MergeBranchDialog({
             <button
               className="mergecard"
               onClick={() => setConfirming(true)}
-              disabled={busy || hasConflicts || preview.isLoading}
+              disabled={busy || hasConflicts || guarded || preview.isLoading}
             >
               <MergeGlyph />
               <span className="vt-text">
@@ -286,8 +309,8 @@ export function MergeBranchDialog({
                 <span className="vt-sub">
                   Locally on this computer without a review. You&rsquo;ll see the
                   full list of what changes and confirm before anything
-                  happens. If both branches changed the same files, this way
-                  is off and you&rsquo;re pointed to the reviewed one.
+                  happens. Off when both branches changed the same files or
+                  the branch is protected on GitHub.
                 </span>
               </span>
             </button>

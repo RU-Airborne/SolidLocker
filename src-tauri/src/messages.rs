@@ -102,6 +102,25 @@ pub fn conflicts_still_open(n: usize) -> String {
     format!("{n} file{} still {} a version chosen.", if n == 1 { "" } else { "s" }, if n == 1 { "needs" } else { "need" })
 }
 
+pub const PR_NEEDS_SIGN_IN: &str = "Sign in to GitHub first. Reviews use your GitHub account.";
+
+pub const PR_NOT_FOUND: &str =
+    "That pull request is not there any more. It may have been merged or closed.";
+
+pub const PR_NEEDS_TITLE: &str = "Give it a title.";
+
+pub const PR_UNKNOWN_REVIEW: &str = "That is not one of the review options.";
+
+pub const PR_REVIEW_NEEDS_WORDS: &str = "Say what needs changing.";
+
+pub fn pr_not_allowed(detail: &str) -> String {
+    format!("GitHub would not allow that: {detail}. The repository settings decide who can approve and merge.")
+}
+
+pub fn pr_failed(code: u16, detail: &str) -> String {
+    format!("GitHub said no ({code}): {detail}")
+}
+
 
 pub fn restore_files_open(files: &str) -> String {
     format!("Close these files in SolidWorks first. SolidWorks keeps its own copy in memory and would write it straight back: {files}")

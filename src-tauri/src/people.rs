@@ -20,7 +20,7 @@ fn is_a_username(login: &str) -> bool {
 
 const MAX_PER_CALL: usize = 25;
 
-async fn github_token(repo: &Path) -> Option<String> {
+pub(crate) async fn github_token(repo: &Path) -> Option<String> {
     let out = run_git_stdin(
         repo,
         &["credential", "fill"],

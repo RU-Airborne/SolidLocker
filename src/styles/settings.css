@@ -1136,3 +1136,394 @@
 .branchword {
   white-space: nowrap;
 }
+
+.prhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.2rem;
+  flex-wrap: wrap;
+}
+
+.prhead > p {
+  flex: 1 1 100%;
+  margin: 0;
+}
+
+.prwho {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  min-width: 0;
+}
+
+.prwho .avatar-img {
+  border-radius: 50%;
+}
+
+.prtitleblock {
+  min-width: 0;
+}
+
+.prtitle {
+  margin: 0 0 0.15rem;
+  font-size: 1.35rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.prtitleblock p {
+  margin: 0;
+}
+
+.prbranches {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: none;
+}
+
+.prbranches .gg-chip {
+  font-size: 1.05rem;
+  padding: 0.25rem 0.9rem;
+}
+
+.prarrow {
+  color: var(--muted);
+  font-size: 1.4rem;
+}
+
+.pulllist {
+  list-style: none;
+  margin: 0.6rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.pulllist li {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+
+.pulllist li:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.pullopen {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* Override the page-wide button hover from glass.css; the card lights, not the inner button. */
+.pullopen,
+.pullopen:hover,
+.pullopen:focus-visible {
+  border: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  color: inherit !important;
+}
+
+.pulltidy {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: none;
+  padding: 0.2rem 0.7rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pulltitle {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.modal.askmodal {
+  width: min(640px, calc(100vw - 2rem));
+  max-width: none;
+}
+
+.modal.askmodal.wide {
+  width: min(900px, calc(100vw - 2rem));
+}
+
+.askpicker {
+  margin-top: 1.1rem;
+}
+
+.askpicker .setupsection {
+  margin-top: 0.8rem;
+}
+
+.asksection {
+  margin-top: 1.1rem;
+}
+
+.asksection h3 {
+  margin: 0 0 0.4rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.askfiles {
+  margin-top: 0.5rem;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.askfiles li.askclash .gg-filepath {
+  color: var(--accent);
+}
+
+.asktwo {
+  margin-left: auto;
+  font-size: 0.72rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.askwhy {
+  margin: 0.9rem 0 -0.4rem;
+  text-align: right;
+}
+
+.askfield {
+  display: block;
+  margin-top: 0.6rem;
+}
+
+.askfield > span {
+  display: block;
+  font-size: 0.8rem;
+  opacity: 0.75;
+  margin-bottom: 0.25rem;
+}
+
+.askfield > span em {
+  font-style: normal;
+  opacity: 0.6;
+  margin-left: 0.35rem;
+}
+
+.askfield input[type="text"] {
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+}
+
+.askfield input[type="text"]:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.askfield .prbody {
+  margin-top: 0;
+}
+
+.prbody {
+  width: 100%;
+  margin-top: 0.5rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  resize: vertical;
+}
+
+.prbody:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.prbodytext {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0.3rem 0 0;
+}
+
+.prnothing {
+  margin: 0.9rem 0 0.3rem;
+}
+
+.prcomments {
+  list-style: none;
+  margin: 0.6rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.prcomments li {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+}
+
+.prreviewrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* --- Conversation on a review ------------------------------------------- */
+
+.prcomments .avatar-img {
+  flex: none;
+  border-radius: 50%;
+}
+
+.prcommentbody {
+  min-width: 0;
+  flex: 1;
+}
+
+.prcommenthead {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.prdid {
+  font-size: 0.72rem;
+  padding: 0.05rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+}
+
+.prcomment.approved .prdid {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 50%, transparent);
+}
+
+.prclosing {
+  overflow-wrap: anywhere;
+}
+
+.prpicks {
+  margin: 0.35rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.9rem;
+}
+
+.prpicks li {
+  margin: 0.1rem 0;
+}
+
+.prpickfile {
+  font-weight: 600;
+}
+
+.prcomment.changes_requested .prdid {
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 50%, transparent);
+}
+
+.pulllist .avatar-img {
+  flex: none;
+  border-radius: 50%;
+}
+
+.prchip {
+  font-weight: 600;
+}
+
+.prsaid {
+  margin-top: 0.8rem;
+}
+
+/* Lit briefly when the page was sent here. */
+.settingsbody .setupsection.litcard {
+  animation: cardlit 2.2s ease-out;
+}
+
+@keyframes cardlit {
+  0%,
+  55% {
+    border-color: var(--accent);
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent),
+      0 0 24px color-mix(in srgb, var(--accent) 35%, transparent);
+  }
+  100% {
+    border-color: var(--border);
+    box-shadow: none;
+  }
+}
+
+.prstate {
+  margin-left: 0.5rem;
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  vertical-align: middle;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.prstate.merged {
+  color: #8b7cf6;
+  border-color: color-mix(in srgb, #8b7cf6 55%, transparent);
+}
+
+.prkeep {
+  margin-top: 0.6rem;
+}
+
+.prkeep p {
+  margin: 0 0 0.2rem;
+}
+
+.prkeeplist {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.prkeeplist li {
+  overflow-wrap: anywhere;
+}

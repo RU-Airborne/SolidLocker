@@ -57,6 +57,8 @@ export function TopBar({
   onOpenSettings,
   onOpenProgress,
   onOpenHistory,
+  onOpenPulls,
+  defaultBranch,
   locking,
 }: {
   appState: AppState;
@@ -82,6 +84,8 @@ export function TopBar({
   onOpenSettings: () => void;
   onOpenProgress: () => void;
   onOpenHistory: () => void;
+  onOpenPulls: () => void;
+  defaultBranch: string;
 }) {
   const directory = usePeople();
   // SolidWorks ~$ temp files never count as work worth saving.
@@ -225,6 +229,13 @@ export function TopBar({
         title="See what the team has been working on"
       >
         Progress
+      </button>
+      <button
+        className="barbtn"
+        onClick={onOpenPulls}
+        title={`Changes waiting for a look before they join ${defaultBranch}`}
+      >
+        Reviews
       </button>
       <button
         className="barbtn"

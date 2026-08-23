@@ -7,6 +7,7 @@ mod gate;
 mod lfs;
 mod logger;
 mod proc;
+mod pulls;
 mod repo;
 mod messages;
 mod people;
@@ -143,6 +144,60 @@ async fn check_outside_refs(
     deps::outside_references(&root, paths).await
 }
 
+/// From origin/HEAD; the fetches keep it current.
+#[tauri::command]
+async fn get_default_branch(app: AppHandle) -> AppResult<String> {
+    let root = current_repo(&app)?;
+    Ok(repo::default_branch(&root).await)
+}
+
+#[tauri::command]
+async fn list_pulls(app: AppHandle) -> AppResult<Vec<pulls::PullSummary>> {
+    let root = current_repo(&app)?;
+    pulls::list(&root).await
+}
+
+#[tauri::command]
+async fn pull_detail(app: AppHandle, number: u64) -> AppResult<pulls::PullDetail> {
+    let root = current_repo(&app)?;
+    pulls::detail(&root, number).await
+}
+
+#[tauri::command]
+async fn create_pull(
+    app: AppHandle,
+    title: String,
+    body: String,
+    head: String,
+    base: String,
+) -> AppResult<u64> {
+    let root = current_repo(&app)?;
+    pulls::create(&root, &title, &body, &head, &base).await
+}
+
+#[tauri::command]
+async fn review_pull(
+    app: AppHandle,
+    number: u64,
+    event: String,
+    body: String,
+) -> AppResult<bool> {
+    let root = current_repo(&app)?;
+    pulls::review(&root, number, &event, &body).await
+}
+
+#[tauri::command]
+async fn merge_pull(
+    app: AppHandle,
+    gate: State<'_, gate::RepoGate>,
+    number: u64,
+    method: String,
+) -> AppResult<()> {
+    let root = current_repo(&app)?;
+    let _tree = gate.exclusive().await;
+    pulls::merge(&root, number, &method).await
+}
+
 /// Branch names for the two sides of a merge in progress.
 #[tauri::command]
 async fn conflict_sides(app: AppHandle) -> AppResult<(String, String)> {
@@ -168,11 +223,31 @@ async fn plan_conflicts_between(
     conflicts::plan_between(&root, &base, &head).await
 }
 
+#[tauri::command]
+async fn branch_protection(app: AppHandle, branch: String) -> AppResult<pulls::Protection> {
+    let root = current_repo(&app)?;
+    pulls::protection(&root, &branch).await
+}
+
 /// Which side each clashing file took in a past merge, read from the merge commit.
 #[tauri::command]
 async fn merged_picks(app: AppHandle, sha: String) -> AppResult<conflicts::MergedPlan> {
     let root = current_repo(&app)?;
     conflicts::merged_picks(&root, &sha).await
+}
+
+/// Post picks on a review as a proposal. Nothing is merged.
+#[tauri::command]
+async fn propose_picks(
+    app: AppHandle,
+    number: u64,
+    commit_id: String,
+    picks: Vec<pulls::Proposal>,
+    event: String,
+    body: String,
+) -> AppResult<bool> {
+    let root = current_repo(&app)?;
+    pulls::propose(&root, number, &commit_id, &picks, &event, &body).await
 }
 
 /// Merge a branch, settling clashes per the picks, then push.
@@ -626,6 +701,16 @@ async fn undo_merge(app: AppHandle, gate: State<'_, gate::RepoGate>) -> AppResul
 async fn merge_preview(app: AppHandle, name: String) -> AppResult<workflow::MergePreview> {
     let root = current_repo(&app)?;
     workflow::merge_preview(&root, &name).await
+}
+
+#[tauri::command]
+async fn merge_preview_between(
+    app: AppHandle,
+    base: String,
+    name: String,
+) -> AppResult<workflow::MergePreview> {
+    let root = current_repo(&app)?;
+    workflow::merge_preview_between(&root, &base, &name).await
 }
 
 #[tauri::command]
@@ -1162,6 +1247,14 @@ fn report_window_failure(app: &tauri::AppHandle, detail: &str) {
             clone_repo,
             get_commit_identities,
             check_outside_refs,
+            get_default_branch,
+            list_pulls,
+            pull_detail,
+            create_pull,
+            review_pull,
+            merge_pull,
+            propose_picks,
+            branch_protection,
             conflict_sides,
             plan_conflicts,
             plan_conflicts_between,
@@ -1219,6 +1312,7 @@ fn report_window_failure(app: &tauri::AppHandle, detail: &str) {
             get_preview_state,
             merge_branch,
             merge_preview,
+            merge_preview_between,
             undo_merge,
             get_graph,
             get_commit_files,

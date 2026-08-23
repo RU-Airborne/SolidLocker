@@ -1007,6 +1007,15 @@ pub async fn merge_preview(root: &Path, name: &str) -> AppResult<MergePreview> {
     merge_preview_into(root, "HEAD", name).await
 }
 
+pub async fn merge_preview_between(
+    root: &Path,
+    base: &str,
+    name: &str,
+) -> AppResult<MergePreview> {
+    let base_ref = merge_ref_for(root, base).await;
+    merge_preview_into(root, &base_ref, name).await
+}
+
 async fn merge_preview_into(root: &Path, base_ref: &str, name: &str) -> AppResult<MergePreview> {
     let merge_ref = merge_ref_for(root, name).await;
 

@@ -84,6 +84,9 @@ export interface MergePreview {
 export const mergePreview = (name: string) =>
   invoke<MergePreview>("merge_preview", { name });
 
+export const mergePreviewBetween = (base: string, name: string) =>
+  invoke<MergePreview>("merge_preview_between", { base, name });
+
 export const undoMerge = () => invoke<void>("undo_merge");
 
 export const deleteBranch = (name: string) =>
@@ -171,6 +174,115 @@ export interface Conflict {
 export const conflictSides = () => invoke<[string, string]>("conflict_sides");
 
 export const listConflicts = () => invoke<Conflict[]>("list_conflicts");
+
+export interface PullSummary {
+  number: number;
+  title: string;
+  author: string;
+  author_avatar: string;
+  head: string;
+  base: string;
+  draft: boolean;
+  created_at: string;
+  updated_at: string;
+  /** "open" | "merged" | "closed" */
+  state: string;
+  merged_at: string;
+  review_state: string;
+  comments: number;
+}
+
+export interface PullFile {
+  path: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  is_cad: boolean;
+}
+
+export interface PullComment {
+  author: string;
+  author_avatar: string;
+  body: string;
+  created_at: string;
+  /** "comment" | "approved" | "changes_requested" | "reviewed" | "note" */
+  kind: string;
+  path: string;
+  pick: string;
+  picks: { path: string; branch: string }[];
+}
+
+export interface PullDetail {
+  number: number;
+  title: string;
+  body: string;
+  author: string;
+  author_avatar: string;
+  head: string;
+  base: string;
+  head_sha: string;
+  state: string;
+  merged: boolean;
+  merged_at: string;
+  merged_by: string;
+  merged_by_avatar: string;
+  merge_commit_sha: string;
+  draft: boolean;
+  created_at: string;
+  updated_at: string;
+  mergeable: boolean | null;
+  mergeable_state: string;
+  files: PullFile[];
+  comments: PullComment[];
+  url: string;
+}
+
+export const getDefaultBranch = () => invoke<string>("get_default_branch");
+
+export const listPulls = () => invoke<PullSummary[]>("list_pulls");
+
+export const pullDetail = (number: number) =>
+  invoke<PullDetail>("pull_detail", { number });
+
+
+export const planConflictsBetween = (base: string, head: string) =>
+  invoke<Conflict[]>("plan_conflicts_between", { base, head });
+
+export interface MergedPlan {
+  base_sha: string;
+  head_sha: string;
+  /** `resolved` on each is "mine" | "theirs" | "other". */
+  files: Conflict[];
+}
+
+export const mergedPicks = (sha: string) =>
+  invoke<MergedPlan>("merged_picks", { sha });
+
+export interface Protection {
+  protected: boolean;
+  requires_review: boolean;
+  approvals: number;
+}
+
+export const branchProtection = (branch: string) =>
+  invoke<Protection>("branch_protection", { branch });
+
+export const proposePicks = (
+  number: number,
+  commitId: string,
+  picks: { path: string; branch: string }[],
+  event: string,
+  body: string,
+) => invoke<boolean>("propose_picks", { number, commitId, picks, event, body });
+
+export const createPull = (title: string, body: string, head: string, base: string) =>
+  invoke<number>("create_pull", { title, body, head, base });
+
+export const reviewPull = (number: number, event: string, body: string) =>
+  invoke<boolean>("review_pull", { number, event, body });
+
+export const mergePull = (number: number, method: string) =>
+  invoke<void>("merge_pull", { number, method });
 
 export const previewConflictSide = (path: string, side: string) =>
   invoke<string | null>("preview_conflict_side", { path, side });
