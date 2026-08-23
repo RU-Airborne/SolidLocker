@@ -1,3 +1,4 @@
+import { useBranchColors } from "./BranchName";
 function trunc(s: string, n: number): string {
   const t = s.trim();
   return t.length > n ? `${t.slice(0, n - 1)}…` : t;
@@ -107,6 +108,13 @@ export function EyeGlyph() {
   );
 }
 
+function rails(main?: string, fresh?: string): React.CSSProperties | undefined {
+  const style: Record<string, string> = {};
+  if (main) style["--bd-main"] = main;
+  if (fresh) style["--bd-new"] = fresh;
+  return Object.keys(style).length > 0 ? (style as React.CSSProperties) : undefined;
+}
+
 function ArrowHead({
   x,
   y,
@@ -149,7 +157,7 @@ function HereMarker({
       />
       <circle cx={x} cy={y} r={3.2} fill="var(--accent)" />
       {labelY !== undefined && (
-        <text className="bd-labelnew" x={x} y={labelY} textAnchor="middle">
+        <text className="bd-labelmark" x={x} y={labelY} textAnchor="middle">
           Where you are now
         </text>
       )}
@@ -169,12 +177,14 @@ export function BranchDiagram({
   commitLabel?: string;
   fromTip?: boolean;
 }) {
+  const colorOf = useBranchColors();
   void commitLabel;
   if (fromTip) {
     const tipPath = "M 212 78 C 228 78 226 38 250 38 L 288 38";
     return (
       <svg
         className="branchdiagram"
+        style={rails(colorOf(branchName), newBranchName ? colorOf(newBranchName) : undefined)}
         viewBox="0 0 340 118"
         role="img"
         aria-label={`Diagram: a new branch splits off from the tip of ${branchName}, right where you are now`}
@@ -208,6 +218,7 @@ export function BranchDiagram({
   return (
     <svg
       className="branchdiagram"
+      style={rails(colorOf(branchName), newBranchName ? colorOf(newBranchName) : undefined)}
       viewBox="0 0 340 118"
       role="img"
       aria-label={`Diagram: the branch ${branchName} continues unchanged; a new dotted branch starts at this earlier version`}
@@ -222,7 +233,7 @@ export function BranchDiagram({
       {/* The chosen version, where the two lines part ways. */}
       <circle className="bd-selectedring" cx="130" cy="78" r="10" />
       <circle className="bd-selected" cx="130" cy="78" r="5.5" />
-      <text className="bd-label" x="130" y="98" textAnchor="middle">
+      <text className="bd-labelmark" x="130" y="98" textAnchor="middle">
         This earlier version
       </text>
 
@@ -259,18 +270,22 @@ export function MergeDiagram({
   /** Mark the receiving rail's tip with "you are here". */
   intoIsCurrent?: boolean;
 }) {
+  const colorOf = useBranchColors();
   const mergePath = "M 30 34 L 168 34 C 198 34 194 78 224 78";
   return (
     <svg
       className="branchdiagram"
+      style={rails(colorOf(intoBranch), colorOf(fromBranch))}
       // Wide enough that "both together" and "where you are now" share one
       // label row with clear air between them.
       viewBox="0 0 380 104"
       role="img"
-      aria-label={`Diagram: the branch ${fromBranch} joins into ${intoBranch}; after the merge one line carries both branches' work`}
+      aria-label={`Diagram: the branch ${fromBranch} joins into ${intoBranch}. After the merge one line carries both branches' work`}
     >
-      {/* The receiving branch: a solid rail that keeps going. */}
-      <line className="bd-main" x1="12" y1="78" x2="354" y2="78" />
+      {/* The receiving branch: solid up to where you stand, dotted from
+          there on, since that part only exists once the merge is done. */}
+      <line className="bd-main" x1="12" y1="78" x2="132" y2="78" />
+      <line className="bd-main bd-ahead" x1="132" y1="78" x2="354" y2="78" />
       <ArrowHead x={366} y={78} />
       {[44, 100].map((x) => (
         <circle key={x} className="bd-dot" cx={x} cy="78" r="4" />
@@ -282,7 +297,6 @@ export function MergeDiagram({
       ) : (
         <circle className="bd-dot" cx="132" cy="78" r="4" />
       )}
-      <circle className="bd-dot" cx="300" cy="78" r="4" />
 
       {/* The branch being merged: dotted until it joins. */}
       <line className="bd-new" x1="30" y1="34" x2="168" y2="34" />
@@ -297,7 +311,7 @@ export function MergeDiagram({
       {/* The merge point, where the two become one. */}
       <circle className="bd-selectedring" cx="224" cy="78" r="10" />
       <circle className="bd-selected" cx="224" cy="78" r="5.5" />
-      <text className="bd-label" x="224" y="98" textAnchor="middle">
+      <text className="bd-labelmark" x="224" y="98" textAnchor="middle">
         Both together
       </text>
       <text className="bd-labelnew" x="30" y="22" textAnchor="start">
@@ -317,9 +331,11 @@ export function InStepDiagram({
   fromBranch: string;
   intoBranch: string;
 }) {
+  const colorOf = useBranchColors();
   return (
     <svg
       className="branchdiagram"
+      style={rails(colorOf(intoBranch), colorOf(fromBranch))}
       viewBox="0 0 380 84"
       role="img"
       aria-label={`Diagram: ${intoBranch} already contains everything from ${fromBranch}`}
@@ -350,17 +366,21 @@ export function RestoreDiagram({
   branchName: string;
   commitLabel?: string;
 }) {
+  const colorOf = useBranchColors();
   void commitLabel;
   const arcPath = "M 64 72 C 108 22 228 22 268 68";
   return (
     <svg
       className="branchdiagram"
+      style={rails(colorOf(branchName))}
       viewBox="0 0 340 108"
       role="img"
       aria-label={`Diagram: on the branch ${branchName}, the old version is copied forward as the next change; the history in between stays`}
     >
-      {/* The branch keeps flowing forward; nothing is rewound. */}
-      <line className="bd-main" x1="12" y1="78" x2="298" y2="78" />
+      {/* The branch keeps flowing forward; nothing is rewound. Dotted past
+          where you stand, since that part comes with the restore. */}
+      <line className="bd-main" x1="12" y1="78" x2="216" y2="78" />
+      <line className="bd-main bd-ahead" x1="216" y1="78" x2="298" y2="78" />
       <ArrowHead x={310} y={78} />
       {[120, 168].map((x) => (
         <circle key={x} className="bd-dot" cx={x} cy="78" r="4" />
@@ -369,7 +389,7 @@ export function RestoreDiagram({
       {/* The old version being brought back. */}
       <circle className="bd-selectedring" cx="64" cy="78" r="10" />
       <circle className="bd-selected" cx="64" cy="78" r="5.5" />
-      <text className="bd-label" x="64" y="96" textAnchor="middle">
+      <text className="bd-labelmark" x="64" y="96" textAnchor="middle">
         This earlier version
       </text>
 
@@ -401,10 +421,12 @@ export function FreshBranchDiagram({
 }: {
   newBranchName?: string;
 }) {
+  const colorOf = useBranchColors();
   const freshPath = "M 64 34 L 288 34";
   return (
     <svg
       className="branchdiagram"
+      style={rails(undefined, newBranchName ? colorOf(newBranchName) : undefined)}
       viewBox="0 0 340 104"
       role="img"
       aria-label="Diagram: a brand-new empty branch starts on its own line. The existing branches continue unchanged"

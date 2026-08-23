@@ -200,6 +200,12 @@ async fn merge_pull(
     pulls::merge(&root, number, &method).await
 }
 
+#[tauri::command]
+async fn close_pull(app: AppHandle, number: u64) -> AppResult<()> {
+    let root = current_repo(&app)?;
+    pulls::close(&root, number).await
+}
+
 /// Branch names for the two sides of a merge in progress.
 #[tauri::command]
 async fn conflict_sides(app: AppHandle) -> AppResult<(String, String)> {
@@ -1348,6 +1354,7 @@ fn report_window_failure(app: &tauri::AppHandle, detail: &str) {
             create_pull,
             review_pull,
             merge_pull,
+            close_pull,
             conflict_sides,
             plan_conflicts,
             plan_conflicts_between,

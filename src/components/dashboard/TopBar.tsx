@@ -237,14 +237,14 @@ export function TopBar({
       <button
         className="barbtn"
         onClick={onOpenPulls}
-        title={`Changes waiting for a look before they join ${defaultBranch}`}
+        title={`Branches waiting to be merged into ${defaultBranch}, and the ones already dealt with`}
       >
-        Reviews
+        Merge Requests
       </button>
       <button
         className="barbtn"
         onClick={onOpenHistory}
-        title="Explore every branch and change, look at old versions, branch off, and combine branches"
+        title="Explore every branch and change, look at old versions, branch off, and merge branches"
       >
         Branches
       </button>

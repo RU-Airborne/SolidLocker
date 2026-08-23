@@ -718,6 +718,21 @@ pub async fn merge(root: &Path, number: u64, method: &str) -> AppResult<()> {
     Ok(())
 }
 
+pub async fn close(root: &Path, number: u64) -> AppResult<()> {
+    let (client, slug, token) = client(root).await?;
+    let resp = client
+        .patch(format!("https://api.github.com/repos/{slug}/pulls/{number}"))
+        .header("Accept", "application/vnd.github+json")
+        .bearer_auth(&token)
+        .json(&serde_json::json!({ "state": "closed" }))
+        .send()
+        .await
+        .map_err(|e| AppError::offline(e.to_string()))?;
+    read_json(resp).await?;
+    crate::logger::info(format!("closed pull request #{number} without merging"));
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::is_cad;

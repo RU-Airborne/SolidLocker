@@ -608,7 +608,7 @@ export function ProgressPage({
             <button
               className="branchoffbtn"
               onClick={onOpenBranches}
-              title="Every branch and change on one railway, with branch off, restore and combine"
+              title="Every branch and change on one railway, with branch off, restore and merge"
             >
               <BranchGlyph />
               Explore branches

@@ -283,7 +283,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
   const [releaseAllOpen, setReleaseAllOpen] = useState(false);
   const [progressOpen, setProgressOpen] = useState(false);
   const [pullsOpen, setPullsOpen] = useState(false);
-  // set by the Combine dialog; Reviews opens with the new-review dialog up
+  // set by the Merge dialog; Merge Requests opens with the new-request dialog up
   const [pullsAsk, setPullsAsk] = useState<{ head: string; base: string } | null>(null);
   const defaultBranch = useQuery({
     queryKey: ["defaultBranch"],
@@ -308,7 +308,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
     sha: string;
     label: string;
   } | null>(null);
-  // "Combine…" from a branch card on the Branches page.
+  // "Merge…" from a branch card on the Branches page.
   const [mergeTarget, setMergeTarget] = useState<{
     branch: string;
     defaultBranch: string;
@@ -704,7 +704,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
 
   const collisions = useCollisions(currentBranch, !!appState.repo);
   const openConflicts = useConflicts(!!appState.repo);
-  // plan = branch to combine (nothing merged yet); no plan = merge already half done
+  // plan = branch to merge (nothing merged yet); no plan = merge already half done
   const [resolving, setResolving] = useState<{ plan?: string } | null>(null);
   const [showCollisions, setShowCollisions] = useState(false);
 
@@ -1066,7 +1066,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
       {(openConflicts.data?.length ?? 0) > 0 && !resolving && (
         <div className="notice warn">
           <span>
-            A combine is half done: {openConflicts.data!.length} file
+            A merge is half done: {openConflicts.data!.length} file
             {openConflicts.data!.length === 1 ? "" : "s"} changed on both sides
             and need a version picked.
           </span>

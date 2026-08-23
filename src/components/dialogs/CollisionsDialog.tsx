@@ -22,7 +22,7 @@ export function CollisionsDialog({
         </h2>
         <p>
           Each of these is being changed here <em>and</em> on another branch.
-          Only one version can be kept when the two are combined, so it is
+          Only one version can be kept when the two are merged, so it is
           worth agreeing who is doing what now.
         </p>
 
@@ -55,7 +55,7 @@ export function CollisionsDialog({
 
         <p className="muted small">
           Nothing is broken yet and nothing here changes anything. Usually one
-          of you unlocks the file, or the branches get combined sooner.
+          of you unlocks the file, or the branches get merged sooner.
         </p>
 
         <div className="modal-actions">

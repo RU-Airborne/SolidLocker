@@ -143,13 +143,13 @@ const LANE_COLORS = [
   "#39c5cf", // teal
   "#bc8cff", // violet
   "#f778ba", // pink
-  "#7ee787", // green
+  "#3fb950", // green
   "#ff9f43", // orange
   "#e3b341", // gold
-  "#6ee7b7", // mint
+  "#2fb38f", // mint
   "#f47067", // coral
   "#a5b4fc", // periwinkle
-  "#c5e063", // lime
+  "#a3b83a", // lime
   "#8b949e", // slate
   "#e2a8f0", // orchid
   "#5ad1a6", // jade
@@ -466,7 +466,7 @@ export function HistoryPage({
   onRestoreFiles: (paths: string[], commit: VersionRef) => void;
   /** View a whole commit as it was, read-only. */
   onPreviewCommit: (sha: string, label: string) => void;
-  /** Open the combine dialog for a branch (second arg: the default branch). */
+  /** Open the merge dialog for a branch (second arg: the default branch). */
   onMergeBranch: (branch: string, defaultBranch: string) => void;
 }) {
   const queryClient = useQueryClient();
@@ -560,11 +560,11 @@ export function HistoryPage({
         </button>
         <h2>Branches</h2>
         <p className="muted small">
-          Every branch is a separate line of work on the same project. The
-          railway below shows how they split and come back together (newest
-          at the top). Click a change to see what it touched, look at old
-          versions, branch off from any point, or combine branches when the
-          work is ready.
+          Each branch is its own line of work on the same project. The
+          railway shows where they split off and where they join back up,
+          newest at the top. Click any change to see what it touched, open an
+          old version, start a branch from that point, or merge a branch
+          once its work is ready.
         </p>
       </div>
 
@@ -648,7 +648,7 @@ export function HistoryPage({
                     title="Bring this branch's work into another branch, directly or through a review"
                   >
                     <MergeGlyph />
-                    Combine…
+                    Merge…
                   </button>
                 )}
                 {/* Fully merged: only a name now. */}

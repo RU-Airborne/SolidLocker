@@ -130,8 +130,8 @@ export function MergeBranchDialog({
       const result = await mergeBranch(branch);
       onMerged(
         result.already_up_to_date
-          ? `Nothing to combine: ${currentBranch} already has everything from ${branch}.`
-          : `Brought ${branch}'s work into ${currentBranch}. Use Save & Share to put the combined result on GitHub, or Undo to take it back out.`,
+          ? `Nothing to merge: ${currentBranch} already has everything from ${branch}.`
+          : `Brought ${branch}'s work into ${currentBranch}. Use Save & Share to put the merged result on GitHub, or Undo to take it back out.`,
         !result.already_up_to_date,
       );
     } catch (e) {
@@ -149,60 +149,13 @@ export function MergeBranchDialog({
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>Combine branches</h2>
-        {confirming ? (
-          // last look before anything on disk changes
-          <>
-            <MergeDiagram
-              fromBranch={branch}
-              intoBranch={currentBranch}
-              intoIsCurrent
-            />
-            <p>
-              This will change{" "}
-              <strong>
-                {incoming.length} file{incoming.length === 1 ? "" : "s"}
-              </strong>{" "}
-              in <BranchName name={currentBranch} /> on this computer:
-            </p>
-            <div className="mergefilelist">
-              <ul className="gg-files">
-                {incoming.map((f, i) => (
-                  <li key={f.path}>
-                    <span className={`st st-${f.status.toLowerCase()}`}>
-                      {f.status}
-                    </span>
-                    {i < 12 && CAD_FILE.test(f.path) && f.status !== "D" && (
-                      <IncomingThumb path={f.path} rev={branch} />
-                    )}
-                    <span className="gg-filepath">{f.path}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <p className="muted small">
-              Nothing goes to GitHub yet, and Undo takes it right back out until you Save &amp; Share.
-            </p>
-            {error && <p className="errdetail">{error}</p>}
-            <div className="modal-actions">
-              <button onClick={() => setConfirming(false)} disabled={busy}>
-                Go back
-              </button>
-              <button className="primary" onClick={mergeNow} disabled={busy}>
-                {busy
-                  ? "Combining…"
-                  : `Merge ${incoming.length} change${incoming.length === 1 ? "" : "s"} into ${currentBranch}`}
-              </button>
-            </div>
-          </>
-        ) : (
-        <>
+        <h2>Merge branches</h2>
         {upToDate ? (
           <>
             <p>
               <BranchName name={diagramInto} /> already has everything from{" "}
               <BranchName name={branch} /> , the two are in step, so there is
-              nothing to combine right now.
+              nothing to merge right now.
             </p>
             <InStepDiagram fromBranch={branch} intoBranch={diagramInto} />
           </>
@@ -210,8 +163,10 @@ export function MergeBranchDialog({
           <>
             <p>
               Bring <BranchName name={branch} />&rsquo;s work into{" "}
-              <BranchName name={diagramInto} />. After combining, one branch carries
-              both. Nothing from either branch is lost.
+              <BranchName name={diagramInto} />. Afterwards{" "}
+              <BranchName name={diagramInto} /> carries all files from both branches. {" "}
+              <BranchName name={branch} /> stays unchanged, and nothing from
+              either branches is lost.
             </p>
             <MergeDiagram
               fromBranch={branch}
@@ -262,14 +217,15 @@ export function MergeBranchDialog({
                 , so merging here is off.
               </p>
             )}
-            {hasConflicts && (
-              <p className="error">
+            {hasConflicts && !guarded && (
+              <p className="warn-inline">
                 Both branches changed{" "}
                 {preview.data!.conflicts.length === 1
                   ? "this file"
                   : "these files"}
-                : {preview.data!.conflicts.join(", ")}. Merging here would
-                collide, so that button is off. Use the reviewed way below.
+                : {preview.data!.conflicts.join(", ")}. SolidWorks files
+                can&rsquo;t be merged, so you&rsquo;ll pick which version to
+                keep before anything is merged.
               </p>
             )}
           </div>
@@ -286,12 +242,12 @@ export function MergeBranchDialog({
               <PullRequestGlyph />
               <span className="vt-text">
                 <span className="vt-title">
-                  Propose merging into <BranchName name={reviewInto} />
-                  <span className="mergetag">team reviews first</span>
+                  Request to merge into <BranchName name={reviewInto} />
+                  <span className="mergetag">recommended</span>
                 </span>
                 <span className="vt-sub">
-                  Opens a review here. Teammates see what would change and
-                  approve it before it lands.
+                  A team lead, or anyone allowed to approve, will review your request and
+                  merges it after reviewing.
                 </span>
               </span>
             </button>
@@ -299,33 +255,57 @@ export function MergeBranchDialog({
 
           {canLocalMerge && !upToDate && (
             <button
-              className="mergecard"
-              onClick={() => setConfirming(true)}
-              disabled={busy || hasConflicts || guarded || preview.isLoading}
+              className={`mergecard${confirming ? " selected" : ""}`}
+              onClick={() => (hasConflicts ? onResolve(branch) : setConfirming(true))}
+              disabled={busy || guarded || preview.isLoading}
             >
               <MergeGlyph />
               <span className="vt-text">
-                <span className="vt-title">Merge into {currentBranch} here…</span>
+                <span className="vt-title">
+                  Merge into <BranchName name={currentBranch} /> directly…
+                </span>
                 <span className="vt-sub">
-                  Locally on this computer without a review. You&rsquo;ll see the
-                  full list of what changes and confirm before anything
-                  happens. Off when both branches changed the same files or
-                  the branch is protected on GitHub.
+                  {hasConflicts ? (
+                    <>
+                      Merges it on this computer without asking for review.{" "}
+                      {preview.data!.conflicts.length === 1
+                        ? "One file clashes"
+                        : `${preview.data!.conflicts.length} files clash`}
+                      , so you need To pick which version to keep first.
+                    </>
+                  ) : (
+                    <>
+                      Merges it on this computer right away without asking for review. You
+                      see what changes and confirm before it happens.
+                    </>
+                  )}
+                  {" "}Not available when the branch is protected on GitHub.
                 </span>
               </span>
             </button>
           )}
         </div>
 
+        {confirming && (
+          <p className="muted small">
+            Nothing goes to GitHub yet, and Undo takes it right back out until
+            you Save &amp; Share.
+          </p>
+        )}
         {error && <p className="errdetail">{error}</p>}
 
         <div className="modal-actions">
           <button onClick={onClose} disabled={busy}>
             Cancel
           </button>
+          {confirming && (
+            <button className="primary" onClick={mergeNow} disabled={busy}>
+              {busy
+                ? "Merging…"
+                : `Merge ${incoming.length} change${incoming.length === 1 ? "" : "s"} into ${currentBranch}`}
+            </button>
+          )}
         </div>
-        </>
-        )}
       </div>
     </div>
   );

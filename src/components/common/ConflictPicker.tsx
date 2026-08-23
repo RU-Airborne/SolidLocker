@@ -72,6 +72,7 @@ function SideCell({
   const swIcon = useSwIcon();
   const swInstalled = useSwInstalled();
   const [opening, setOpening] = useState(false);
+  const isCad = /\.(sldprt|sldasm|slddrw)$/i.test(path);
 
   const who = person
     ? formatPerson(person.name, person.login)
@@ -157,9 +158,9 @@ function SideCell({
           >
             <span className="cfview-icon" aria-hidden="true">
               <OpenGlyph />
-              <img className="badgeicon" src={swIcon} alt="" />
+              {isCad && <img className="badgeicon" src={swIcon} alt="" />}
             </span>
-            <span>{swInstalled ? "Open" : "View"} (read-only)</span>
+            <span>{isCad && swInstalled ? "Open" : "View"} (read-only)</span>
           </button>
         )}
         {onOpenCommit && info.full_sha && (
@@ -208,7 +209,7 @@ export function ConflictPicker({
   /** Latest proposal per file, from the conversation. */
   proposals?: Map<string, Proposal>;
   readOnly?: boolean;
-  /** Tips (and merge commit) of a combine that already happened. */
+  /** Tips (and merge commit) of a merge that already happened. */
   at?: { ours: string; theirs: string; merge?: string };
   /** `picks` is mutated in place; this says it changed. */
   onChange: () => void;

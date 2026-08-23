@@ -315,7 +315,7 @@ async fn blob_id(root: &Path, commit: &str, path: &str) -> String {
 pub async fn combine_with_picks(root: &Path, branch: &str, picks: &[Pick]) -> AppResult<()> {
     match crate::workflow::merge_branch(root, branch).await {
         Ok(_) => {
-            crate::logger::info(format!("combined {branch}: nothing clashed after all"));
+            crate::logger::info(format!("merged {branch}: nothing clashed after all"));
         }
         Err(e) if e.code == "CONFLICT" => {
             // merge_branch aborts on conflict; redo it and leave it open
@@ -342,7 +342,7 @@ pub async fn combine_with_picks(root: &Path, branch: &str, picks: &[Pick]) -> Ap
                 return Err(AppError::git(out.stderr.trim().to_string()));
             }
             crate::logger::info(format!(
-                "combined {branch}: {} clash(es) settled",
+                "merged {branch}: {} clash(es) settled",
                 picks.len()
             ));
         }
@@ -355,7 +355,7 @@ pub async fn combine_with_picks(root: &Path, branch: &str, picks: &[Pick]) -> Ap
     if !pushed.ok() {
         return Err(AppError::offline(messages::CONFLICTS_SETTLED_NOT_SHARED));
     }
-    crate::logger::info("combined result shared with GitHub");
+    crate::logger::info("merged result shared with GitHub");
     Ok(())
 }
 
@@ -431,7 +431,7 @@ pub async fn abandon(root: &Path) -> AppResult<()> {
     if !out.ok() {
         return Err(AppError::git(out.stderr.trim().to_string()));
     }
-    crate::logger::info("merge abandoned, nothing combined");
+    crate::logger::info("merge abandoned, nothing merged");
     Ok(())
 }
 

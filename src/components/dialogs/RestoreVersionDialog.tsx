@@ -357,7 +357,7 @@ export function RestoreVersionDialog({
             />
             <p className="muted small">
               Either way, <BranchName name={branchName} /> stays exactly as it is
-              and no lock is needed. Combine the branch back later from the
+              and no lock is needed. Merge the branch back later from the
               Branches page.
             </p>
           </div>

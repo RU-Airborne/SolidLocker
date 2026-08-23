@@ -316,6 +316,9 @@ export const reviewPull = (number: number, event: string, body: string) =>
 export const mergePull = (number: number, method: string) =>
   invoke<void>("merge_pull", { number, method });
 
+export const closePull = (number: number) =>
+  invoke<void>("close_pull", { number });
+
 export const previewConflictSide = (path: string, side: string) =>
   invoke<string | null>("preview_conflict_side", { path, side });
 

@@ -1781,3 +1781,7 @@
 .tool .checkblock .toolrow button {
   min-width: 7.5rem;
 }
+
+.prreviewrow .prclose {
+  margin-right: auto;
+}

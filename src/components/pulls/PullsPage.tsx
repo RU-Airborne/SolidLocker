@@ -10,6 +10,7 @@ import {
   getBranchOverview,
   listPulls,
   mergePreviewBetween,
+  closePull,
   mergePull,
   mergedPicks,
   openVersion,
@@ -85,7 +86,7 @@ export function PullsPage({
       <main className="settingspage pullspage">
         <div className="settingshead">
           <button className="backbtn" onClick={() => setOpen(null)}>
-            ← All reviews
+            ← All merge requests
           </button>
         </div>
         <div className="settingsbody">
@@ -109,10 +110,10 @@ export function PullsPage({
         </button>
         <div className="settingsbrand">
           <div className="settingstitle">
-            <h2>Reviews</h2>
+            <h2>Merge Requests</h2>
             <p className="muted small">
-              Changes waiting for a look before they are combined, and the
-              ones already dealt with.
+              Requests to merge a branch, waiting for a team lead to approve
+              them, and the ones already approved or closed.
             </p>
           </div>
         </div>
@@ -131,7 +132,7 @@ export function PullsPage({
       )}
       <div className="settingsbody">
             <section className="setupsection">
-              <h3>Open reviews</h3>
+              <h3>Open requests</h3>
               {pulls.isLoading && <Loading what="Fetching information from GitHub…" />}
               {pulls.isError && (
                 <p className="errdetail">
@@ -142,15 +143,15 @@ export function PullsPage({
               )}
               <PullList
                 items={(pulls.data ?? []).filter((p) => p.state === "open")}
-                empty="Nothing waiting. Reviews opened here or on GitHub show up in this list."
+                empty="Nothing waiting. Requests made here or on GitHub show up in this list."
                 onOpen={(number) => setOpen({ number })}
               />
             </section>
 
             <section className="setupsection">
-              <h3>Closed reviews</h3>
+              <h3>Closed requests</h3>
               <p className="muted">
-                Combined, or closed without being combined. Open one to see
+                Merged, or closed without being merged. Open one to see
                 what was kept from which branch.
               </p>
               <PullList
@@ -205,7 +206,7 @@ function PullList({
               <span className="muted small">
                 Opened {formatDateTime(p.created_at)}
                 {p.state === "merged"
-                  ? ` · combined ${formatDateTime(p.merged_at)}`
+                  ? ` · merged ${formatDateTime(p.merged_at)}`
                   : p.updated_at !== p.created_at
                     ? ` · last updated ${formatDateTime(p.updated_at)}`
                     : ""}
@@ -216,7 +217,7 @@ function PullList({
             <button
               className="pulltidy"
               onClick={() => onTidy(p.number)}
-              title={`${p.head} is combined but still exists. Delete it`}
+              title={`${p.head} is merged but still exists. Delete it`}
             >
               <TrashGlyph />
               Tidy up…
@@ -303,11 +304,12 @@ function OpenPullDialog({
         className={`modal askmodal${clashFiles.length > 0 ? " wide" : ""}`}
         onClick={(e) => e.stopPropagation()}
       >
-        <h2>Ask for a review</h2>
+        <h2>Request to merge</h2>
         <p className="muted">
-          A teammate looks over <BranchName name={head} /> before it goes
-          into <BranchName name={base} />. Nothing changes on either branch
-          until they approve and combine it.
+          A team lead, or anyone allowed to approve, will look it over{" "}
+          <BranchName name={head} /> before it goes into{" "}
+          <BranchName name={base} />. Nothing changes on either branch until
+          they approve and merge it.
         </p>
         <MergeDiagram fromBranch={head} intoBranch={base} intoIsCurrent={false} />
 
@@ -366,13 +368,15 @@ function OpenPullDialog({
               picks={picks}
               onChange={bump}
               busy={busy}
-              title={`Same file, two versions (${clashFiles.length})`}
+              title={`Merge conflicts (${clashFiles.length})`}
               intro={
                 <>
-                  CAD files cannot be merged, so one version has to go. Pick
-                  the one to keep for each file. Your picks go with the review
-                  as a proposal; the reviewer can accept them or choose
-                  differently. Leaving a file unpicked is fine.
+                  Both <BranchName name={base} /> and <BranchName name={head} />{" "}
+                  changed these files. SolidWorks files can&rsquo;t be merged, so
+                  only one version of each can be carried over. Pick the one
+                  you&rsquo;d like to keep. Your picks go with the request as a
+                  suggestion; the reviewer can accept them or choose
+                  differently. Leaving some unpicked is fine.
                 </>
               }
             />
@@ -424,10 +428,10 @@ function OpenPullDialog({
             disabled={busy || !title.trim() || nothing || preview.isLoading}
           >
             {busy
-              ? "Asking…"
+              ? "Sending…"
               : picks.size > 0
-                ? `Ask for a review with ${picks.size} pick${picks.size === 1 ? "" : "s"}`
-                : "Ask for a review"}
+                ? `Send the request with ${picks.size} pick${picks.size === 1 ? "" : "s"}`
+                : "Send the request"}
           </button>
         </div>
       </div>
@@ -514,6 +518,7 @@ function PullView({
   const [error, setError] = useState<string | null>(null);
   const [said, setSaid] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [closing, setClosing] = useState(false);
   const picks = picksFor(`pr:${number}`);
   const directory = usePeople();
   const [, bump] = useReducer((n: number) => n + 1, 0);
@@ -561,7 +566,21 @@ function PullView({
       .finally(() => setBusy(null));
   }
 
-  // Own PR: GitHub refuses the approval, the combine still goes ahead.
+  function closeNow() {
+    setClosing(false);
+    setBusy("close");
+    setError(null);
+    setSaid(null);
+    closePull(number)
+      .then(() => {
+        setSaid("Closed. Nothing was merged; the branch is still there.");
+        queryClient.invalidateQueries();
+      })
+      .catch((e) => setError(isAppError(e) ? e.message : String(e)))
+      .finally(() => setBusy(null));
+  }
+
+  // Own PR: GitHub refuses the approval, the merge still goes ahead.
   function approveAndCombine() {
     setConfirming(false);
     setBusy("merge");
@@ -590,8 +609,8 @@ function PullView({
         setNote("");
         setSaid(
           approved
-            ? `Approved and combined into ${d?.base ?? "the target branch"}.`
-            : `Combined into ${d?.base ?? "the target branch"}. GitHub does not record approval of your own request.`,
+            ? `Approved and merged into ${d?.base ?? "the target branch"}.`
+            : `Merged into ${d?.base ?? "the target branch"}. GitHub does not record approval of your own request.`,
         );
         queryClient.invalidateQueries();
       })
@@ -702,7 +721,7 @@ function PullView({
                 <p className="muted small">
                   Opened {formatDateTime(d.created_at)}
                   {d.merged
-                    ? ` · combined ${formatDateTime(d.merged_at)}`
+                    ? ` · merged ${formatDateTime(d.merged_at)}`
                     : d.updated_at !== d.created_at
                       ? ` · last updated ${formatDateTime(d.updated_at)}`
                       : ""}
@@ -730,25 +749,26 @@ function PullView({
 
             {/* mergeable is null until GitHub has worked it out */}
             {d.state === "open" && d.mergeable === true && (
-              <p className="muted small">This would combine cleanly.</p>
+              <p className="muted small">This would merge cleanly.</p>
             )}
             {d.state === "open" && d.mergeable === null && (
               <p className="muted small">
-                GitHub is still working out whether this combines cleanly.
+                GitHub is still working out whether this merges cleanly.
               </p>
             )}
             {d.state !== "open" && !d.merged && (
               <p className="muted small">
-                Closed without being combined: the work on{" "}
+                Closed without being merged: the work on{" "}
                 <BranchName name={d.head} /> never went into{" "}
                 <BranchName name={d.base} />.
               </p>
             )}
             {d.state === "open" && d.mergeable === false && !onBase && (
               <p className="muted small">
-                Some files changed on both <BranchName name={d.head} /> and{" "}
-                <BranchName name={d.base} />. You can pick and propose versions
-                from here; to combine, switch to <BranchName name={d.base} />.
+                <BranchName name={d.head} /> and <BranchName name={d.base} />{" "}
+                changed some of the same files. You can pick which version to
+                keep and suggest it to the reviewer from here. To approve and
+                merge, switch to <BranchName name={d.base} /> first.
               </p>
             )}
           </section>
@@ -810,8 +830,8 @@ function PullView({
                           <span className="prclosing">
                             <strong>{who}</strong>{" "}
                             {c.kind === "approved_and_merged"
-                              ? "approved and combined"
-                              : "combined"}{" "}
+                              ? "approved and merged"
+                              : "merged"}{" "}
                             <BranchName name={d.head} /> into{" "}
                             <BranchName name={d.base} />. Review closed.
                           </span>
@@ -929,7 +949,7 @@ function PullView({
                   intro={
                     <>
                       These files had two versions when <BranchName name={d.head} />{" "}
-                      was combined into <BranchName name={d.base} />. The marked
+                      was merged into <BranchName name={d.base} />. The marked
                       one was kept.
                     </>
                   }
@@ -940,7 +960,7 @@ function PullView({
             <>
               {(clashes.isLoading || clashes.isError) && (
                 <section className="setupsection">
-                  <h3>Same file, two versions</h3>
+                  <h3>Merge conflicts</h3>
                   {clashes.isLoading && (
                     <p className="muted small">Reading both branches…</p>
                   )}
@@ -963,14 +983,15 @@ function PullView({
                   onOpenCommit={onOpenCommit}
                   busy={busy !== null}
                   proposals={proposals}
-                  title={`Same file, two versions (${clashFiles.length})`}
+                  title={`Merge conflicts (${clashFiles.length})`}
                   intro={
                     <>
-                      Changed on both <BranchName name={d.base} /> and{" "}
-                      <BranchName name={d.head} />. CAD files cannot be merged,
-                      so pick the version to keep for each. Nothing happens
-                      until you combine; picks are kept if you leave and come
-                      back.
+                      Both <BranchName name={d.base} /> and{" "}
+                      <BranchName name={d.head} /> changed these files.
+                      SolidWorks files can&rsquo;t be merged, so only one version
+                      of each can be carried over. Pick the one to keep.
+                      Nothing changes until you merge, and your picks are
+                      remembered if you leave and come back.
                     </>
                   }
                 />
@@ -1029,6 +1050,14 @@ function PullView({
                     : "Ask for changes"}
               </button>
               <button
+                className="prclose"
+                onClick={() => setClosing(true)}
+                disabled={busy !== null}
+                title="Close this request and leave the branch as it is"
+              >
+                {busy === "close" ? "Closing…" : "Close without merging"}
+              </button>
+              <button
                 className="primary"
                 onClick={() => setConfirming(true)}
                 disabled={
@@ -1042,10 +1071,10 @@ function PullView({
                 }
               >
                 {busy === "merge"
-                  ? "Combining…"
+                  ? "Merging…"
                   : d.mergeable === false && onBase && unpicked > 0
                     ? `${unpicked} still to pick`
-                    : "Approve and combine"}
+                    : "Approve and merge"}
               </button>
             </div>
 
@@ -1054,10 +1083,30 @@ function PullView({
           </section>
           )}
 
+          {closing && (
+            <div className="modal-backdrop" onClick={() => setClosing(false)}>
+              <div className="modal" onClick={(e) => e.stopPropagation()}>
+                <h2>Close without merging?</h2>
+                <p className="muted">
+                  <strong>{d.title}</strong> is closed and nothing goes into{" "}
+                  <BranchName name={d.base} />. <BranchName name={d.head} /> stays
+                  as it is. A new request can be made
+                  later.
+                </p>
+                <div className="modal-actions">
+                  <button onClick={() => setClosing(false)}>Keep it open</button>
+                  <button className="danger" onClick={closeNow}>
+                    Close it
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {confirming && (
             <div className="modal-backdrop" onClick={() => setConfirming(false)}>
               <div className="modal" onClick={(e) => e.stopPropagation()}>
-                <h2>Approve and combine?</h2>
+                <h2>Approve and merge?</h2>
                 <p className="muted">
                   Records your approval of <strong>{d.title}</strong> and brings{" "}
                   <BranchName name={d.head} /> into <BranchName name={d.base} />.
@@ -1101,7 +1150,7 @@ function PullView({
                 <div className="modal-actions">
                   <button onClick={() => setConfirming(false)}>Not yet</button>
                   <button className="primary" onClick={approveAndCombine}>
-                    Approve and combine
+                    Approve and merge
                   </button>
                 </div>
               </div>

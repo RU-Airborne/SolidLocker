@@ -1321,7 +1321,7 @@ pub async fn delete_branch(root: &Path, name: &str) -> AppResult<()> {
     if !merged {
         return Err(AppError::new(
             "BRANCH",
-            format!("{name} still has work that is not in {default}. Combine it first, or leave it."),
+            format!("{name} still has work that is not in {default}. Merge it first, or leave it."),
         ));
     }
 
@@ -2279,7 +2279,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// Get Latest and Combine both go through a merge, and git refuses those
+    /// Get Latest and Merge both go through a merge, and git refuses those
     /// over the same file. The teammate's version still has to land.
     #[tokio::test]
     async fn a_merge_lands_over_a_file_that_only_looks_changed() {

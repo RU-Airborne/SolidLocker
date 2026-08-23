@@ -48,7 +48,7 @@ export interface ClashLaid {
 }
 
 /**
- * Layout for the two branches being combined: ours on lane 0, theirs on
+ * Layout for the two branches being merged: ours on lane 0, theirs on
  * lane 1 back to the fork, anything merged into either as a short stub.
  */
 export function clashLayout(
@@ -121,7 +121,7 @@ export function clashLayout(
     ]);
     for (const s of [...keep]) if (!shown.has(s)) keep.delete(s);
   }
-  // Merge commit of a combine that already happened; not behind either tip.
+  // Merge commit of a merge that already happened; not behind either tip.
   const merge = at?.merge && bySha.has(at.merge) ? at.merge : undefined;
   if (merge) keep.add(merge);
 
@@ -272,6 +272,7 @@ export function RailDrawing({
   lit,
   people,
   onOpenCommit,
+  preview,
 }: {
   laid: ClashLaid;
   ours: string;
@@ -279,8 +280,14 @@ export function RailDrawing({
   lit: Set<string> | null;
   people?: Map<string, Person>;
   onOpenCommit?: (sha: string) => void;
+  /** Nothing merged yet: sketch where the merge would land, dotted. */
+  preview?: boolean;
 }) {
   const { rows, laneCount, edges, tips, minor, colorOf, stubs, converge } = laid;
+  const ourTip = Object.keys(tips).find((sha) => tips[sha] === ours);
+  const theirTip = Object.keys(tips).find((sha) => tips[sha] === theirs);
+  const ghost =
+    !!preview && converge.size === 0 && !laid.unrelated && !!ourTip && !!theirTip && ourTip !== theirTip;
   const COL = 44;
   const LANE = 30;
   const NOTE = lit ? 104 : 0; // room for the lit-commit card
@@ -291,7 +298,9 @@ export function RailDrawing({
   const RIGHT = 16;
   const H = TOP + laneCount * LANE + 30 + NOTE;
   const yOf = (l: number) => TOP + l * LANE;
-  const labelRoom = 7 * Math.max(ours.length, theirs.length) + 20;
+  // With the ghost merge drawn, the tip names move under their nodes and the
+  // room on the right only has to fit the ghost and its label.
+  const labelRoom = ghost ? 130 : 7 * Math.max(ours.length, theirs.length) + 20;
   const W = PAD + rows.length * COL + labelRoom + RIGHT;
   const colOf = new Map(rows.map((r, i) => [r.commit.sha, i]));
   const xOf = (i: number) => W - RIGHT - labelRoom - i * COL - COL / 2;
@@ -303,7 +312,10 @@ export function RailDrawing({
     new Date(d).toLocaleDateString(undefined, { month: "numeric", day: "numeric" });
 
   // A tip with a child has a line where its label would go; label goes under.
-  const hasChild = new Set(edges.map((e) => e.parent));
+  const hasChild = new Set([
+    ...edges.map((e) => e.parent),
+    ...(ghost ? [ourTip!, theirTip!] : []),
+  ]);
 
   const on = (sha: string) => lit === null || lit.has(sha);
   const dim = (bright: boolean) => (bright ? undefined : "rr-dim");
@@ -356,6 +368,45 @@ export function RailDrawing({
             />
           );
         })}
+
+        {ghost && (() => {
+          const o = xy(ourTip!);
+          const t = xy(theirTip!);
+          const xg = xOf(0) + COL;
+          return (
+            <g className={`rr-ghost ${rail ?? ""}`} aria-label="Where the merge would land">
+              <line
+                className="rr-ghostline"
+                x1={o.x} y1={o.y} x2={xg} y2={o.y}
+                stroke={colorOf(ourTip!)} strokeWidth={2} strokeLinecap="round"
+              />
+              <polyline
+                className="rr-ghostline"
+                points={`${t.x},${t.y} ${xg - COL / 2},${t.y} ${xg},${o.y}`}
+                fill="none" stroke={colorOf(theirTip!)} strokeWidth={2}
+                strokeLinecap="round" strokeLinejoin="round"
+              />
+              <circle className="bd-comet" r={2.6}>
+                <animateMotion
+                  dur="2.2s"
+                  repeatCount="indefinite"
+                  path={`M ${t.x},${t.y} L ${xg - COL / 2},${t.y} L ${xg},${o.y}`}
+                />
+              </circle>
+              <circle className="bd-comet" r={2.6}>
+                <animateMotion
+                  dur="2.2s"
+                  repeatCount="indefinite"
+                  path={`M ${o.x},${o.y} L ${xg},${o.y}`}
+                />
+              </circle>
+              <circle cx={xg} cy={o.y} r={6} fill="none" stroke="var(--accent)" strokeWidth={2} strokeDasharray="2 2.5" />
+              <text className="rr-label" x={xg + 12} y={o.y + 4.5} fill="var(--accent)">
+                after merging
+              </text>
+            </g>
+          );
+        })()}
 
         {rows.map((row, i) => {
           const x = xOf(i);
@@ -485,7 +536,7 @@ export function RailDrawing({
 }
 
 /**
- * Railway of the two branches being combined, newest at the right. `lit`
+ * Railway of the two branches being merged, newest at the right. `lit`
  * keeps only those commits bright and shows their details.
  */
 export function ClashRailway({
@@ -537,6 +588,7 @@ export function ClashRailway({
         lit={lit}
         people={people}
         onOpenCommit={onOpenCommit}
+        preview={!at}
       />
     </div>
   );

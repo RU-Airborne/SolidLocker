@@ -101,7 +101,7 @@ pub fn could_not_remove_added(path: &str, why: &str) -> String {
 
 pub fn conflicts_changed_underneath(n: usize) -> String {
     format!(
-        "The branch changed since this list was drawn: {n} file{} now clash that were not here before. Nothing was combined. Look again to see the current list.",
+        "The branch changed since this list was drawn: {n} file{} now clash that were not here before. Nothing was merged. Look again to see the current list.",
         if n == 1 { "" } else { "s" }
     )
 }
@@ -109,7 +109,7 @@ pub fn conflicts_changed_underneath(n: usize) -> String {
 pub const UNKNOWN_SIDE: &str = "That is not one of the two versions on offer.";
 
 pub const CONFLICTS_SETTLED_NOT_SHARED: &str =
-    "Your choices are made and combined here, but GitHub could not be reached to share the result. Use Save & Share once you are back online.";
+    "Your choices are made and merged here, but GitHub could not be reached to share the result. Use Save & Share once you are back online.";
 
 pub fn conflicts_still_open(n: usize) -> String {
     format!("{n} file{} still {} a version chosen.", if n == 1 { "" } else { "s" }, if n == 1 { "needs" } else { "need" })
@@ -181,15 +181,15 @@ pub fn could_not_merge(stderr: &str) -> String {
 }
 
 pub const MERGE_NEEDS_COMMIT: &str =
-    "You have unsaved changes. Use Save & Share before combining branches.";
+    "You have unsaved changes. Use Save & Share before merging branches.";
 
 pub const UNDO_MERGE_DIRTY: &str =
-    "You have unsaved changes now, so undoing the combine could take work with it. Save & Share or discard them first.";
+    "You have unsaved changes now, so undoing the merge could take work with it. Save & Share or discard them first.";
 
 pub const UNDO_MERGE_PUSHED: &str =
-    "The combined result is already on GitHub, so it can't be quietly undone. Ask your lead if it needs to come out.";
+    "The merged result is already on GitHub, so it can't be quietly undone. Ask your lead if it needs to come out.";
 
-pub const UNDO_MERGE_NOTHING: &str = "There is no recent combine to undo.";
+pub const UNDO_MERGE_NOTHING: &str = "There is no recent merge to undo.";
 
 pub fn merge_conflict_aborted(branch: &str, files: &str) -> String {
     format!(

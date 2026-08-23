@@ -22,7 +22,7 @@ Developed by [Scaven X](https://github.com/scavenx) at RU Airborne.
 
 Git is great for software because code can usually be compared and merged when
 two people change the same file. SolidWorks files do not work that way. If two
-people edit the same part separately, Git cannot combine their changes
+people edit the same part separately, Git cannot merge their changes
 afterward. One version has to replace the other.
 
 SolidLocker fills that gap with file locking. Files stay read-only until you
@@ -43,7 +43,7 @@ an earlier version are buttons too.
 ## Feature Highlights
 
 - **Everyday words, not Git words**: Nobody on the team needs to know Git. You "Save & Share"
-  instead of commit and push, "Combine" instead of merge, "Ask for a review" instead of opening a
+  instead of commit and push, "Request to merge" instead of opening a
   pull request. Every term is listed against its Git meaning in
   [What the words mean](#what-the-words-mean).
 
@@ -65,12 +65,12 @@ an earlier version are buttons too.
 - **Branches page**: A railway map of every branch in the project, coloured so each branch is easy to
   tell apart, with "You are here" on your current commit. Open any commit to see what changed, view
   a file as it was back then, restore that version, or branch off from that point. Restoring,
-  branching off and combining all happen right there in the app.
+  branching off and merging all happen right there in the app.
 
   <p align="center">
   <img src="docs/images/branches.png" alt="Branches page with a railway diagram" width="600">
   <br>
-  <em>The Branches page: every branch on one railway, with branch off, restore and combine a click away</em>
+  <em>The Branches page: every branch on one railway, with branch off, restore and merge a click away</em>
   </p>
 
 - **Get an old version back, safely**: Pick any commit on the railway and you have two ways to
@@ -86,29 +86,33 @@ an earlier version are buttons too.
     </tr>
   </table>
 
-- **Combine branches**: Bring one branch into another from the Branches page. SolidLocker shows what
+- **Merge branches**: Bring one branch into another from the Branches page. SolidLocker shows what
   would change first, with thumbnails, and tells you if the two branches touched the same CAD file.
-  If they did, a sort box lists each clash with both versions side by side so you pick which one to
-  keep. A compact railway above it shows just the two branches back to where they parted.
+  Two ways in: **Merge into ... directly** does it on your computer right away, and **Request to
+  merge** opens a merge request for a team lead to approve. If files clash, the direct route opens
+  the sort box first, where each clash is listed with both versions side by side so you pick which one to
+  keep. A compact railway above it shows the two branches back to where they parted, with a dotted
+  line sketching where the merge would land. Only a branch protected on GitHub forces the request
+  route.
 
   <p align="center">
-  <img src="docs/images/merge_request.png" alt="Combine branches dialog" width="600">
+  <img src="docs/images/merge_request.png" alt="Merge branches dialog" width="600">
   <br>
-  <em>Combine: see what the other branch brings before anything changes.</em>
+  <em>Merge: see what the other branch brings before anything changes.</em>
   </p>
 
-- **Reviews, inside the app**: On GitHub or GitHub Desktop a SolidWorks clash is a binary diff with
+- **Merge requests, inside the app**: On GitHub or GitHub Desktop a SolidWorks clash is a binary diff with
   nothing to read and no way to choose a side, so reviewing CAD there is a dead end. SolidLocker
-  does the whole review itself: ask the team for one straight from the Combine dialog, with a
-  title, a note and, if files clash, your suggested picks. Reviewers see the changed files with
-  thumbnails, the conversation so far, and the same sort box. They can accept your picks with one
-  click or pick differently, ask for changes, or approve and combine in one go. Closed reviews stay
-  listed with what was kept, and offer to tidy the branch away once it is in.
+  handles the whole request itself: send one straight from the Merge dialog, with a title, a note
+  and, if files clash, your suggested picks. The team lead sees the changed files with thumbnails,
+  the conversation so far, and the same sort box. They can accept your picks with one click or pick
+  differently, ask for changes, approve and merge in one go, or close the request without merging.
+  Closed requests stay listed with what was kept, and offer to tidy the branch away once it is in.
 
   <p align="center">
-  <img src="docs/images/reviews.png" alt="Reviews page" width="600">
+  <img src="docs/images/reviews.png" alt="Merge Requests page" width="600">
   <br>
-  <em>Reviews: open and closed reviews are shown directly in the app.</em>
+  <em>Merge Requests: open and closed requests, shown directly in the app.</em>
   </p>
 
   <p align="center">
@@ -125,7 +129,7 @@ an earlier version are buttons too.
 - **Keep track of progress**: A Progress page shows what the team has been up to across every
   branch: what changed this week, a chart of shared changes per day, which parts are being reworked
   the most, and who made the most changes recently. A branch timeline puts every branch and change
-  on one railway, and you can branch off, restore or combine straight from it.
+  on one railway, and you can branch off, restore or merge straight from it.
 
   <p align="center">
   <img src="docs/images/progress.png" alt="Progress page" width="600">
@@ -227,13 +231,14 @@ SolidLocker uses everyday words in the app. If you know Git, this is what they m
 | Restore this version | `git restore --source <commit> -- <file>`, then Save & Share when you are happy. |
 | Branches page | `git log --all --graph`, drawn as a railway. |
 | Progress page | `git log` with per-file and per-author statistics across all branches. |
-| Combine / Merge into here | `git merge` of the other branch into the one you are on. |
-| "Same file, two versions" / the sort box | A merge conflict on a binary file, resolved by keeping `--ours` or `--theirs` for each file. |
-| Undo (after a combine) | `git reset --hard ORIG_HEAD`, only while nothing has been shared yet. |
-| Ask for a review / Review | A pull request on GitHub. |
+| Merge into … directly | `git merge` of the other branch into the one you are on, then push. |
+| "Merge conflicts" / the sort box | A merge conflict on a binary file, resolved by keeping `--ours` or `--theirs` for each file. |
+| Undo (after a merge) | `git reset --hard ORIG_HEAD`, only while nothing has been shared yet. |
+| Merge request / Request to merge | A pull request on GitHub. |
 | Picks / proposals | Per-file review comments on the pull request, marked so the app can read them back. |
 | Ask for changes | A "changes requested" review on the pull request. |
-| Approve and combine | An approving review followed by merging the pull request. |
+| Approve and merge | An approving review followed by merging the pull request. |
+| Close without merging | Closing the pull request; the branch is left as it is. |
 | Tidy up / Delete branch | `git push origin --delete <branch>` and `git branch -D <branch>`, only once the branch is fully merged. |
 | Fix permissions | Re-applies `lfs.setlockablereadonly`: locked files writable, everything else read-only. |
 
@@ -248,9 +253,10 @@ SolidLocker uses everyday words in the app. If you know Git, this is what they m
 - **SolidWorks scratch files are ignored**: The temp files SolidWorks makes while
   a doc is open (their names start with `~$`) get filtered out, so the app won't
   nag you to Save & Share when you haven't really changed anything.
-- **GitHub decides who may approve**: The app never lets you approve your own review, because
-  GitHub won't. If the repo has a branch rule requiring reviews, "Merge into here" is switched off
-  and the reviewed route is the only way in.
+- **GitHub decides who may approve**: The app never lets you approve your own request, because
+  GitHub won't. If the repo has a branch rule requiring reviews, "Merge into … directly" is switched
+  off and a merge request is the only way in. Without such a rule anyone can merge directly, clashes
+  included; protect the branches that matter.
 
 
 ## Troubleshooting
@@ -264,7 +270,7 @@ SolidLocker uses everyday words in the app. If you know Git, this is what they m
   **A:** The local lock cache may have been corrupted by an interrupted operation. SolidLocker detects this and repairs the cache automatically, so wait a moment and try again.
 
 
-- **Q: I pressed "Ask for changes" on my own review and it came through as a comment.**  
+- **Q: I pressed "Ask for changes" on my own merge request and it came through as a comment.**  
 
   **A:** GitHub does not accept a verdict from the person who opened the request, so the app
   posts your words and picks as a comment instead and tells you. A teammate's "Ask for changes"

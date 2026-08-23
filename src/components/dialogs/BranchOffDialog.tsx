@@ -104,7 +104,7 @@ export function BranchOffDialog({
         <p className="muted small">
           A branch is a separate line of work. Your team&rsquo;s branch stays
           exactly as it is. You continue from this older moment on a new branch,
-          and the two can be compared or combined later. Locks still apply
+          and the two can be compared or merged later. Locks still apply
           across all branches.
         </p>
         <div className="modal-actions">

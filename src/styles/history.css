@@ -482,16 +482,22 @@
 }
 
 .bd-main {
-  stroke: var(--muted);
+  stroke: var(--bd-main, var(--muted));
   stroke-width: 2;
 }
 
+.bd-ahead,
+.rr-ghostline {
+  stroke-dasharray: 4 4;
+  animation: bdmarch 1.4s linear infinite;
+}
+
 .bd-arrow {
-  fill: var(--muted);
+  fill: var(--bd-main, var(--muted));
 }
 
 .bd-dot {
-  fill: var(--muted);
+  fill: var(--bd-main, var(--muted));
   opacity: 0.75;
 }
 
@@ -507,7 +513,7 @@
 }
 
 .bd-new {
-  stroke: var(--accent);
+  stroke: var(--bd-new, var(--accent));
   stroke-width: 2;
   fill: none;
   stroke-dasharray: 4 4;
@@ -521,30 +527,38 @@
 }
 
 .bd-arrownew {
-  fill: var(--accent);
+  fill: var(--bd-new, var(--accent));
 }
 
 .bd-newdot {
   fill: none;
-  stroke: var(--accent);
+  stroke: var(--bd-new, var(--accent));
   stroke-width: 2;
   stroke-dasharray: 2 2.5;
 }
 
 .bd-label {
-  fill: var(--muted);
+  fill: var(--bd-main, var(--muted));
   font-size: 10px;
 }
 
-.bd-labelnew {
+.bd-labelmark {
   fill: var(--accent);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.bd-labelnew {
+  fill: var(--bd-new, var(--accent));
   font-size: 10px;
   font-weight: 600;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .gg-halo,
-  .bd-new {
+  .bd-new,
+  .bd-ahead,
+  .rr-ghostline {
     animation: none;
   }
 }
@@ -630,6 +644,13 @@ button.linkish:hover {
 .mergecard:disabled {
   opacity: 0.55;
   cursor: default;
+}
+
+.mergecard.selected,
+.mergecard.selected:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
 .mergecard.recommended {

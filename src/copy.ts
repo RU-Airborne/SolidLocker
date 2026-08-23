@@ -56,7 +56,7 @@ export const copy = {
   undoneRestore:
     "Undone. The files are back to the branch's latest version.",
   undoneMerge:
-    "Undone. Your branch is back to how it was before the combine.",
+    "Undone. Your branch is back to how it was before the merge.",
   clearedWorkingFolder: (reverted: number, moved: number, movedTo: string | null) => {
     const parts: string[] = [];
     if (reverted > 0) {

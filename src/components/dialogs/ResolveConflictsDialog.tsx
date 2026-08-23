@@ -62,7 +62,7 @@ export function ResolveConflictsDialog({
         clearPicks(key);
         queryClient.invalidateQueries();
         onDone(
-          `Combined and shared. ${files.length} file${files.length === 1 ? "" : "s"} settled.`,
+          `Merged and shared. ${files.length} file${files.length === 1 ? "" : "s"} settled.`,
         );
       })
       .catch((e) => {
@@ -75,7 +75,7 @@ export function ResolveConflictsDialog({
     // nothing in git to undo yet when there is a plan
     if (plan) {
       clearPicks(key);
-      onDone("Left as it was. Nothing was combined.");
+      onDone("Left as it was. Nothing was merged.");
       return;
     }
     setBusy(true);
@@ -83,7 +83,7 @@ export function ResolveConflictsDialog({
       .then(() => {
         clearPicks(key);
         queryClient.invalidateQueries();
-        onDone("Left as it was. Nothing was combined.");
+        onDone("Left as it was. Nothing was merged.");
       })
       .catch((e) => {
         setError(isAppError(e) ? e.message : String(e));
@@ -94,12 +94,11 @@ export function ResolveConflictsDialog({
   return (
     <div className="modal-backdrop">
       <div className="modal conflictmodal">
-        <h2>Same file, two versions</h2>
-        <p className="muted small">
+        <h2>Merge conflicts</h2>
+        <p className="muted">
           {files.length} file{files.length === 1 ? "" : "s"} changed on both
           branches. CAD files can&rsquo;t be merged, so pick which version to
-          keep. Nothing happens until you press Combine; picks are kept if you
-          close this and come back.
+          keep. Nothing happens until you press Merge.
         </p>
 
         {conflicts.isLoading && (
@@ -128,18 +127,26 @@ export function ResolveConflictsDialog({
         {error && <p className="errdetail">{error}</p>}
 
         <div className="modal-actions">
-          <button onClick={onClose} disabled={busy}>
-            Come back to this
-          </button>
-          <button onClick={abandon} disabled={busy}>
-            Leave it alone
-          </button>
+          {plan ? (
+            <button onClick={onClose} disabled={busy}>
+              Cancel
+            </button>
+          ) : (
+            <>
+              <button onClick={onClose} disabled={busy}>
+                Come back to this
+              </button>
+              <button onClick={abandon} disabled={busy}>
+                Leave it alone
+              </button>
+            </>
+          )}
           <button
             className="primary"
             onClick={finish}
             disabled={busy || left > 0 || files.length === 0}
           >
-            {busy ? "Combining…" : left > 0 ? `${left} still to pick` : "Combine"}
+            {busy ? "Merging…" : left > 0 ? `${left} still to pick` : "Merge"}
           </button>
         </div>
       </div>

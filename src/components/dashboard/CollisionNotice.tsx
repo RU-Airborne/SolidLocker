@@ -30,7 +30,7 @@ export function CollisionNotice({
             branch is also changing.
           </>
         )}{" "}
-        Only one version of each can be kept when they are combined.
+        Only one version of each can be kept when they are merged.
       </span>
       <button className="notice-ok" onClick={onShow}>
         See which files

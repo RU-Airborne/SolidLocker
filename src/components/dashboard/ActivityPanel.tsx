@@ -71,7 +71,7 @@ function FileLine({
       {/* per-file View lives on the Branches page now
       {onView && (
         <button className="fh-restore" onClick={onView}
-          title="Look at this file as it was in this change — preview it, open a read-only copy, bring it back, or branch off">
+          title="Look at this file as it was in this change. Preview it, open a read-only copy, bring it back, or branch off">
           View…
         </button>
       )}
