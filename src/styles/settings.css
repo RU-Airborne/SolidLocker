@@ -636,3 +636,503 @@
   color: var(--warning);
   word-break: break-all;
 }
+
+/* Clash picker: branches across the top, one row per file. */
+.modal.conflictmodal {
+  width: min(66rem, 96vw);
+  max-width: none;
+}
+
+.cftable {
+  margin: 0.8rem 0 0;
+}
+
+.cfhead,
+.cfrow {
+  display: grid;
+  grid-template-columns: minmax(10rem, 1fr) 1.4fr 1.4fr;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+/* Sticky header, same frost as the dashboard's .filehead. */
+.cfhead {
+  text-align: center;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0.3rem 0.55rem;
+  background: color-mix(in srgb, var(--headbg) calc(var(--glass-tint) * 0.7), transparent);
+  backdrop-filter: blur(14px) saturate(130%);
+  -webkit-backdrop-filter: blur(14px) saturate(130%);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.25rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.cfh-side {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.6rem;
+  min-width: 0;
+  color: inherit;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.cfall {
+  font-size: 0.72rem;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  padding: 0.05rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.cfall:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: inherit;
+}
+
+/* No inner scroller; the page/dialog scrolls and the header sticks to that. */
+.cfbody {
+  overflow: visible;
+}
+
+.cfrow {
+  padding: 0.45rem 0.55rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 45%, transparent);
+}
+
+.cfrow:last-child {
+  border-bottom: none;
+}
+
+.cfrow.done {
+  background: transparent;
+}
+
+.cffile {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.cffile strong,
+.cffile .muted {
+  overflow-wrap: anywhere;
+}
+
+/* One version. Whole cell is the control. */
+.cfcell {
+  display: grid;
+  grid-template-columns: auto 56px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 0.6rem;
+  row-gap: 0.35rem;
+  align-items: center;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.cfcell:hover:not(.busy):not(.keep) {
+  border-color: var(--keep);
+  background: color-mix(in srgb, var(--keep) 7%, transparent);
+}
+
+/* --keep is the branch's own colour, set per cell; blue is the fallback. */
+.cftable {
+  --keep: #5b8def;
+}
+
+.cfcell.keep {
+  border-color: var(--keep);
+  background: color-mix(in srgb, var(--keep) 14%, transparent);
+}
+
+.cfcell.drop {
+  opacity: 0.5;
+  filter: grayscale(0.85);
+  border-style: dashed;
+}
+
+.cfcell.busy {
+  cursor: default;
+}
+
+.cfcell:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Real radio: glyphs drew at different sizes and jumped. Cell handles the click. */
+.cfmark {
+  grid-row: 1 / span 2;
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  accent-color: var(--keep);
+  pointer-events: none;
+}
+
+.cfshot {
+  grid-row: 1 / span 2;
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--muted) 8%, transparent);
+}
+
+.cfshot img {
+  max-width: 100%;
+  max-height: 100%;
+  display: block;
+}
+
+.cfshot-none {
+  width: 100%;
+  height: 100%;
+}
+
+.cfshot-gone {
+  font-size: 1.4rem;
+  color: var(--muted);
+}
+
+.cfwhat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+/* Nothing truncates here; an ellipsis hides what decides the pick. */
+.cfwho {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.cfview {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.74rem;
+  cursor: pointer;
+  /* Wraps; no-wrap got cut at "(read-o" in a narrow column. */
+  white-space: normal;
+  text-align: center;
+  justify-content: center;
+  padding: 0.15rem 0.55rem;
+  min-width: 0;
+}
+
+.cfview:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.cfview:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Wrapper is the positioned element so the badge hangs off the glyph, not the button edge. */
+.cfview-icon {
+  position: relative;
+  display: block;
+  width: 15px;
+  height: 15px;
+  flex: none;
+  overflow: visible;
+}
+
+.cfview-icon svg {
+  display: block;
+}
+
+.cfview .badgeicon {
+  position: absolute;
+  right: -4px;
+  bottom: -3px;
+  width: 10px;
+  height: 10px;
+  display: block;
+  border-radius: 2px;
+}
+
+.cfview {
+  overflow: visible;
+  line-height: 1.2;
+}
+
+.cfsubject {
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+/* Read-only cell: no radio, picture takes its room. */
+.cfcell.ro {
+  grid-template-columns: 72px minmax(0, 1fr);
+  cursor: default;
+}
+
+.cfcell.ro .cfshot {
+  width: 72px;
+  height: 72px;
+}
+
+.cfcell.ro .cfwhat,
+.cfcell.ro .cfactions {
+  grid-column: 2;
+}
+
+.cfh-file {
+  text-align: center;
+}
+
+.cfh-side {
+  flex-wrap: wrap;
+  row-gap: 0.15rem;
+  text-align: center;
+}
+
+/* --- The railway above the clash table ---------------------------------- */
+
+.clashrail {
+  margin: 0.6rem 0 0.8rem;
+}
+
+.rr-node.still {
+  cursor: default;
+}
+
+/* Cells in a row share a height. */
+.cfrow {
+  align-items: stretch;
+}
+
+.cfhead {
+  align-items: center;
+}
+
+.cffile {
+  justify-content: center;
+}
+
+/* Buttons on the bottom edge so they line up across a row. */
+.cfcell {
+  grid-template-rows: minmax(0, 1fr) auto;
+  align-content: stretch;
+}
+
+.cfwhat {
+  align-self: start;
+}
+
+.cfactions {
+  align-self: end;
+}
+
+.cfrailcard .railscroll {
+  margin-bottom: 0;
+}
+
+.cfwho {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.cfperson {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.cfwhen {
+  padding-left: calc(16px + 0.35rem);
+}
+
+.cfwho .avatar-img {
+  flex: none;
+  border-radius: 50%;
+}
+
+.cflight {
+  align-self: flex-start;
+  margin-top: 0.45rem;
+}
+
+/* Lit state. !important: the page-wide hover in glass.css outranks this. */
+.cflight.on,
+.cflight.on:hover {
+  border-color: var(--accent) !important;
+  color: var(--accent) !important;
+  background: color-mix(in srgb, var(--accent) 12%, transparent) !important;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent),
+    0 0 10px color-mix(in srgb, var(--accent) 35%, transparent),
+    0 8px 26px color-mix(in srgb, var(--accent) 18%, transparent) !important;
+}
+
+.cfrow.lit {
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--keep) 6%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--keep) 35%, transparent);
+}
+
+/* Nothing between the row and the page may clip the highlight. */
+.cftable,
+.cfbody,
+.cfrow {
+  overflow: visible;
+}
+
+.rr-minor {
+  font-size: 9px;
+  font-weight: 500;
+  opacity: 0.75;
+}
+
+.rr-minor.rr-dim {
+  opacity: 0.22;
+}
+
+.railstage {
+  position: relative;
+}
+
+.rr-card {
+  position: absolute;
+  width: max-content;
+  max-width: 300px;
+  padding: 0.3rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--headbg) 38%, transparent);
+  backdrop-filter: blur(10px) saturate(130%);
+  -webkit-backdrop-filter: blur(10px) saturate(130%);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.rr-cardsubject {
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.rr-cardwho {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.35rem;
+  margin-top: 0.15rem;
+  min-width: 0;
+}
+
+.rr-cardwho span {
+  overflow-wrap: anywhere;
+}
+
+.rr-cardwho .avatar-img {
+  margin-top: 1px;
+}
+
+.rr-cardwhen {
+  margin-top: 0.1rem;
+  padding-left: calc(16px + 0.35rem);
+}
+
+.rr-cardwho .avatar-img {
+  flex: none;
+  border-radius: 50%;
+}
+
+/* Sticky stops at the scroller's padding edge; pull it up by the page's top padding (2.5rem page, 1.2rem dialog). */
+.settingspage .cfhead {
+  top: -2.5rem;
+}
+
+.modal .cfhead {
+  top: -1.2rem;
+}
+
+.cfdelmsg {
+  font-weight: 400;
+}
+
+.cfproposal {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  column-gap: 0.4rem;
+  align-items: start;
+  margin-top: 0.5rem;
+  line-height: 1.55;
+  padding: 0.5rem 0.65rem;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, var(--accent));
+  background: color-mix(in srgb, var(--headbg) 55%, transparent);
+  backdrop-filter: blur(10px) saturate(130%);
+  -webkit-backdrop-filter: blur(10px) saturate(130%);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+}
+
+.cfproposal .avatar-img {
+  border-radius: 50%;
+  margin-top: 0.2em;
+}
+
+.cfproposaltext {
+  min-width: 0;
+}
+
+.cfproposal .cfview {
+  grid-column: 1 / -1;
+  justify-self: center;
+  margin-top: 0.45rem;
+}
+
+.cfproposed {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin: 0.2rem 0 0.4rem;
+}
+
+.branchword {
+  white-space: nowrap;
+}

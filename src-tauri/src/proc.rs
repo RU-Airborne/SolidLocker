@@ -153,6 +153,15 @@ pub async fn run_git(repo: &Path, args: &[&str], timeout_secs: u64) -> AppResult
     run_program(repo, resolved_git().await, args, timeout_secs).await
 }
 
+pub async fn run_git_probe(repo: &Path, args: &[&str], timeout_secs: u64) -> bool {
+    let mut cmd = base_command(resolved_git().await, repo);
+    cmd.args(args);
+    matches!(
+        tokio::time::timeout(Duration::from_secs(timeout_secs), cmd.output()).await,
+        Ok(Ok(output)) if output.status.success()
+    )
+}
+
 pub async fn run_git_ok(repo: &Path, args: &[&str], timeout_secs: u64) -> AppResult<GitOutput> {
     let out = run_git(repo, args, timeout_secs).await?;
     if !out.ok() {

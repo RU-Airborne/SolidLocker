@@ -7,6 +7,7 @@ import {
   getLocks,
   getRepoStatus,
   listFiles,
+  listConflicts,
   releaseFiles,
   saveAndShare,
   syncAttributes,
@@ -114,5 +115,16 @@ export function useSyncAttributes() {
   return useMutation({
     mutationFn: syncAttributes,
     onSettled: invalidate,
+  });
+}
+
+// Files a half-finished merge left behind. Cheap to poll.
+export function useConflicts(enabled: boolean) {
+  return useQuery({
+    queryKey: ["conflicts"],
+    queryFn: listConflicts,
+    enabled,
+    refetchInterval: 10_000,
+    retry: false,
   });
 }

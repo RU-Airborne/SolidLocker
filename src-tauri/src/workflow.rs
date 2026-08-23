@@ -550,7 +550,7 @@ pub async fn get_latest(root: &Path) -> AppResult<GetLatestResult> {
     let conflicted = after.conflicted;
     let cad_conflicts = lockable_subset(root, &conflicted).await?;
     if !cad_conflicts.is_empty() {
-        let _ = run_git(root, &["merge", "--abort"], 60).await;
+        // merge left in progress on purpose: the picker needs both versions in the index
         return Err(AppError::with_detail(
             "CAD_CONFLICT",
             messages::CAD_CONFLICT,
@@ -607,11 +607,7 @@ pub struct SaveResult {
 
 pub async fn push_now(root: &Path) -> AppResult<SaveResult> {
     let status = repo::get_repo_status(root).await?;
-    let push_args: Vec<&str> = if status.upstream.is_none() {
-        vec!["push", "-u", "origin", "HEAD"]
-    } else {
-        vec!["push"]
-    };
+    let push_args = repo::push_args(&status);
 
     let push = run_git(root, &push_args, 600).await?;
     if push.ok() {
@@ -912,6 +908,7 @@ pub async fn merge_branch(root: &Path, name: &str) -> AppResult<MergeOutcome> {
                 already_up_to_date: false,
             });
         }
+        // back out; clashes go through the picker (conflicts::combine_with_picks)
         let _ = run_git(root, &["merge", "--abort"], 60).await;
         return Err(AppError::with_detail(
             "CONFLICT",
@@ -992,19 +989,28 @@ pub struct MergePreview {
     pub up_to_date: bool,
 }
 
-pub async fn merge_preview(root: &Path, name: &str) -> AppResult<MergePreview> {
+/// origin/<name> when it exists, otherwise the local branch.
+pub async fn merge_ref_for(root: &Path, name: &str) -> String {
     let remote_ref = format!("refs/remotes/origin/{name}");
     let has_remote = run_git(root, &["rev-parse", "--verify", "--quiet", &remote_ref], 15)
         .await
         .map(|o| o.ok())
         .unwrap_or(false);
-    let merge_ref = if has_remote {
+    if has_remote {
         format!("origin/{name}")
     } else {
         name.to_string()
-    };
+    }
+}
 
-    let range = format!("HEAD...{merge_ref}");
+pub async fn merge_preview(root: &Path, name: &str) -> AppResult<MergePreview> {
+    merge_preview_into(root, "HEAD", name).await
+}
+
+async fn merge_preview_into(root: &Path, base_ref: &str, name: &str) -> AppResult<MergePreview> {
+    let merge_ref = merge_ref_for(root, name).await;
+
+    let range = format!("{base_ref}...{merge_ref}");
     let out = crate::proc::run_git_ok(
         root,
         &["-c", "core.quotepath=false", "diff", "--name-status", &range],
@@ -1037,7 +1043,7 @@ pub async fn merge_preview(root: &Path, name: &str) -> AppResult<MergePreview> {
             "--write-tree",
             "--no-messages",
             "--name-only",
-            "HEAD",
+            base_ref,
             &merge_ref,
         ],
         60,

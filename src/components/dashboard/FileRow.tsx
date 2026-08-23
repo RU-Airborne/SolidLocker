@@ -28,7 +28,7 @@ function runningLabel(
 }
 
 /** The installed SolidWorks' own icon */
-function useSwIcon(): string {
+export function useSwIcon(): string {
   const icon = useQuery({
     queryKey: ["swIcon"],
     queryFn: getSwIcon,

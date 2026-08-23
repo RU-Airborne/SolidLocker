@@ -1,4 +1,5 @@
 mod avatars;
+mod conflicts;
 mod deps;
 mod error;
 mod fsattr;
@@ -140,6 +141,120 @@ async fn check_outside_refs(
 ) -> AppResult<deps::OutsideCheck> {
     let root = current_repo(&app)?;
     deps::outside_references(&root, paths).await
+}
+
+/// Branch names for the two sides of a merge in progress.
+#[tauri::command]
+async fn conflict_sides(app: AppHandle) -> AppResult<(String, String)> {
+    let root = current_repo(&app)?;
+    conflicts::sides(&root).await
+}
+
+/// Files that would clash if `branch` were merged in. Nothing is merged.
+#[tauri::command]
+async fn plan_conflicts(app: AppHandle, branch: String) -> AppResult<Vec<conflicts::Conflict>> {
+    let root = current_repo(&app)?;
+    conflicts::plan(&root, &branch).await
+}
+
+/// Same, between two remote branches; works from any checkout.
+#[tauri::command]
+async fn plan_conflicts_between(
+    app: AppHandle,
+    base: String,
+    head: String,
+) -> AppResult<Vec<conflicts::Conflict>> {
+    let root = current_repo(&app)?;
+    conflicts::plan_between(&root, &base, &head).await
+}
+
+/// Which side each clashing file took in a past merge, read from the merge commit.
+#[tauri::command]
+async fn merged_picks(app: AppHandle, sha: String) -> AppResult<conflicts::MergedPlan> {
+    let root = current_repo(&app)?;
+    conflicts::merged_picks(&root, &sha).await
+}
+
+/// Merge a branch, settling clashes per the picks, then push.
+#[tauri::command]
+async fn combine_with_picks(
+    app: AppHandle,
+    gate: State<'_, gate::RepoGate>,
+    branch: String,
+    picks: Vec<conflicts::Pick>,
+) -> AppResult<()> {
+    let root = current_repo(&app)?;
+    let _tree = gate.exclusive().await;
+    conflicts::combine_with_picks(&root, &branch, &picks).await
+}
+
+#[tauri::command]
+async fn list_conflicts(app: AppHandle) -> AppResult<Vec<conflicts::Conflict>> {
+    let root = current_repo(&app)?;
+    conflicts::list(&root).await
+}
+
+/// Thumbnail of one side of a conflicted CAD file.
+#[tauri::command]
+async fn preview_conflict_side(
+    app: AppHandle,
+    cache: State<'_, thumbs::ThumbCache>,
+    path: String,
+    side: String,
+) -> AppResult<Option<String>> {
+    let root = current_repo(&app)?;
+    let scratch = conflicts::extract_side(&root, &path, &side).await?;
+    let dir = scratch.parent().unwrap_or(&root).to_path_buf();
+    let name = scratch
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let drawn = thumbs::thumbnails(&dir, vec![name.clone()], 256, &cache).await?;
+    let _ = std::fs::remove_file(&scratch);
+    Ok(drawn.get(&name).cloned())
+}
+
+/// Open one side of a conflicted file in SolidWorks, as a read-only scratch copy.
+#[tauri::command]
+async fn open_conflict_side(app: AppHandle, path: String, side: String) -> AppResult<()> {
+    let root = current_repo(&app)?;
+    let scratch = conflicts::extract_side(&root, &path, &side).await?;
+    let _ = fsattr::set_readonly(&scratch, true);
+    tauri_plugin_opener::open_path(scratch.to_string_lossy().into_owned(), None::<&str>)
+        .map_err(|e| AppError::new("OPEN", e.to_string()))
+}
+
+#[tauri::command]
+async fn resolve_conflict(
+    app: AppHandle,
+    gate: State<'_, gate::RepoGate>,
+    path: String,
+    side: String,
+) -> AppResult<()> {
+    let root = current_repo(&app)?;
+    let _tree = gate.exclusive().await;
+    conflicts::resolve(&root, &path, &side).await
+}
+
+#[tauri::command]
+async fn finish_conflicts(
+    app: AppHandle,
+    gate: State<'_, gate::RepoGate>,
+    picks: Vec<conflicts::Pick>,
+) -> AppResult<()> {
+    let root = current_repo(&app)?;
+    let _tree = gate.exclusive().await;
+    conflicts::finish(&root, &picks).await
+}
+
+#[tauri::command]
+async fn abandon_conflicts(
+    app: AppHandle,
+    gate: State<'_, gate::RepoGate>,
+) -> AppResult<()> {
+    let root = current_repo(&app)?;
+    let _tree = gate.exclusive().await;
+    conflicts::abandon(&root).await
 }
 
 #[tauri::command]
@@ -549,6 +664,18 @@ async fn switch_branch(
     let root = current_repo(&app)?;
     let _switching = gate.exclusive_switch().await;
     repo::switch_branch(&root, &name).await
+}
+
+/// Delete a branch that is fully merged into the default branch.
+#[tauri::command]
+async fn delete_branch(
+    app: AppHandle,
+    gate: State<'_, gate::RepoGate>,
+    name: String,
+) -> AppResult<()> {
+    let root = current_repo(&app)?;
+    let _tree = gate.exclusive().await;
+    repo::delete_branch(&root, &name).await
 }
 
 #[tauri::command]
@@ -1035,6 +1162,18 @@ fn report_window_failure(app: &tauri::AppHandle, detail: &str) {
             clone_repo,
             get_commit_identities,
             check_outside_refs,
+            conflict_sides,
+            plan_conflicts,
+            plan_conflicts_between,
+            merged_picks,
+            delete_branch,
+            combine_with_picks,
+            list_conflicts,
+            preview_conflict_side,
+            open_conflict_side,
+            resolve_conflict,
+            finish_conflicts,
+            abandon_conflicts,
             get_commit_stats,
             get_file_history,
             get_sw_icon,

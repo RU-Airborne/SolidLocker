@@ -319,6 +319,14 @@ async fn only_look_changed(root: &Path, candidates: &[(String, String)]) -> Vec<
         .collect()
 }
 
+pub fn push_args(status: &RepoStatus) -> Vec<&'static str> {
+    let its_own = format!("origin/{}", status.branch);
+    match status.upstream.as_deref() {
+        Some(up) if up == its_own => vec!["push"],
+        _ => vec!["push", "-u", "origin", "HEAD"],
+    }
+}
+
 pub async fn get_repo_status(root: &Path) -> AppResult<RepoStatus> {
     let out = run_git_ok(root, STATUS_ARGS, 30).await?;
     let mut status = parse_status_v2(&out.stdout);
@@ -722,7 +730,12 @@ pub async fn extract_version(root: &Path, path: &str, sha: &str) -> AppResult<st
         .extension()
         .map(|e| e.to_string_lossy().into_owned())
         .unwrap_or_else(|| "dat".into());
-    let short: String = sha.chars().take(12).collect();
+    // `sha` may be a ref like origin/x; the slash would become a folder in the temp path
+    let short: String = sha
+        .chars()
+        .take(12)
+        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .collect();
     let stem: String = path
         .rsplit('/')
         .next()
@@ -1096,7 +1109,7 @@ pub struct BranchSummary {
     pub forked_at: i64,
 }
 
-async fn default_branch(root: &Path) -> String {
+pub async fn default_branch(root: &Path) -> String {
     if let Ok(out) = run_git(root, &["symbolic-ref", "refs/remotes/origin/HEAD"], 15).await {
         if out.ok() {
             if let Some(name) = out.stdout.trim().strip_prefix("refs/remotes/origin/") {
@@ -1119,6 +1132,60 @@ async fn default_branch(root: &Path) -> String {
     }
     "main".to_string()
 }
+
+pub async fn delete_branch(root: &Path, name: &str) -> AppResult<()> {
+    let default = default_branch(root).await;
+    if name == default {
+        return Err(AppError::new(
+            "BRANCH",
+            format!("{name} is the branch everything joins; it stays."),
+        ));
+    }
+    let here = run_git(root, &["rev-parse", "--abbrev-ref", "HEAD"], 15)
+        .await
+        .map(|o| o.stdout.trim().to_string())
+        .unwrap_or_default();
+    if name == here {
+        return Err(AppError::new(
+            "BRANCH",
+            format!("You are on {name}. Switch to another branch first, then delete it."),
+        ));
+    }
+    let remote = format!("origin/{name}");
+    let on_remote = run_git(root, &["rev-parse", "--verify", "--quiet", &remote], 15)
+        .await
+        .map(|o| o.ok())
+        .unwrap_or(false);
+    let tip = if on_remote { remote.clone() } else { name.to_string() };
+    let target = format!("origin/{default}");
+    let merged = run_git(root, &["merge-base", "--is-ancestor", &tip, &target], 30)
+        .await
+        .map(|o| o.ok())
+        .unwrap_or(false);
+    if !merged {
+        return Err(AppError::new(
+            "BRANCH",
+            format!("{name} still has work that is not in {default}. Combine it first, or leave it."),
+        ));
+    }
+
+    if on_remote {
+        let out = run_git(root, &["push", "origin", "--delete", name], 120).await?;
+        if !out.ok() && !out.stderr.contains("remote ref does not exist") {
+            return Err(AppError::git(out.stderr.trim().to_string()));
+        }
+    }
+    // -D: merged against origin/<default> was checked above; -d would compare
+    // against the upstream instead
+    let local = run_git(root, &["branch", "-D", name], 15).await?;
+    if !local.ok() && !local.stderr.contains("not found") {
+        return Err(AppError::git(local.stderr.trim().to_string()));
+    }
+    let _ = run_git(root, &["fetch", "--prune", "origin"], 120).await;
+    crate::logger::info(format!("deleted branch {name}: everything on it was already in {default}"));
+    Ok(())
+}
+
 
 pub async fn branch_overview(root: &Path) -> AppResult<Vec<BranchSummary>> {
     let default = default_branch(root).await;
@@ -1651,6 +1718,8 @@ pub struct GraphCommit {
     pub subject: String,
     /// Branch names pointing at this commit ("main", "origin/motor-mount").
     pub refs: Vec<String>,
+    /// The rest of the message after the first line, when there is one.
+    pub body: String,
     pub is_head: bool,
 }
 
@@ -1661,8 +1730,9 @@ pub fn parse_graph_log(stdout: &str) -> Vec<GraphCommit> {
         if record.is_empty() {
             continue;
         }
-        let fields: Vec<&str> = record.splitn(7, '\u{1f}').collect();
-        let [sha, parents, author_name, author_email, date, decorations, subject] = fields[..]
+        let fields: Vec<&str> = record.splitn(8, '\u{1f}').collect();
+        let [sha, parents, author_name, author_email, date, decorations, subject, body] =
+            fields[..]
         else {
             continue;
         };
@@ -1688,6 +1758,7 @@ pub fn parse_graph_log(stdout: &str) -> Vec<GraphCommit> {
             author_email: author_email.to_string(),
             date: date.to_string(),
             subject: subject.trim().to_string(),
+            body: body.trim().to_string(),
             refs,
             is_head,
         });
@@ -1708,7 +1779,7 @@ pub async fn commit_graph(root: &Path, limit: usize) -> AppResult<Vec<GraphCommi
             "--topo-order",
             "-n",
             &n,
-            "--format=%H\u{1f}%P\u{1f}%an\u{1f}%ae\u{1f}%aI\u{1f}%D\u{1f}%s\u{1e}",
+            "--format=%H\u{1f}%P\u{1f}%an\u{1f}%ae\u{1f}%aI\u{1f}%D\u{1f}%s\u{1f}%b\u{1e}",
         ],
         60,
     )
@@ -1835,12 +1906,8 @@ pub async fn init_lockable(root: &Path) -> AppResult<InitLockableResult> {
     // offline should not undo the local setup. Push is best effort.
     let pushed = if committed {
         let status = get_repo_status(root).await?;
-        let push_args: Vec<&str> = if status.upstream.is_none() {
-            vec!["push", "-u", "origin", "HEAD"]
-        } else {
-            vec!["push"]
-        };
-        run_git(root, &push_args, 300)
+        let args = push_args(&status);
+        run_git(root, &args, 300)
             .await
             .map(|o| o.ok())
             .unwrap_or(false)
@@ -2034,5 +2101,37 @@ mod tests {
             Some("org/repo".into())
         );
         assert_eq!(parse_slug_from_remote("https://gitlab.com/org/repo"), None);
+    }
+
+    #[test]
+    fn a_branch_started_from_another_pushes_to_its_own_name() {
+        use super::{push_args, RepoStatus};
+        let make = |branch: &str, upstream: Option<&str>| RepoStatus {
+            branch: branch.to_string(),
+            upstream: upstream.map(str::to_string),
+            ahead: 0,
+            behind: 0,
+            dirty: Vec::new(),
+            untracked: Vec::new(),
+            conflicted: Vec::new(),
+        };
+
+        assert_eq!(
+            push_args(&make("full-assembly", Some("origin/full-assembly"))),
+            vec!["push"]
+        );
+        assert_eq!(
+            push_args(&make("brand-new", None)),
+            vec!["push", "-u", "origin", "HEAD"]
+        );
+        // branched off full-assembly, so it inherited that upstream
+        assert_eq!(
+            push_args(&make("mission-integration", Some("origin/full-assembly"))),
+            vec!["push", "-u", "origin", "HEAD"]
+        );
+        assert_eq!(
+            push_args(&make("wing/ribs", Some("origin/wing/ribs"))),
+            vec!["push"]
+        );
     }
 }

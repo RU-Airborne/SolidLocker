@@ -1,21 +1,27 @@
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { createPortal } from "react-dom";
 
 import {
+  deleteBranch,
   getBranchOverview,
   getCommitFiles,
   getGraph,
   type GraphCommit,
 } from "../../api";
+import { isAppError } from "../../types";
+import { BranchName } from "../common/BranchName";
 import { formatDate, formatDateTime } from "../../dates";
 import {
   BranchGlyph,
   EyeGlyph,
   MergeGlyph,
   RestoreGlyph,
+  TrashGlyph,
 } from "../common/HistoryDiagrams";
 import type { VersionRef } from "../dialogs/RestoreVersionDialog";
 import { githubAvatarFromEmail, UserAvatar } from "../common/UserAvatar";
+import { Loading } from "../common/Loading";
 import {
   formatPerson,
   resolveCommitAuthors,
@@ -130,19 +136,24 @@ export function layoutGraph(commits: GraphCommit[]): {
   return { rows, laneCount };
 }
 
+// One hue per lane; 16 before a repeat.
 const LANE_COLORS = [
-  "#4e8cff",
-  "#d29922",
-  "#39c5cf",
-  "#bc8cff",
-  "#f778ba",
-  "#e3b341",
-  "#58a6ff",
-  "#8b949e",
-  "#6cb2c9",
-  "#c9a2f7",
-  "#b0851f",
-  "#7ea6e0",
+  "#4e8cff", // blue
+  "#d29922", // amber
+  "#39c5cf", // teal
+  "#bc8cff", // violet
+  "#f778ba", // pink
+  "#7ee787", // green
+  "#ff9f43", // orange
+  "#e3b341", // gold
+  "#6ee7b7", // mint
+  "#f47067", // coral
+  "#a5b4fc", // periwinkle
+  "#c5e063", // lime
+  "#8b949e", // slate
+  "#e2a8f0", // orchid
+  "#5ad1a6", // jade
+  "#dbab7a", // sand
 ];
 
 const ROW_H = 34;
@@ -337,17 +348,13 @@ function CommitDetail({
   };
 
   function restoreFromHere() {
-    if (cadFiles.length === 1) {
-      // one file
-      onViewVersion(cadFiles[0].path, ref, "all");
-    } else {
-      // several: let them pick which ones come back together
-      onRestoreFiles(cadFiles.map((f) => f.path), ref);
-    }
+    // Always the whole change. Routing a one-file commit through the per-file dialog made the button mean two things.
+    onRestoreFiles(cadFiles.map((f) => f.path), ref);
   }
 
   return (
     <div className="gg-detail">
+      {commit.body && <p className="gg-body">{commit.body}</p>}
       <p className="muted small">
         {formatDateTime(commit.date)} · {commit.sha.slice(0, 8)}
       </p>
@@ -360,7 +367,7 @@ function CommitDetail({
                 {f.status}
               </span>
               <span className="gg-filepath">{f.path}</span>
-              {CAD_FILE.test(f.path) && f.status !== "D" && (
+              {CAD_FILE.test(f.path) && f.status !== "D" && !commit.is_head && (
                 <button
                   className="fh-restore"
                   onClick={() =>
@@ -384,6 +391,8 @@ function CommitDetail({
         <p className="muted small">No file changes recorded.</p>
       )}
       <div className="commitactions">
+        {/* Already here: only branching off makes sense. */}
+        {!commit.is_head && (
         <button
           className="branchoffbtn"
           onClick={() =>
@@ -392,12 +401,13 @@ function CommitDetail({
               `${commit.subject} · ${formatDate(commit.date)}`,
             )
           }
-          title="Swap every file to this moment for a look around, without changing anything. One click brings you back"
+          title="Open the project as it was at this point, read-only. One click brings you back"
         >
           <EyeGlyph />
-          Look around here
+          View this version (read-only)
         </button>
-        {cadFiles.length > 0 && (
+        )}
+        {cadFiles.length > 0 && !commit.is_head && (
           <button
             className="branchoffbtn"
             onClick={restoreFromHere}
@@ -407,6 +417,16 @@ function CommitDetail({
             Restore this version…
           </button>
         )}
+        {/* 
+        <button
+          className="branchoffbtn"
+          onClick={() => onUndoChange(ref)}
+          title="Put every file this change touched back to how it was"
+        >
+          <RestoreGlyph />
+          Undo this change…
+        </button>
+        */}
         <button
           className="branchoffbtn"
           onClick={() =>
@@ -444,11 +464,28 @@ export function HistoryPage({
     scopeDefault?: "all" | "file",
   ) => void;
   onRestoreFiles: (paths: string[], commit: VersionRef) => void;
-  /** Look around a whole commit without changing anything. */
+  /** View a whole commit as it was, read-only. */
   onPreviewCommit: (sha: string, label: string) => void;
   /** Open the combine dialog for a branch (second arg: the default branch). */
   onMergeBranch: (branch: string, defaultBranch: string) => void;
 }) {
+  const queryClient = useQueryClient();
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  function deleteNow() {
+    if (!deleting) return;
+    setDeleteBusy(true);
+    setDeleteError(null);
+    deleteBranch(deleting)
+      .then(() => {
+        setDeleting(null);
+        queryClient.invalidateQueries();
+      })
+      .catch((e) => setDeleteError(isAppError(e) ? e.message : String(e)))
+      .finally(() => setDeleteBusy(false));
+  }
+
   const graph = useQuery({
     queryKey: ["graph"],
     queryFn: getGraph,
@@ -533,13 +570,10 @@ export function HistoryPage({
 
       <div className="historybody">
         <aside className="branchlist">
-          <h3>Branches</h3>
-          {branches.isLoading && <p className="muted small">Reading…</p>}
+          {branches.isLoading && <Loading what="Reading the branches…" />}
           {(branches.data ?? []).map((b) => {
             const tip = tips.get(b.name);
             const color = tip ? laneColor(tip.lane) : "var(--muted)";
-            // branches parked on the same commit share a line (and color) in
-            // the railway — say so, or it just looks like we ran out of paint
             const twins = (branches.data ?? [])
               .filter(
                 (o) => o.name !== b.name && tips.get(o.name)?.sha === tip?.sha,
@@ -566,7 +600,7 @@ export function HistoryPage({
                   <span className="branchdot" style={{ background: color }} />
                   {b.name}
                 </button>
-                {b.is_default && <span className="badge">main line</span>}
+                {b.is_default && <span className="badge">default</span>}
                 {b.name === currentBranch && (
                   <span className="badge badge-mine">you are here</span>
                 )}
@@ -578,7 +612,8 @@ export function HistoryPage({
                 {!b.is_default && (b.ahead > 0 || b.behind > 0) && (
                   <>
                     <br />
-                    {b.ahead} ahead · {b.behind} behind the main line
+                    {b.ahead} ahead · {b.behind} behind{" "}
+                    {(branches.data ?? []).find((x) => x.is_default)?.name ?? "main"}
                   </>
                 )}
                 {twins.length > 0 && (
@@ -600,28 +635,73 @@ export function HistoryPage({
                     Switch to it
                   </button>
                 )}
-                <button
-                  className="branchoffbtn"
-                  onClick={() =>
-                    onMergeBranch(
-                      b.name,
-                      (branches.data ?? []).find((x) => x.is_default)?.name ??
-                        "main",
-                    )
-                  }
-                  title="Bring this branch's work into another branch directly, or through a reviewed pull request on GitHub"
-                >
-                  <MergeGlyph />
-                  Combine…
-                </button>
+                {b.name !== currentBranch && (
+                  <button
+                    className="branchoffbtn"
+                    onClick={() =>
+                      onMergeBranch(
+                        b.name,
+                        (branches.data ?? []).find((x) => x.is_default)?.name ??
+                          "main",
+                      )
+                    }
+                    title="Bring this branch's work into another branch, directly or through a review"
+                  >
+                    <MergeGlyph />
+                    Combine…
+                  </button>
+                )}
+                {/* Fully merged: only a name now. */}
+                {!b.is_default && b.name !== currentBranch && b.ahead === 0 && (
+                  <button
+                    className="branchoffbtn branchdelete"
+                    onClick={() => {
+                      setDeleteError(null);
+                      setDeleting(b.name);
+                    }}
+                    title={`Everything on ${b.name} is already in ${(branches.data ?? []).find((x) => x.is_default)?.name ?? "main"}, so it can go`}
+                  >
+                    <TrashGlyph />
+                    Delete…
+                  </button>
+                )}
               </div>
             </div>
             );
           })}
         </aside>
 
+        {/* Portalled: inside the page's own glass it came out too see-through. */}
+        {deleting &&
+          createPortal(
+          <div className="modal-backdrop" onClick={() => !deleteBusy && setDeleting(null)}>
+            <div className="modal" onClick={(e) => e.stopPropagation()}>
+              <h2>Delete this branch?</h2>
+              <p className="muted">
+                Everything on <BranchName name={deleting} /> is already in{" "}
+                <BranchName
+                  name={(branches.data ?? []).find((x) => x.is_default)?.name ?? "main"}
+                />
+                , so nothing is lost. The branch is removed from GitHub and
+                this computer; its commits stay in the history.
+              </p>
+              {deleteError && <p className="errdetail">{deleteError}</p>}
+              <div className="modal-actions">
+                <button onClick={() => setDeleting(null)} disabled={deleteBusy}>
+                  Keep it
+                </button>
+                <button className="danger" onClick={deleteNow} disabled={deleteBusy}>
+                  {deleteBusy ? "Deleting…" : "Delete it"}
+                </button>
+              </div>
+            </div>
+          </div>
+            ,
+            document.body,
+          )}
+
         <section className="graphpane">
-          {graph.isLoading && <p className="muted">Reading the history…</p>}
+          {graph.isLoading && <Loading what="Reading the history…" />}
           {graph.isError && (
             <p className="muted">{String(graph.error)}</p>
           )}

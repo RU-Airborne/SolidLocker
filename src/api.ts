@@ -86,6 +86,9 @@ export const mergePreview = (name: string) =>
 
 export const undoMerge = () => invoke<void>("undo_merge");
 
+export const deleteBranch = (name: string) =>
+  invoke<void>("delete_branch", { name });
+
 export const createBranch = (name: string, from: string | null) =>
   invoke<void>("create_branch", { name, from });
 
@@ -105,6 +108,8 @@ export interface GraphCommit {
   date: string;
   subject: string;
   refs: string[];
+  /** The rest of the message after the first line, when there is one. */
+  body: string;
   is_head: boolean;
 }
 
@@ -143,6 +148,49 @@ export interface OutsideCheck {
   checked: boolean;
   why: string | null;
 }
+
+export interface SideInfo {
+  sha: string;
+  author: string;
+  author_email: string;
+  date: string;
+  subject: string;
+  present: boolean;
+  git_ref: string;
+  full_sha: string;
+}
+
+export interface Conflict {
+  path: string;
+  is_cad: boolean;
+  resolved: string | null;
+  mine: SideInfo;
+  theirs: SideInfo;
+}
+
+export const conflictSides = () => invoke<[string, string]>("conflict_sides");
+
+export const listConflicts = () => invoke<Conflict[]>("list_conflicts");
+
+export const previewConflictSide = (path: string, side: string) =>
+  invoke<string | null>("preview_conflict_side", { path, side });
+
+export const openConflictSide = (path: string, side: string) =>
+  invoke<void>("open_conflict_side", { path, side });
+
+export const resolveConflict = (path: string, side: string) =>
+  invoke<void>("resolve_conflict", { path, side });
+
+export const finishConflicts = (picks: { path: string; side: string }[]) =>
+  invoke<void>("finish_conflicts", { picks });
+
+export const planConflicts = (branch: string) =>
+  invoke<Conflict[]>("plan_conflicts", { branch });
+
+export const combineWithPicks = (branch: string, picks: { path: string; side: string }[]) =>
+  invoke<void>("combine_with_picks", { branch, picks });
+
+export const abandonConflicts = () => invoke<void>("abandon_conflicts");
 
 export const checkOutsideRefs = (paths: string[]) =>
   invoke<OutsideCheck>("check_outside_refs", { paths });

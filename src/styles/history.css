@@ -39,6 +39,7 @@
 
 .branchlist {
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding-right: 0.4rem;
 }
 
@@ -113,6 +114,7 @@
 
 .graphpane {
   overflow-y: auto;
+  overscroll-behavior: contain;
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 0.4rem 0.6rem;
@@ -234,6 +236,31 @@
   padding: 0.3rem 0.6rem 0.7rem 0.9rem;
 }
 
+.gg-row.open .gg-subject {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+}
+
+.gg-row.open .gg-meta {
+  grid-column: 3;
+  grid-row: 2;
+  justify-self: end;
+  margin-top: 0.15rem;
+}
+
+.gg-row.open .gg-railcol {
+  grid-row: 1 / span 2;
+}
+
+.gg-body {
+  margin: 0 0 0.4rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+}
+
 .gg-detail p {
   margin: 0.2rem 0;
 }
@@ -296,6 +323,11 @@
   border-color: var(--accent);
   color: var(--accent);
   animation: pickpulse 1.1s ease-in-out 3;
+}
+
+.branchdelete:hover:not(:disabled) {
+  border-color: var(--error);
+  color: var(--error);
 }
 
 @keyframes pickpulse {
@@ -406,7 +438,10 @@
 }
 
 .gg-youarehere {
-  background: var(--accent);
+  background: color-mix(in srgb, var(--accent) 86%, transparent);
+  backdrop-filter: blur(22px) saturate(150%);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  border: 1px solid color-mix(in srgb, var(--accent) 70%, transparent);
   color: white;
   border-radius: 999px;
   padding: 0.05rem 0.6rem;
@@ -679,8 +714,41 @@ button.linkish:hover {
 .mergefilelist {
   max-height: 15rem;
   overflow-y: auto;
+  overscroll-behavior: contain;
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 0.3rem 0.6rem;
   margin: 0.4rem 0;
+}
+
+
+.loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.9rem;
+  padding: 3rem 1rem;
+  min-height: 14rem;
+}
+
+/* Size only; the spin is the dial inside the logo. */
+.loadinglogo {
+  width: 72px;
+  height: 72px;
+}
+
+.loadingtext {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+/* Centred against the railway beside it. */
+.branchlist .loading,
+.graphpane .loading {
+  height: 100%;
+  min-height: 0;
+  padding: 1rem;
 }

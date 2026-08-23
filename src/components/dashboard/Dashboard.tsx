@@ -25,6 +25,7 @@ import {
 import {
   useClaim,
   useOutsideRefs,
+  useConflicts,
   useFiles,
   useGetLatest,
   useLocks,
@@ -67,6 +68,7 @@ import { SetAsideDialog } from "../dialogs/SetAsideDialog";
 import { OfflineHelpDialog } from "../dialogs/OfflineHelpDialog";
 import { BranchOffDialog } from "../dialogs/BranchOffDialog";
 import { MergeBranchDialog } from "../dialogs/MergeBranchDialog";
+import { ResolveConflictsDialog } from "../dialogs/ResolveConflictsDialog";
 import {
   RestoreVersionDialog,
   type VersionRef,
@@ -677,6 +679,9 @@ export function Dashboard({ appState }: { appState: AppState }) {
   // close over state setters and mutateAsync, which React keeps stable.
   const currentBranch = repoStatus.data?.branch ?? appState.repo!.branch;
 
+  const openConflicts = useConflicts(!!appState.repo);
+  // plan = branch to combine (nothing merged yet); no plan = merge already half done
+  const [resolving, setResolving] = useState<{ plan?: string } | null>(null);
   // "Look around" mode: the tree is parked on an old commit.
   const previewState = useQuery({
     queryKey: ["previewState"],
@@ -1002,6 +1007,18 @@ export function Dashboard({ appState }: { appState: AppState }) {
         onOpenProgress={() => setProgressOpen(true)}
         onOpenHistory={() => setHistoryOpen(true)}
       />
+      {(openConflicts.data?.length ?? 0) > 0 && !resolving && (
+        <div className="notice warn">
+          <span>
+            A combine is half done: {openConflicts.data!.length} file
+            {openConflicts.data!.length === 1 ? "" : "s"} changed on both sides
+            and need a version picked.
+          </span>
+          <button className="notice-ok" onClick={() => setResolving({})}>
+            Sort it out
+          </button>
+        </div>
+      )}
       {stuckFiles && stuckFiles.length > 0 && (
         <div className="notice warn">
           <span>{copy.stuckFiles(stuckFiles)}</span>
@@ -1421,6 +1438,22 @@ export function Dashboard({ appState }: { appState: AppState }) {
           }}
         />
       )}
+      {resolving && (
+        <ResolveConflictsDialog
+          plan={resolving.plan}
+          ours={currentBranch}
+          onClose={() => setResolving(null)}
+          onOpenCommit={(sha) => {
+            setResolving(null);
+            setHistoryFocusSha(sha);
+            setHistoryOpen(true);
+          }}
+          onDone={(notice) => {
+            setResolving(null);
+            setNotice(notice);
+          }}
+        />
+      )}
       {mergeTarget && (
         <MergeBranchDialog
           branch={mergeTarget.branch}
@@ -1428,6 +1461,10 @@ export function Dashboard({ appState }: { appState: AppState }) {
           defaultBranch={mergeTarget.defaultBranch}
           repoSlug={appState.repo!.repo_slug}
           onClose={() => setMergeTarget(null)}
+          onResolve={(branch) => {
+            setMergeTarget(null);
+            setResolving({ plan: branch });
+          }}
           onMerged={(text, undoable) => {
             setMergeTarget(null);
             queryClient.invalidateQueries();

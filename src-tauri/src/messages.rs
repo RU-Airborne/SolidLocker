@@ -86,6 +86,23 @@ pub fn restore_needs_locks(files: &str) -> String {
 pub const SW_NEWER_FORMAT: &str =
     "This file is in the newer (2015 and later) SolidWorks format, which keeps its list of parts compressed. SolidWorks has to be running to read it.";
 
+pub fn conflicts_changed_underneath(n: usize) -> String {
+    format!(
+        "The branch changed since this list was drawn: {n} file{} now clash that were not here before. Nothing was combined. Look again to see the current list.",
+        if n == 1 { "" } else { "s" }
+    )
+}
+
+pub const UNKNOWN_SIDE: &str = "That is not one of the two versions on offer.";
+
+pub const CONFLICTS_SETTLED_NOT_SHARED: &str =
+    "Your choices are made and combined here, but GitHub could not be reached to share the result. Use Save & Share once you are back online.";
+
+pub fn conflicts_still_open(n: usize) -> String {
+    format!("{n} file{} still {} a version chosen.", if n == 1 { "" } else { "s" }, if n == 1 { "needs" } else { "need" })
+}
+
+
 pub fn restore_files_open(files: &str) -> String {
     format!("Close these files in SolidWorks first. SolidWorks keeps its own copy in memory and would write it straight back: {files}")
 }
@@ -123,7 +140,7 @@ pub fn could_not_reach_github(stderr: &str) -> String {
 }
 
 pub const CAD_CONFLICT: &str =
-    "A CAD file was changed both here and on GitHub. This should not happen with locking. The update was cancelled. Ask your lead for help.";
+    "A CAD file was changed both here and on GitHub, so only one version of it can be kept. Pick which one.";
 
 pub const TEXT_CONFLICT: &str = "Some text files changed both here and on GitHub.";
 
@@ -144,7 +161,7 @@ pub const UNDO_MERGE_NOTHING: &str = "There is no recent combine to undo.";
 
 pub fn merge_conflict_aborted(branch: &str, files: &str) -> String {
     format!(
-        "'{branch}' and your branch changed the same files, so nothing was combined: {files}. Combine them through a pull request on GitHub instead, or ask your lead."
+        "'{branch}' and this branch changed the same files, so only one version of each can be kept: {files}. Pick which to keep for each one."
     )
 }
 

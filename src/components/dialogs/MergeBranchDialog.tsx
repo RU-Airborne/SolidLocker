@@ -1,7 +1,8 @@
+import { BranchName } from "../common/BranchName";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { openUrl } from "@tauri-apps/plugin-opener";
 
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { mergeBranch, mergePreview, previewVersion } from "../../api";
 import { isAppError } from "../../types";
 import { InStepDiagram, MergeDiagram } from "../common/HistoryDiagrams";
@@ -67,15 +68,18 @@ export function MergeBranchDialog({
   branch,
   currentBranch,
   defaultBranch,
-  repoSlug,
   onMerged,
+  repoSlug,
+  onResolve,
   onClose,
 }: {
   branch: string;
   currentBranch: string;
   defaultBranch: string;
-  repoSlug: string;
   onMerged: (notice: string, undoable: boolean) => void;
+  repoSlug: string;
+  /** clash: hand over to the picker */
+  onResolve: (branch: string) => void;
   onClose: () => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -94,6 +98,7 @@ export function MergeBranchDialog({
   });
   const hasConflicts = (preview.data?.conflicts.length ?? 0) > 0;
   const upToDate = preview.data?.up_to_date === true;
+
   const incoming = preview.data?.files ?? [];
   const diagramInto = canLocalMerge ? currentBranch : defaultBranch;
 
@@ -116,6 +121,12 @@ export function MergeBranchDialog({
         !result.already_up_to_date,
       );
     } catch (e) {
+      // merge is already backed out at this point
+      if (isAppError(e) && e.code === "CONFLICT") {
+        setBusy(false);
+        onResolve(branch);
+        return;
+      }
       setError(isAppError(e) ? e.message : String(e));
       setBusy(false);
     }
@@ -138,7 +149,7 @@ export function MergeBranchDialog({
               <strong>
                 {incoming.length} file{incoming.length === 1 ? "" : "s"}
               </strong>{" "}
-              in <strong>{currentBranch}</strong> on this computer:
+              in <BranchName name={currentBranch} /> on this computer:
             </p>
             <div className="mergefilelist">
               <ul className="gg-files">
@@ -175,8 +186,8 @@ export function MergeBranchDialog({
         {upToDate ? (
           <>
             <p>
-              <strong>{diagramInto}</strong> already has everything from{" "}
-              <strong>{branch}</strong> , the two are in step, so there is
+              <BranchName name={diagramInto} /> already has everything from{" "}
+              <BranchName name={branch} /> , the two are in step, so there is
               nothing to combine right now.
             </p>
             <InStepDiagram fromBranch={branch} intoBranch={diagramInto} />
@@ -184,8 +195,8 @@ export function MergeBranchDialog({
         ) : (
           <>
             <p>
-              Bring <strong>{branch}</strong>&rsquo;s work into{" "}
-              <strong>{diagramInto}</strong>. After combining, one branch carries
+              Bring <BranchName name={branch} />&rsquo;s work into{" "}
+              <BranchName name={diagramInto} />. After combining, one branch carries
               both. Nothing from either branch is lost.
             </p>
             <MergeDiagram
@@ -205,7 +216,7 @@ export function MergeBranchDialog({
               <>
                 <p className="small">
                   This would bring {incoming.length} change
-                  {incoming.length === 1 ? "" : "s"} into {currentBranch}:
+                  {incoming.length === 1 ? "" : "s"} into <BranchName name={currentBranch} />:
                 </p>
                 <ul className="gg-files">
                   {incoming.slice(0, 8).map((f) => (
