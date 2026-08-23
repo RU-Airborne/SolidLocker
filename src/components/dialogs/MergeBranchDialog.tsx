@@ -228,7 +228,7 @@ export function MergeBranchDialog({
               <p className="warn-inline">
                 <BranchName name={branch} /> and <BranchName name={currentBranch} />{" "}
                 have never been connected: one of them started as an empty
-                branch. Merging brings all {incoming.length} file on <BranchName name={branch} />{" "} to <BranchName name={currentBranch} />.
+                branch. Merging brings all {incoming.length} file(s) on <BranchName name={branch} />{" "} to <BranchName name={currentBranch} />.
                 {hasConflicts && (
                   <>
                     , and{" "}
