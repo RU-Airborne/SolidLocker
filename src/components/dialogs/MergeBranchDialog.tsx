@@ -105,6 +105,7 @@ export function MergeBranchDialog({
   });
   const hasConflicts = (preview.data?.conflicts.length ?? 0) > 0;
   const upToDate = preview.data?.up_to_date === true;
+  const unrelated = preview.data?.unrelated === true;
 
   // unknown (offline, no remote) leaves the button on; push will say no anyway
   const guard = useQuery({
@@ -217,7 +218,30 @@ export function MergeBranchDialog({
                 , so merging here is off.
               </p>
             )}
-            {hasConflicts && !guarded && (
+            {preview.isError && (
+              <p className="errdetail">
+                Could not work out what this merge would bring:{" "}
+                {isAppError(preview.error) ? preview.error.message : String(preview.error)}
+              </p>
+            )}
+            {unrelated && !upToDate && (
+              <p className="warn-inline">
+                <BranchName name={branch} /> and <BranchName name={currentBranch} />{" "}
+                have never been connected: one of them started as an empty
+                branch. Merging brings all {incoming.length} file on <BranchName name={branch} />{" "} to <BranchName name={currentBranch} />.
+                {hasConflicts && (
+                  <>
+                    , and{" "}
+                    {preview.data!.conflicts.length === 1
+                      ? "one file exists"
+                      : `${preview.data!.conflicts.length} files exist`}{" "}
+                    on both sides under the same name, so those count as clashes
+                  </>
+                )}
+                .
+              </p>
+            )}
+            {hasConflicts && !guarded && !unrelated && (
               <p className="warn-inline">
                 Both branches changed{" "}
                 {preview.data!.conflicts.length === 1
@@ -257,7 +281,7 @@ export function MergeBranchDialog({
             <button
               className={`mergecard${confirming ? " selected" : ""}`}
               onClick={() => (hasConflicts ? onResolve(branch) : setConfirming(true))}
-              disabled={busy || guarded || preview.isLoading}
+              disabled={busy || guarded || preview.isLoading || preview.isError}
             >
               <MergeGlyph />
               <span className="vt-text">

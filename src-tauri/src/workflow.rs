@@ -1012,7 +1012,9 @@ pub async fn merge_branch(root: &Path, name: &str) -> AppResult<MergeOutcome> {
         name.to_string()
     };
 
-    let merge = repo::merge_past_illusions(root, &["merge", "--no-edit", &merge_ref], 300).await?;
+    let args = crate::conflicts::merge_args(root, &merge_ref).await;
+    let argv: Vec<&str> = args.iter().map(String::as_str).collect();
+    let merge = repo::merge_past_illusions(root, &argv, 300).await?;
     if merge.ok() {
         let already = merge.stdout.contains("Already up to date");
         crate::logger::info(format!("merged {merge_ref} into current branch (already_up_to_date={already})"));
@@ -1116,6 +1118,7 @@ pub struct MergePreview {
     pub files: Vec<repo::CommitFileChange>,
     pub conflicts: Vec<String>,
     pub up_to_date: bool,
+    pub unrelated: bool,
 }
 
 /// origin/<name> when it exists, otherwise the local branch.
@@ -1151,13 +1154,16 @@ pub async fn merge_preview_between(
 async fn merge_preview_into(root: &Path, base_ref: &str, name: &str) -> AppResult<MergePreview> {
     let merge_ref = merge_ref_for(root, name).await;
 
+    // No shared commit: there is no "since they parted", so the whole branch
+    // is what comes in.
+    let unrelated = !crate::conflicts::has_merge_base(root, base_ref, &merge_ref).await;
     let range = format!("{base_ref}...{merge_ref}");
-    let out = crate::proc::run_git_ok(
-        root,
-        &["-c", "core.quotepath=false", "diff", "--name-status", &range],
-        60,
-    )
-    .await?;
+    let diff_args: Vec<&str> = if unrelated {
+        vec!["-c", "core.quotepath=false", "diff", "--name-status", crate::conflicts::EMPTY_TREE, &merge_ref]
+    } else {
+        vec!["-c", "core.quotepath=false", "diff", "--name-status", &range]
+    };
+    let out = crate::proc::run_git_ok(root, &diff_args, 60).await?;
     let mut files = Vec::new();
     for line in out.stdout.lines() {
         let Some((status, rest)) = line.trim_end().split_once('\t') else {
@@ -1177,7 +1183,9 @@ async fn merge_preview_into(root: &Path, base_ref: &str, name: &str) -> AppResul
     // Dry-run the merge in memory to predict collisions. 
     // Older gits without --write-tree just skip the prediction.
     let mut conflicts: Vec<String> = Vec::new();
-    if let Ok(mt) = run_git(
+    if unrelated {
+        conflicts = crate::conflicts::common_paths(root, base_ref, &merge_ref).await;
+    } else if let Ok(mt) = run_git(
         root,
         &[
             "merge-tree",
@@ -1211,6 +1219,7 @@ async fn merge_preview_into(root: &Path, base_ref: &str, name: &str) -> AppResul
         up_to_date: files.is_empty(),
         files,
         conflicts,
+        unrelated,
     })
 }
 

@@ -89,6 +89,7 @@ export interface MergePreview {
   files: { status: string; path: string }[];
   conflicts: string[];
   up_to_date: boolean;
+  unrelated: boolean;
 }
 
 export const mergePreview = (name: string) =>

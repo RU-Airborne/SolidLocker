@@ -217,7 +217,40 @@ pub async fn plan(root: &Path, branch: &str) -> AppResult<Vec<Conflict>> {
     Ok(out)
 }
 
-/// Same as `plan`, between any two refs; independent of the working copy.
+pub const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+
+/// False when the two have no commit in common (a branch that started empty).
+pub async fn has_merge_base(root: &Path, a: &str, b: &str) -> bool {
+    run_git_probe(root, &["merge-base", a, b], 30).await
+}
+
+pub async fn common_paths(root: &Path, a: &str, b: &str) -> Vec<String> {
+    let list = |r: &str| {
+        let r = r.to_string();
+        async move {
+            run_git(root, &["ls-tree", "-r", "--name-only", &r], 60)
+                .await
+                .map(|o| o.stdout.lines().map(str::to_string).collect::<Vec<_>>())
+                .unwrap_or_default()
+        }
+    };
+    let on_a = list(a).await;
+    let on_b: std::collections::HashSet<String> = list(b).await.into_iter().collect();
+    on_a
+        .into_iter()
+        .filter(|p| on_b.contains(p) && p != ".gitattributes")
+        .collect()
+}
+
+pub async fn merge_args(root: &Path, merge_ref: &str) -> Vec<String> {
+    let mut args = vec!["merge".to_string(), "--no-edit".to_string()];
+    if !has_merge_base(root, "HEAD", merge_ref).await {
+        args.push("--allow-unrelated-histories".to_string());
+    }
+    args.push(merge_ref.to_string());
+    args
+}
+
 pub async fn plan_between(root: &Path, base_ref: &str, head_ref: &str) -> AppResult<Vec<Conflict>> {
     // Bring both remote branches up to date first, so the list matches what
     // GitHub has right now and not the last auto-sync. Offline just means
@@ -233,24 +266,28 @@ pub async fn plan_between(root: &Path, base_ref: &str, head_ref: &str) -> AppRes
         args.extend(to_fetch);
         let _ = run_git(root, &args, 120).await;
     }
-    let mt = run_git(
-        root,
-        &[
-            "merge-tree",
-            "--write-tree",
-            "--no-messages",
-            "--name-only",
-            base_ref,
-            head_ref,
-        ],
-        60,
-    )
-    .await?;
     let mut paths: Vec<String> = Vec::new();
-    if mt.status == 1 {
-        for line in mt.stdout.lines().skip(1).map(str::trim) {
-            if !line.is_empty() && line != ".gitattributes" && !paths.iter().any(|p| p == line) {
-                paths.push(line.to_string());
+    if !has_merge_base(root, base_ref, head_ref).await {
+        paths = common_paths(root, base_ref, head_ref).await;
+    } else {
+        let mt = run_git(
+            root,
+            &[
+                "merge-tree",
+                "--write-tree",
+                "--no-messages",
+                "--name-only",
+                base_ref,
+                head_ref,
+            ],
+            60,
+        )
+        .await?;
+        if mt.status == 1 {
+            for line in mt.stdout.lines().skip(1).map(str::trim) {
+                if !line.is_empty() && line != ".gitattributes" && !paths.iter().any(|p| p == line) {
+                    paths.push(line.to_string());
+                }
             }
         }
     }
@@ -334,7 +371,9 @@ pub async fn combine_with_picks(root: &Path, branch: &str, picks: &[Pick]) -> Ap
         Err(e) if e.code == "CONFLICT" => {
             // merge_branch aborts on conflict; redo it and leave it open
             let merge_ref = crate::workflow::merge_ref_for(root, branch).await;
-            let again = run_git(root, &["merge", "--no-edit", &merge_ref], 300).await?;
+            let args = merge_args(root, &merge_ref).await;
+            let argv: Vec<&str> = args.iter().map(String::as_str).collect();
+            let again = run_git(root, &argv, 300).await?;
             if again.ok() || !merge_in_progress(root).await {
                 return Err(e);
             }

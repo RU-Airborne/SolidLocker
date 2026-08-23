@@ -124,6 +124,10 @@ async fn client(root: &Path) -> AppResult<(reqwest::Client, String, String)> {
 }
 
 async fn read_json(resp: reqwest::Response) -> AppResult<serde_json::Value> {
+    read_json_with(resp, false).await
+}
+
+async fn read_json_with(resp: reqwest::Response, quiet: bool) -> AppResult<serde_json::Value> {
     let status = resp.status();
     if status.is_success() {
         return resp
@@ -151,10 +155,11 @@ async fn read_json(resp: reqwest::Response) -> AppResult<serde_json::Value> {
         })
         .filter(|m| !m.is_empty())
         .unwrap_or_else(|| detail.chars().take(200).collect());
+    let make = if quiet { AppError::quiet } else { AppError::new };
     Err(match status.as_u16() {
-        401 | 403 => AppError::new("AUTH", messages::pr_not_allowed(&message)),
-        404 => AppError::new("PR", messages::PR_NOT_FOUND),
-        _ => AppError::new("PR", messages::pr_failed(status.as_u16(), &message)),
+        401 | 403 => make("AUTH", messages::pr_not_allowed(&message)),
+        404 => make("PR", messages::PR_NOT_FOUND.to_string()),
+        _ => make("PR", messages::pr_failed(status.as_u16(), &message)),
     })
 }
 
@@ -637,7 +642,7 @@ pub async fn protection(root: &Path, branch: &str) -> AppResult<Protection> {
                 .send()
                 .await
                 .map_err(|e| AppError::offline(e.to_string()))?;
-            read_json(resp).await
+            read_json_with(resp, true).await
         }
     };
     let name = urlencoding(branch);
