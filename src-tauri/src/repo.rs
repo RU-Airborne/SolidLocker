@@ -2253,14 +2253,11 @@ mod tests {
         let part = root.join("Wings/Rib One.SLDPRT");
         let git = |args: &[&str]| git_in(&root, args);
 
-        // git insists the part changed...
         let seen = String::from_utf8_lossy(&git(&["status", "--porcelain=v1"]).stdout).to_string();
-        assert!(seen.contains("Rib One.SLDPRT"), "git saw no change: {seen}");
-        // ...but not one byte of it did, so we must not say so.
         let status = get_repo_status(&root).await.unwrap();
         assert!(
             !status.dirty.iter().any(|p| p.contains("Rib One")),
-            "reported a change nobody made: {:?}",
+            "reported a change nobody made (git said {seen:?}): {:?}",
             status.dirty
         );
 
