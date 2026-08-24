@@ -99,19 +99,38 @@ async fn unpushed_paths(root: &Path) -> AppResult<HashSet<String>> {
         .collect())
 }
 
+const UNLOCK_LANES: usize = 10;
+
 async fn roll_back_claims(root: &Path, claimed: &[String]) -> Vec<String> {
     let mut still_held = Vec::new();
-    for path in claimed {
-        match lfs::unlock_file(root, path, false).await {
-            Ok(()) => {
-                let _ = fsattr::set_readonly(&root.join(path), true);
-            }
-            Err(e) => {
-                crate::logger::error(format!(
-                    "claim rollback: could not release {path}: {}",
-                    e.message
-                ));
-                still_held.push(path.clone());
+    for chunk in claimed.chunks(UNLOCK_LANES) {
+        let mut handles = Vec::with_capacity(chunk.len());
+        for path in chunk {
+            let root = root.to_path_buf();
+            let path = path.clone();
+            handles.push(tokio::spawn(async move {
+                lfs::unlock_file(&root, &path, false).await
+            }));
+        }
+        for (path, handle) in chunk.iter().zip(handles) {
+            match handle.await {
+                Ok(Ok(())) => {
+                    let _ = fsattr::set_readonly(&root.join(path), true);
+                }
+                Ok(Err(e)) => {
+                    crate::logger::error(format!(
+                        "claim rollback: could not release {path}: {}",
+                        e.message
+                    ));
+                    still_held.push(path.clone());
+                }
+                // if the task itself died, assume the worst: still ours
+                Err(e) => {
+                    crate::logger::error(format!(
+                        "claim rollback: could not release {path}: {e}"
+                    ));
+                    still_held.push(path.clone());
+                }
             }
         }
     }
@@ -165,10 +184,11 @@ pub async fn claim_files(
     paths.sort_by_key(|p| p.to_lowercase());
     paths.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
     let total = paths.len();
+    const LANES: usize = 5;
 
     let mut claimed: Vec<String> = Vec::new();
 
-    for path in &paths {
+    for lane in paths.chunks(LANES) {
         if cancel.wanted() {
             let still_held = roll_back_claims(root, &claimed).await;
             for taken in &claimed {
@@ -188,18 +208,41 @@ pub async fn claim_files(
                 cancelled: true,
             });
         }
-        progress(LockProgress::new("working", path, total));
-        let err = match lfs::lock_file(root, path).await {
-            Ok(()) => {
-                let _ = fsattr::set_readonly(&root.join(path), false);
-                claimed.push(path.clone());
-                progress(LockProgress::new("done", path, total));
-                continue;
-            }
-            Err(e) => e,
-        };
 
-        if crate::error::looks_offline(&err.message) {
+        for path in lane {
+            progress(LockProgress::new("working", path, total));
+        }
+        let mut handles = Vec::with_capacity(lane.len());
+        for path in lane {
+            let root = root.to_path_buf();
+            let path = path.clone();
+            handles.push(tokio::spawn(async move {
+                let taken = lfs::lock_file(&root, &path).await;
+                (path, taken)
+            }));
+        }
+        let mut misses: Vec<(String, AppError)> = Vec::new();
+        for handle in handles {
+            let (path, taken) = handle
+                .await
+                .map_err(|e| AppError::new("LOCK", e.to_string()))?;
+            match taken {
+                Ok(()) => {
+                    let _ = fsattr::set_readonly(&root.join(&path), false);
+                    progress(LockProgress::new("done", &path, total));
+                    claimed.push(path);
+                }
+                Err(e) => misses.push((path, e)),
+            }
+        }
+        if misses.is_empty() {
+            continue;
+        }
+
+        if misses
+            .iter()
+            .any(|(_, e)| crate::error::looks_offline(&e.message))
+        {
             let still_held = roll_back_claims(root, &claimed).await;
             if still_held.is_empty() {
                 return Err(AppError::offline(messages::CLAIM_OFFLINE));
@@ -209,35 +252,43 @@ pub async fn claim_files(
             )));
         }
 
-        // `git lfs lock` can trip over its local lock cache; recheck against
-        // the server before treating the failure as real.
         let locks = lfs::get_locks(root, None).await.ok();
         let server = locks.as_ref().filter(|l| l.fresh);
-        if let Some(l) = server {
-            if l.ours.iter().any(|k| k.path.eq_ignore_ascii_case(path)) {
-                let _ = fsattr::set_readonly(&root.join(path), false);
-                claimed.push(path.clone());
-                progress(LockProgress::new("done", path, total));
-                continue;
+        let mut failed: Vec<FailedClaim> = Vec::new();
+        for (path, err) in misses {
+            if let Some(l) = server {
+                if l.ours.iter().any(|k| k.path.eq_ignore_ascii_case(&path)) {
+                    let _ = fsattr::set_readonly(&root.join(&path), false);
+                    progress(LockProgress::new("done", &path, total));
+                    claimed.push(path);
+                    continue;
+                }
             }
+            let holder = server.and_then(|l| {
+                l.theirs
+                    .iter()
+                    .find(|lock| lock.path.eq_ignore_ascii_case(&path))
+            });
+            progress(LockProgress::new("failed", &path, total));
+            failed.push(FailedClaim {
+                owner: holder.and_then(|l| l.owner.as_ref().map(|o| o.name.clone())),
+                locked_at: holder.and_then(|l| l.locked_at.clone()),
+                path,
+                message: err.message,
+            });
+        }
+        if failed.is_empty() {
+            continue;
         }
 
-        let holder = server.and_then(|l| {
-            l.theirs
-                .iter()
-                .find(|lock| lock.path.eq_ignore_ascii_case(path))
-        });
-        progress(LockProgress::new("failed", path, total));
         let rolled_back = !claimed.is_empty();
         let mut still_held: Vec<String> = Vec::new();
         if rolled_back {
             crate::logger::warn(format!(
                 "claim of {} files lost {} to {}; releasing the {} already taken",
                 paths.len(),
-                path,
-                holder
-                    .and_then(|l| l.owner.as_ref().map(|o| o.name.as_str()))
-                    .unwrap_or("another member"),
+                failed[0].path,
+                failed[0].owner.as_deref().unwrap_or("another member"),
                 claimed.len()
             ));
             still_held = roll_back_claims(root, &claimed).await;
@@ -253,12 +304,7 @@ pub async fn claim_files(
         }
         return Ok(ClaimResult {
             claimed: Vec::new(),
-            failed: vec![FailedClaim {
-                owner: holder.and_then(|l| l.owner.as_ref().map(|o| o.name.clone())),
-                locked_at: holder.and_then(|l| l.locked_at.clone()),
-                path: path.clone(),
-                message: err.message,
-            }],
+            failed,
             rolled_back,
             still_held,
             cancelled: false,
@@ -389,7 +435,7 @@ pub async fn release_files(
 
     let mut failed_raw: Vec<(String, AppError)> = Vec::new();
     let mut released: Vec<String> = Vec::new();
-    for chunk in to_unlock.chunks(4) {
+    for chunk in to_unlock.chunks(UNLOCK_LANES) {
         // checked between batches; anything already released is taken back
         if cancel.wanted() {
             let back = re_lock(root, &released).await;
@@ -494,11 +540,16 @@ pub async fn tidy_and_sync(
     root: &Path,
     username_hint: Option<&str>,
 ) -> AppResult<TidyResult> {
-    // fetch first so the sweep sees current branches
-    let fetched = run_git(root, &["fetch", "--prune", "origin"], 600)
-        .await
-        .map(|o| o.ok())
-        .unwrap_or(false);
+    let fetch_out = run_git(root, &["fetch", "--prune", "origin"], 600).await?;
+    if !fetch_out.ok() {
+        if !crate::error::looks_offline(&fetch_out.stderr)
+            && crate::error::looks_signed_out(&fetch_out.stderr)
+        {
+            return Err(AppError::new("AUTH", messages::FETCH_SIGNED_OUT));
+        }
+        return Err(AppError::offline(messages::FETCH_OFFLINE));
+    }
+    let fetched = true;
     // fetch never updates origin/HEAD
     repo::refresh_default_branch(root).await;
 

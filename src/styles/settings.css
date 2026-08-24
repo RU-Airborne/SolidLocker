@@ -42,6 +42,33 @@
   gap: 0.1rem;
 }
 
+.settingsname {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.versiontag {
+  font-size: 1rem;
+  line-height: 1.5;
+  padding: 0.12rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  margin-top: 0.3rem;
+}
+
+.bugfooter {
+  margin: 2.4rem 0 0;
+  text-align: center;
+}
+
+.headerbtns .updatetool {
+  align-items: stretch;
+}
+.headerbtns .updatetool .muted {
+  text-align: right;
+}
+
 
 .linkish.inline {
   display: inline;
@@ -560,9 +587,12 @@
 }
 
 
-/* Fixed width: the text changes as the run ends and a content-sized box jumped. */
 .modal.lockprogress {
   width: min(34rem, 90vw);
+}
+
+.modal.lockprogress .filelist {
+  font-size: 0.85rem;
 }
 
 .locksteps {

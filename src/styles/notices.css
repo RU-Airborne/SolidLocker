@@ -259,3 +259,58 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+
+.collisionfiles li.collisionduel {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.3rem;
+}
+
+.collisionduel .collisionpath {
+  text-align: center;
+  font-weight: 600;
+}
+
+.duelrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.1rem;
+}
+
+.duelside {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.duelshot {
+  width: 160px;
+  height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: color-mix(in srgb, CanvasText 4%, transparent);
+}
+
+.duelshot img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.duelvs {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.duelwait {
+  opacity: 0.5;
+}

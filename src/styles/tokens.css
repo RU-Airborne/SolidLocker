@@ -96,16 +96,19 @@ body {
   color: var(--muted);
 }
 
-button {
+button,
+.versiontag {
   --border: #4d5661;
 }
 
 @media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) button {
+  :root:not([data-theme="dark"]) button,
+  :root:not([data-theme="dark"]) .versiontag {
     --border: #9aa4af;
   }
 }
 
-:root[data-theme="light"] button {
+:root[data-theme="light"] button,
+:root[data-theme="light"] .versiontag {
   --border: #9aa4af;
 }

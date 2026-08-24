@@ -962,7 +962,7 @@ function PullView({
             <>
               {(clashes.isLoading || clashes.isError) && (
                 <section className="setupsection">
-                  <h3>Merge conflicts</h3>
+                  <h3>Conflict Resolution</h3>
                   {clashes.isLoading && (
                     <p className="muted small">Reading both branches…</p>
                   )}
@@ -985,7 +985,7 @@ function PullView({
                   onOpenCommit={onOpenCommit}
                   busy={busy !== null}
                   proposals={proposals}
-                  title={`Merge conflicts (${clashFiles.length})`}
+                  title={`Conflict Resolution (${clashFiles.length})`}
                   intro={
                     <>
                       Both <BranchName name={d.base} /> and{" "}

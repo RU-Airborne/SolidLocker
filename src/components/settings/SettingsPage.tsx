@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { getVersion } from "@tauri-apps/api/app";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import DialLogo from "../DialLogo";
@@ -17,7 +18,7 @@ import { isAppError, type AppState } from "../../types";
 import { githubAvatarUrl, UserAvatar } from "../common/UserAvatar";
 import { usePeople } from "../../identity";
 import { copy } from "../../copy";
-import { BugReportDialog } from "../dialogs/BugReportDialog";
+// import { BugReportDialog } from "../dialogs/BugReportDialog";
 import { GlassSelect } from "../common/GlassSelect";
 import { FilterBar } from "../common/FilterBar";
 import { SetupChecks } from "./SetupChecks";
@@ -73,8 +74,31 @@ function UpdateTool() {
   }
   return (
     <div className="setuprow updatetool">
-      <button onClick={look} disabled={busy}>
-        {busy ? "Checking…" : "Check now"}
+      <button
+        className="ghbtn"
+        onClick={look}
+        disabled={busy}
+        title="The app also checks on its own once a day"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          width="18"
+          height="18"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+          <path d="M21 3v5h-5" />
+          <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+          <path d="M3 21v-5h5" />
+          <circle cx="12" cy="12" r="2.6" />
+          <path d="M14.6 12h1.3M13.95 8.62l-.65 1.13M10.05 8.62l.65 1.13M8.1 12h1.3M10.05 15.38l.65-1.13M13.95 15.38l-.65-1.13" />
+        </svg>
+        {busy ? "Checking…" : "Check for updates"}
       </button>
       {word && <span className="muted small">{word}</span>}
       {link && (
@@ -122,9 +146,13 @@ export function SettingsPage({
   const [url, setUrl] = useState("");
   const [cloning, setCloning] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
-  const [bugOpen, setBugOpen] = useState(false);
+  // const [bugOpen, setBugOpen] = useState(false);
   const [signOutOpen, setSignOutOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [version, setVersion] = useState("");
+  useEffect(() => {
+    getVersion().then(setVersion).catch(() => {});
+  }, []);
 
   const queryClient = useQueryClient();
   const signedIn = useQuery({
@@ -199,7 +227,7 @@ export function SettingsPage({
 
   return (
     <main className="settingspage">
-      {bugOpen && <BugReportDialog onClose={() => setBugOpen(false)} />}
+      {/* bugOpen && <BugReportDialog onClose={() => setBugOpen(false)} /> */}
       {signOutOpen && (
         <div className="modal-backdrop" onClick={() => setSignOutOpen(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -232,7 +260,10 @@ export function SettingsPage({
             <DialLogo className="settingslogo" label="" />
           </span>
           <div className="settingstitle">
-            <h2>SolidLocker</h2>
+            <div className="settingsname">
+              <h2>SolidLocker</h2>
+              {version && <span className="versiontag">v{version}</span>}
+            </div>
             <span className="muted">
               by{" "}
               <a
@@ -266,6 +297,8 @@ export function SettingsPage({
             </svg>
             Open project on GitHub
           </button>
+          {/* The bug report button opened a dialog; it is a plain line at
+              the bottom of the page now.
           <button
             className="ghbtn"
             onClick={() => setBugOpen(true)}
@@ -288,6 +321,8 @@ export function SettingsPage({
             </svg>
             Found a bug?
           </button>
+          */}
+          <UpdateTool />
           </div>
         </div>
       </div>
@@ -571,6 +606,8 @@ export function SettingsPage({
               </div>
               <SetupChecks />
             </div>
+            {/* The update check lived down here for a while; it moved up to
+                the header next to the version number.
             <div className="tool">
               <div className="settingtext">
                 <strong>Check for updates</strong>
@@ -581,8 +618,24 @@ export function SettingsPage({
               </div>
               <UpdateTool />
             </div>
+            */}
           </div>
         </section>
+
+        <p className="muted small bugfooter">
+          Found a bug? DM Scaven X (scaaavx) on Discord, or open an issue on{" "}
+          <a
+            className="linkish inline"
+            href="https://github.com/RU-Airborne/SolidLocker/issues"
+            onClick={(e) => {
+              e.preventDefault();
+              openUrl("https://github.com/RU-Airborne/SolidLocker/issues");
+            }}
+          >
+            GitHub project page
+          </a>
+          , and attach the log from the folder above.
+        </p>
       </div>
     </main>
   );

@@ -1,4 +1,4 @@
-const shortName = (p: string) => p.split("/").pop() ?? p;
+// const shortName = (p: string) => p.split("/").pop() ?? p;
 
 /** Confirm before locking/unlocking a whole folder. */
 export function FolderLockDialog({
@@ -18,12 +18,14 @@ export function FolderLockDialog({
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      {/* same class as the progress dialog that follows, so the box
+          does not change size or tone when confirm turns into progress */}
+      <div className="modal lockprogress" onClick={(e) => e.stopPropagation()}>
         <h2>
           {locking ? "Lock" : "Unlock"} {paths.length}{" "}
           {paths.length === 1 ? "file" : "files"} in {folder}?
         </h2>
-        <p>
+        <p className="muted small">
           {locking
             ? "They become yours to edit until you unlock them. Each one is a separate call to GitHub, so this takes a moment."
             : "They go back to the team. Any file with unshared changes is kept back and stays yours."}
@@ -32,7 +34,7 @@ export function FolderLockDialog({
         <ul className="filelist">
           {paths.slice(0, 12).map((p) => (
             <li key={p} title={p}>
-              {shortName(p)}
+              {p}
             </li>
           ))}
           {paths.length > 12 && (

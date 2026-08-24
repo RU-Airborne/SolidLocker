@@ -13,6 +13,7 @@ import {
   PullRequestGlyph,
   ShareGlyph,
   SyncGlyph,
+  // TeamGlyph,
 } from "../common/HistoryDiagrams";
 
 function agoText(seconds: number): string {
@@ -66,6 +67,7 @@ export function TopBar({
   onOpenProgress,
   onOpenHistory,
   onOpenPulls,
+  // onOpenTeam,
   defaultBranch,
   locking,
 }: {
@@ -93,6 +95,7 @@ export function TopBar({
   onOpenProgress: () => void;
   onOpenHistory: () => void;
   onOpenPulls: () => void;
+  // onOpenTeam: () => void;
   defaultBranch: string;
 }) {
   const directory = usePeople();
@@ -274,6 +277,16 @@ export function TopBar({
         <HistogramGlyph />
         Progress
       </button>
+      {/*
+      <button
+        className="barbtn"
+        onClick={onOpenTeam}
+        title="Who's holding what, and what's waiting to merge"
+      >
+        <TeamGlyph />
+        Team
+      </button>
+      */}
       <button
         className="barbtn avatarbtn"
         onClick={onOpenSettings}

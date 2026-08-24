@@ -648,8 +648,7 @@ export function ProgressPage({
           <div className="settingstitle">
             <h2>Progress</h2>
             <p className="muted small">
-              What the team has been up to across every branch: recent
-              changes, the most reworked parts, and who has been busy.
+              What the team has been up to.
             </p>
           </div>
         </div>

@@ -218,6 +218,9 @@ pub fn could_not_push(stderr: &str) -> String {
 pub const FETCH_OFFLINE: &str =
     "Can't reach GitHub. Check your internet connection. SolidLocker will keep trying.";
 
+pub const FETCH_SIGNED_OUT: &str =
+    "GitHub refused to sync. The app is not signed in. Sign in again from your profile.";
+
 pub const CLAIM_OFFLINE: &str =
     "Can't reach GitHub, so nothing was locked. Check your internet and try again.";
 

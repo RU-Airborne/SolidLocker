@@ -1,14 +1,38 @@
+import { useQuery } from "@tanstack/react-query";
 import { BranchName } from "../common/BranchName";
-import type { Collision } from "../../api";
+import { previewVersion, type Collision } from "../../api";
 import { formatDateTime } from "../../dates";
 import { FilePreview } from "../common/FilePreview";
+import { FileTypeIcon } from "../common/FileTypeIcon";
+
+function TheirShot({ path, branch }: { path: string; branch: string }) {
+  const shot = useQuery({
+    queryKey: ["previewVersion", path, "origin/" + branch],
+    queryFn: () => previewVersion(path, "origin/" + branch),
+    staleTime: Infinity,
+    retry: false,
+  });
+  return (
+    <span className="duelshot" aria-hidden="true">
+      {shot.data ? (
+        <img src={shot.data} alt="" draggable={false} />
+      ) : shot.isLoading ? (
+        <span className="duelwait">&hellip;</span>
+      ) : (
+        <FileTypeIcon path={path} />
+      )}
+    </span>
+  );
+}
 
 export function CollisionsDialog({
   collisions,
+  currentBranch,
   onOpenBranches,
   onClose,
 }: {
   collisions: Collision[];
+  currentBranch: string;
   onOpenBranches: () => void;
   onClose: () => void;
 }) {
@@ -21,9 +45,8 @@ export function CollisionsDialog({
           {total} file{total === 1 ? "" : "s"} changed on both sides
         </h2>
         <p>
-          Each of these is being changed here <em>and</em> on another branch.
-          Only one version can be kept when the two are merged, so it is
-          worth agreeing who is doing what now.
+          Each of these is being changed here and on another branch.
+          Only one version can be kept when the two are merged.
         </p>
 
         <div className="collisionlist">
@@ -41,23 +64,32 @@ export function CollisionsDialog({
               </div>
               <ul className="collisionfiles">
                 {c.cad_files.map((f) => (
-                  <li key={f}>
-                    <FilePreview path={f} />
+                  <li key={f} className="collisionduel">
                     <span className="collisionpath" title={f}>
                       {f}
                     </span>
+                    <div className="duelrow">
+                      <figure className="duelside">
+                        <FilePreview path={f} className="duelshot" />
+                        <figcaption className="muted small">
+                          Here, on <BranchName name={currentBranch} />
+                        </figcaption>
+                      </figure>
+                      <span className="duelvs muted">vs</span>
+                      <figure className="duelside">
+                        <TheirShot path={f} branch={c.branch} />
+                        <figcaption className="muted small">
+                          {c.is_mine ? "You" : c.author} on{" "}
+                          <BranchName name={c.branch} />
+                        </figcaption>
+                      </figure>
+                    </div>
                   </li>
                 ))}
               </ul>
             </div>
           ))}
         </div>
-
-        <p className="muted small">
-          Nothing is broken yet and nothing here changes anything. Usually one
-          of you unlocks the file, or the branches get merged sooner.
-        </p>
-
         <div className="modal-actions">
           <button onClick={onClose}>Close</button>
           <button className="primary" onClick={onOpenBranches}>

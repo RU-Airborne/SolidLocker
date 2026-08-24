@@ -69,6 +69,7 @@ import { ProgressPage } from "../progress/ProgressPage";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { PullsPage } from "../pulls/PullsPage";
 import { CollisionNotice } from "./CollisionNotice";
+// import { TeamPage } from "../team/TeamPage";
 import { CollisionsDialog } from "../dialogs/CollisionsDialog";
 import { ResolveConflictsDialog } from "../dialogs/ResolveConflictsDialog";
 import { CommitDialog } from "../dialogs/CommitDialog";
@@ -286,6 +287,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
   const [releaseAllOpen, setReleaseAllOpen] = useState(false);
   const [progressOpen, setProgressOpen] = useState(false);
   const [pullsOpen, setPullsOpen] = useState(false);
+  // const [teamOpen, setTeamOpen] = useState(false);
   // set by the Merge dialog; Merge Requests opens with the new-request dialog up
   const [pullsAsk, setPullsAsk] = useState<{ head: string; base: string } | null>(null);
   const defaultBranch = useQuery({
@@ -648,6 +650,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
       setProgressOpen(false);
       setSettingsOpen(false);
       setHistoryOpen(false);
+      // setTeamOpen(false);
       searchRef.current?.focus();
       searchRef.current?.select();
     },
@@ -671,6 +674,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
       [commitDialogOpen, () => setCommitDialogOpen(false)],
       [progressOpen, () => setProgressOpen(false)],
       [pullsOpen, () => setPullsOpen(false)],
+      // [teamOpen, () => setTeamOpen(false)],
       [settingsOpen, () => setSettingsOpen(false)],
       [historyOpen, () => setHistoryOpen(false)],
       [searchQuery !== "", () => setSearchQuery("")],
@@ -720,6 +724,38 @@ export function Dashboard({ appState }: { appState: AppState }) {
   // plan = branch to merge (nothing merged yet); no plan = merge already half done
   const [resolving, setResolving] = useState<{ plan?: string } | null>(null);
   const [showCollisions, setShowCollisions] = useState(false);
+
+  useEffect(() => {
+    const risky = (collisions.data ?? []).filter((c) => c.cad_files.length > 0);
+    if (risky.length === 0) return;
+    let seen: string[] = [];
+    try {
+      seen = JSON.parse(localStorage.getItem("collisionsToasted") ?? "[]");
+    } catch {
+      // start fresh
+    }
+    const known = new Set(seen);
+    const fresh: string[] = [];
+    const lines: string[] = [];
+    for (const c of risky) {
+      for (const f of c.cad_files) {
+        const key = `${c.branch}|${f}`;
+        if (known.has(key)) continue;
+        fresh.push(key);
+        const who = c.is_mine ? "your other branch" : c.author;
+        lines.push(`${f.split("/").pop() ?? f} — you and ${who}, on ${c.branch}`);
+      }
+    }
+    if (fresh.length === 0) return;
+    const body =
+      lines.slice(0, 3).join("\n") +
+      (lines.length > 3 ? `\n…and ${lines.length - 3} more` : "");
+    void notifyDesktop("Same file on two branches", body);
+    localStorage.setItem(
+      "collisionsToasted",
+      JSON.stringify([...known, ...fresh].slice(-200)),
+    );
+  }, [collisions.data]);
 
   // Read-only mode: the tree is parked on an old commit.
   const previewState = useQuery({
@@ -1519,6 +1555,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
       {showCollisions && collisions.data && (
         <CollisionsDialog
           collisions={collisions.data.filter((c) => c.cad_files.length > 0)}
+          currentBranch={currentBranch}
           onClose={() => setShowCollisions(false)}
           onOpenBranches={() => {
             setShowCollisions(false);
@@ -1629,6 +1666,23 @@ export function Dashboard({ appState }: { appState: AppState }) {
       )}
       {(progressOpen || settingsOpen || historyOpen || pullsOpen) && (
         <div className="glasspage">
+          {/*
+          teamOpen ? (
+            <TeamPage
+              currentBranch={currentBranch}
+              username={appState.username ?? null}
+              onClose={() => setTeamOpen(false)}
+              onOpenPulls={() => {
+                setTeamOpen(false);
+                setPullsOpen(true);
+              }}
+              onOpenBranches={() => {
+                setTeamOpen(false);
+                setHistoryOpen(true);
+              }}
+            />
+          ) : ...
+          */}
           {pullsOpen ? (
             <PullsPage
               currentBranch={currentBranch}

@@ -95,7 +95,7 @@ export function LockProgressDialog({
         <div className="modal-actions">
           {run.finished ? (
             <button className="primary" onClick={onClose}>
-              OK
+              Okie
             </button>
           ) : (
             <button onClick={onCancel} disabled={run.cancelling}>

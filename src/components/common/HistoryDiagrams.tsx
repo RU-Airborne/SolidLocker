@@ -71,6 +71,27 @@ export function PullRequestGlyph({ size = 18 }: { size?: number }) {
 }
 
 /** Histogram. */
+export function TeamGlyph({ size = 14 }: { size?: number }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="9" cy="8" r="3.2" />
+      <path d="M3.5 19c.6-3 2.8-4.6 5.5-4.6s4.9 1.6 5.5 4.6" />
+      <circle cx="16.8" cy="9.4" r="2.6" />
+      <path d="M15.4 14.7c2.5.1 4.4 1.5 5.1 4.3" />
+    </svg>
+  );
+}
+
 export function HistogramGlyph({ size = 14 }: { size?: number }) {
   return (
     <svg

@@ -94,7 +94,7 @@ export function ResolveConflictsDialog({
   return (
     <div className="modal-backdrop">
       <div className="modal conflictmodal">
-        <h2>Merge conflicts</h2>
+        <h2>Conflict Resolution</h2>
         <p className="muted">
           {files.length} file{files.length === 1 ? "" : "s"} changed on both
           branches. CAD files can&rsquo;t be merged, so pick which version to
