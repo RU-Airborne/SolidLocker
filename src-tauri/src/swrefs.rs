@@ -258,6 +258,89 @@ if (-not $early) {
     }
 }
 
+/// Which open documents hold changes not yet saved to disk. Best effort like
+/// solidworks_open_documents: anything that goes wrong means "cannot tell",
+/// and the callers treat that as "none".
+#[cfg(windows)]
+pub async fn solidworks_unsaved_documents() -> Vec<String> {
+    if solidworks_install_dir().is_none() {
+        return Vec::new();
+    }
+
+    let script = format!(
+        "{SW_ATTACH}{}",
+        r#"
+$docs = $null
+if ($early) {
+  try {
+    $docs = [SolidWorks.Interop.sldworks.ISldWorks].InvokeMember(
+      'GetDocuments', [Reflection.BindingFlags]::InvokeMethod, $null, $sw, @())
+    if ($null -ne $docs) {
+      foreach ($d in $docs) {
+        $dirty = [SolidWorks.Interop.sldworks.IModelDoc2].InvokeMember(
+          'GetSaveFlag', [Reflection.BindingFlags]::InvokeMethod, $null, $d, @())
+        if ($dirty) {
+          [SolidWorks.Interop.sldworks.IModelDoc2].InvokeMember(
+            'GetPathName', [Reflection.BindingFlags]::InvokeMethod, $null, $d, @())
+        }
+      }
+    }
+  } catch {
+    [Console]::Error.WriteLine('early-bound lookup failed: ' + $_.Exception.Message)
+    $early = $false
+  }
+}
+if (-not $early) {
+  $docs = $sw.GetDocuments
+  if ($null -ne $docs) { foreach ($d in $docs) { if ($d.GetSaveFlag) { $d.GetPathName } } }
+}
+"#
+    );
+
+    match run_powershell(&script, &[], 20).await {
+        Ok(out) => nonempty_lines(&out.stdout),
+        Err(_) => Vec::new(),
+    }
+}
+
+/// Close documents in SolidWorks without saving, dropping whatever unsaved
+/// changes they hold. Only reached after the user has confirmed the discard.
+/// A document kept alive as a component of another open assembly may not
+/// fully unload; the caller's re-check catches that.
+#[cfg(windows)]
+pub async fn solidworks_close_documents(abs_paths: &[String]) -> AppResult<()> {
+    if abs_paths.is_empty() || solidworks_install_dir().is_none() {
+        return Ok(());
+    }
+
+    let script = format!(
+        "{SW_ATTACH}{}",
+        r#"
+$targets = $env:SOLIDLOCKER_DOCS -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+foreach ($t in $targets) { $sw.CloseDoc($t) }
+"#
+    );
+
+    let envs = [(
+        "SOLIDLOCKER_DOCS",
+        std::ffi::OsString::from(abs_paths.join("\n")),
+    )];
+    let out = run_powershell(&script, &envs, 30).await?;
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    if stderr.contains("SW_NOT_RUNNING") {
+        // Nothing open means nothing left to discard.
+        return Ok(());
+    }
+    if !out.status.success() {
+        return Err(AppError::new(
+            "SWCOM",
+            messages::sw_lookup_failed(stderr.trim()),
+        ));
+    }
+    Ok(())
+}
+
 #[cfg(windows)]
 pub async fn solidworks_icon() -> Option<String> {
     // This only needs the executable on disk, so it works whether or not SolidWorks is running

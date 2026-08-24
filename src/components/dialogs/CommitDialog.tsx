@@ -49,7 +49,7 @@ export function CommitDialog({
           These changes will be saved to GitHub so your teammates can see them.
         </p>
         <div className="ref-list">
-          {dirtyFiles.map((path) => {
+          {dirtyFiles.filter((p) => !isSwTemp(p)).map((path) => {
             const size = sizeByPath.get(path) ?? 0;
             const isBig = bigFileMb > 0 && size > bigFileMb * 1024 * 1024;
             return (
@@ -60,9 +60,8 @@ export function CommitDialog({
                   onChange={() => toggle(path)}
                 />
                 <span>{path}</span>
-                {isSwTemp(path) && (
-                  <span className="badge">SolidWorks temp, no need to share</span>
-                )}
+                {/* ~$ temp files used to show here with a badge; now they
+                    are left out of the list entirely. */}
                 {isBig && (
                   <span className="badge badge-edited">
                     {(size / (1024 * 1024)).toFixed(0)} MB

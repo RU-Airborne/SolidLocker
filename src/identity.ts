@@ -111,6 +111,36 @@ function resolvePerson(
   };
 }
 
+export function resolveAuthorsByName(
+  names: string[],
+  identities: CommitIdentity[],
+): Map<string, Person> {
+  const dir = buildDirectory(identities);
+  const idByNameLower = new Map<string, string>();
+  for (const [id, n] of dir.nameById) {
+    if (!idByNameLower.has(n.toLowerCase())) {
+      idByNameLower.set(n.toLowerCase(), id);
+    }
+  }
+  const out = new Map<string, Person>();
+  for (const name of names) {
+    const key = name.toLowerCase();
+    if (out.has(key)) continue;
+    const id = idByNameLower.get(key) ?? dir.idByLoginLower.get(key);
+    out.set(
+      key,
+      id
+        ? {
+            name: dir.nameById.get(id) ?? name,
+            login: dir.loginById.get(id) ?? null,
+            avatarUrl: dir.avatarById.get(id) ?? null,
+          }
+        : { name, login: null, avatarUrl: null },
+    );
+  }
+  return out;
+}
+
 /** Resolve every commit in a log to a person. */
 export function resolveCommitAuthors(
   commits: Array<{ sha: string; author_name: string; author_email: string }>,

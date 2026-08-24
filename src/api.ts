@@ -450,6 +450,10 @@ export const releaseFiles = (
     onProgress: progressChannel(onProgress),
   });
 
+/** Close documents in SolidWorks without saving. Ask the user first. */
+export const discardSwChanges = (paths: string[]) =>
+  invoke<void>("discard_sw_changes", { paths });
+
 export const cancelLockRun = () => invoke<void>("cancel_lock_run");
 
 export const forceUnlock = (path: string) =>

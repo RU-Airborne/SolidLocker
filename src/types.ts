@@ -9,6 +9,7 @@ export interface RepoInfo {
   repo_slug: string;
   branch: string;
   lockable_ok: boolean;
+  ignore_ok: boolean;
 }
 
 export interface AppState {

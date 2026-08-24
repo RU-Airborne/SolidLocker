@@ -113,7 +113,7 @@
 }
 
 .lockitem:hover {
-  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
   box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 60%, transparent);
 }
 

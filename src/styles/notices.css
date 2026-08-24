@@ -198,7 +198,8 @@
   border-color: transparent;
 }
 
-.modal-actions button {
+.modal-actions button,
+.offbranch-goto button {
   padding: 0.35rem 0.9rem;
   border-radius: 6px;
   border: 1px solid var(--border);

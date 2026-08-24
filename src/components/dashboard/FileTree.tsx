@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FileRowData, RowActions } from "./Dashboard";
 import { FileRow } from "./FileRow";
 
@@ -87,6 +87,35 @@ function subtreeStats(node: FolderNode): { claimable: string[]; mine: string[] }
   };
   visit(node);
   return { claimable, mine };
+}
+
+const TREE_STORE_PREFIX = "solidlocker.tree.";
+
+interface SavedTree {
+  collapsed: string[];
+  known: string[];
+}
+
+function loadTreeState(repoPath: string): SavedTree | null {
+  try {
+    const raw = localStorage.getItem(TREE_STORE_PREFIX + repoPath);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as SavedTree;
+    if (Array.isArray(parsed?.collapsed) && Array.isArray(parsed?.known)) {
+      return parsed;
+    }
+  } catch {
+    // A torn write is no reason to break the tree. Fall back to defaults.
+  }
+  return null;
+}
+
+function collectFolderPaths(node: FolderNode, out: string[] = []): string[] {
+  for (const child of node.folders) {
+    out.push(child.path);
+    collectFolderPaths(child, out);
+  }
+  return out;
 }
 
 function ancestorsOf(dir: string): string[] {
@@ -219,15 +248,88 @@ export const FileTree = memo(function FileTree({
   actions,
   sort,
   forceExpand = false,
+  repoPath,
 }: {
   rows: FileRowData[];
   actions: RowActions;
   sort: SortMode;
   /** While searching or filtering, every folder shows its matches. */
   forceExpand?: boolean;
+  /** Keys the remembered open/closed state of the folders. */
+  repoPath: string;
 }) {
   const tree = useMemo(() => buildTree(rows, sort), [rows, sort]);
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const folderPaths = useMemo(() => collectFolderPaths(tree), [tree]);
+
+  const saved = useRef<{ collapsed: Set<string>; known: Set<string> } | null>(
+    null,
+  );
+  const reconciled = useRef<Set<string>>(new Set());
+  const repoFor = useRef<string | null>(null);
+  const skipSave = useRef(false);
+
+  const startCollapsed = (p: string) =>
+    saved.current
+      ? saved.current.collapsed.has(p) ||
+        (!saved.current.known.has(p) && p.includes("/"))
+      : p.includes("/");
+
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => {
+    repoFor.current = repoPath;
+    const s = loadTreeState(repoPath);
+    saved.current = s && {
+      collapsed: new Set(s.collapsed),
+      known: new Set(s.known),
+    };
+    reconciled.current = new Set(folderPaths);
+    return new Set(folderPaths.filter(startCollapsed));
+  });
+
+  useEffect(() => {
+    if (repoFor.current !== repoPath) {
+      // A different repo was opened into the same tree: start its view over.
+      repoFor.current = repoPath;
+      const s = loadTreeState(repoPath);
+      saved.current = s && {
+        collapsed: new Set(s.collapsed),
+        known: new Set(s.known),
+      };
+      reconciled.current = new Set(folderPaths);
+      skipSave.current = true;
+      setCollapsed(new Set(folderPaths.filter(startCollapsed)));
+      return;
+    }
+    const fresh = folderPaths.filter((p) => !reconciled.current.has(p));
+    if (fresh.length === 0) return;
+    for (const p of fresh) reconciled.current.add(p);
+    const toClose = fresh.filter(startCollapsed);
+    if (toClose.length === 0) return;
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      for (const p of toClose) next.add(p);
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [repoPath, folderPaths]);
+
+  // Remember how the tree was left per repo.
+  useEffect(() => {
+    if (skipSave.current) {
+      skipSave.current = false;
+      return;
+    }
+    const known = new Set(saved.current?.known ?? []);
+    for (const p of reconciled.current) known.add(p);
+    try {
+      localStorage.setItem(
+        TREE_STORE_PREFIX + repoPath,
+        JSON.stringify({ collapsed: [...collapsed], known: [...known] }),
+      );
+    } catch {
+      // Storage full or blocked: the tree just forgets, nothing worse.
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [collapsed]);
   const pinnedRows = useMemo(
     () => rows.filter((r) => actions.pinned.has(r.file.rel_path.toLowerCase())),
     [rows, actions.pinned],

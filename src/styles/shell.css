@@ -283,6 +283,7 @@
 
 .personfiles li {
   padding: 0.12rem 1rem 0.12rem 1.6rem;
+  border-radius: 8px;
 }
 
 .lockitem {
@@ -292,7 +293,7 @@
 }
 
 .personfiles li:hover {
-  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
 }
 
 .lockitem .forcebtn {

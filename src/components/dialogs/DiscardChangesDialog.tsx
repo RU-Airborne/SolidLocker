@@ -63,9 +63,16 @@ export function DiscardChangesDialog({
           </>
         )}
 
+        <p>
+          Anything here still open in SolidWorks will be <strong>closed there
+          for you, without saving</strong>, so nothing writes back. If a part
+          is in use by an assembly you have open, close that assembly first.
+        </p>
         <p className="muted small">
-          Close these files in SolidWorks first, or it may write its open copy
-          right back.
+          Some files can get changed even when you haven't modified them. This can
+          happen because SolidWorks would sometimes quietly rewrites files when 
+          it rebuilds or saves them, even when the actual design hasn't changed.
+          It's safe to discard these automatic changes.
         </p>
         <div className="modal-actions">
           <button onClick={onClose}>Keep everything</button>

@@ -115,6 +115,8 @@ export const copy = {
     "Can't verify locks with GitHub right now. \"Who has what\" may be missing teammates' locks. If this doesn't clear, check your internet and make sure you're signed in to GitHub (opening GitHub Desktop or doing any git pull triggers the sign in).",
   noLockingRules:
     "This branch has no file locking rules (.gitattributes with `lockable`), so locking won't protect files here. Switch to a branch that has them, or ask your lead to add them to this branch.",
+  noIgnoreRules:
+    "This branch doesn't ignore SolidWorks ~$ temp files and OS junk yet, so they can sneak into Save & Share. SolidLocker can add them to .gitignore and shares it with the team.",
   locksMayBeStale:
     "Showing the last known locks. GitHub couldn't be verified just now, so this list may be out of date.",
   checkConnection:

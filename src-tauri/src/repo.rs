@@ -14,6 +14,8 @@ pub struct RepoInfo {
     pub repo_slug: String,
     pub branch: String,
     pub lockable_ok: bool,
+    /// Whether .gitignore keeps SolidWorks temp files and OS litter out.
+    pub ignore_ok: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -157,6 +159,11 @@ pub async fn validate_repo(path: &str) -> AppResult<RepoInfo> {
         .map(|s| s.contains("lockable"))
         .unwrap_or(false);
 
+    // Same deal for branches set up before .gitignore came along: the UI
+    // offers the one-click setup, which appends what is missing.
+    let ignore = std::fs::read_to_string(root.join(".gitignore")).unwrap_or_default();
+    let ignore_ok = missing_ignore_entries(&ignore).is_empty();
+
     let remote = run_git(&root, &["remote", "get-url", "origin"], 15).await?;
     if !remote.ok() {
         return Err(AppError::new("REPO", messages::NO_ORIGIN_REMOTE));
@@ -201,6 +208,7 @@ pub async fn validate_repo(path: &str) -> AppResult<RepoInfo> {
         repo_slug: slug,
         branch,
         lockable_ok,
+        ignore_ok,
     })
 }
 
@@ -1098,6 +1106,37 @@ pub async fn restore_paths(root: &Path, files: Vec<String>) -> AppResult<()> {
     if files.is_empty() {
         return Ok(());
     }
+
+    // The user just chose to throw these changes away. SolidWorks would both
+    // block the restore (Windows won't replace a file it holds) and write its
+    // open copies straight back afterwards, so close the affected documents
+    // there first, without saving. Best effort: whatever stays held makes the
+    // restore below fail with its own explanation.
+    #[cfg(windows)]
+    {
+        let held: Vec<String> = crate::swrefs::solidworks_open_documents()
+            .await
+            .into_iter()
+            .filter(|abs| {
+                let abs_l = abs.replace('\\', "/").to_lowercase();
+                files.iter().any(|rel| {
+                    root.join(rel)
+                        .to_string_lossy()
+                        .replace('\\', "/")
+                        .to_lowercase()
+                        == abs_l
+                })
+            })
+            .collect();
+        if !held.is_empty() {
+            crate::logger::info(format!(
+                "discard: closing {} open document(s) in SolidWorks first",
+                held.len()
+            ));
+            let _ = crate::swrefs::solidworks_close_documents(&held).await;
+        }
+    }
+
     let mut args = vec!["restore", "--staged", "--worktree", "--"];
     args.extend(files.iter().map(String::as_str));
     let out = run_git(root, &args, 60).await?;
@@ -2096,6 +2135,18 @@ pub async fn commit_files(root: &Path, sha: &str) -> AppResult<Vec<CommitFileCha
 
 const LOCKABLE_EXTENSIONS: [&str; 3] = ["sldprt", "sldasm", "slddrw"];
 
+/// SolidWorks ~$ temp files and the usual OS litter, none of which belong in
+/// the project history.
+const IGNORE_ENTRIES: [&str; 4] = ["~$*", ".DS_Store", "Thumbs.db", "desktop.ini"];
+
+fn missing_ignore_entries(existing: &str) -> Vec<&'static str> {
+    IGNORE_ENTRIES
+        .iter()
+        .filter(|e| !existing.lines().any(|l| l.trim() == **e))
+        .copied()
+        .collect()
+}
+
 #[derive(Debug, Serialize)]
 pub struct InitLockableResult {
     /// Attribute patterns that were newly added (empty if all were present).
@@ -2116,20 +2167,22 @@ pub async fn init_lockable(root: &Path) -> AppResult<InitLockableResult> {
     let mut added = Vec::new();
     let mut content = existing.clone();
 
-    // Two branches that each ran this setup both edited .gitattributes, and
-    // a later merge would collide on it. Union-merging this file is safe
-    // (rules are one-per-line and duplicates are harmless), so declare that
-    // and the collision never happens again.
-    let union_ok = existing.lines().any(|l| {
-        let mut parts = l.split_whitespace();
-        parts.next() == Some(".gitattributes") && l.contains("merge=union")
-    });
-    if !union_ok {
-        if !content.is_empty() && !content.ends_with('\n') {
-            content.push('\n');
+    // Two branches that each ran this setup both edited .gitattributes and
+    // .gitignore, and a later merge would collide on them. Union-merging
+    // these files is safe (rules are one-per-line and duplicates are
+    // harmless), so declare that and the collision never happens again.
+    for file in [".gitattributes", ".gitignore"] {
+        let union_ok = existing.lines().any(|l| {
+            let mut parts = l.split_whitespace();
+            parts.next() == Some(file) && l.contains("merge=union")
+        });
+        if !union_ok {
+            if !content.is_empty() && !content.ends_with('\n') {
+                content.push('\n');
+            }
+            content.push_str(&format!("{file} merge=union\n"));
+            added.push(file.to_string());
         }
-        content.push_str(".gitattributes merge=union\n");
-        added.push(".gitattributes".to_string());
     }
 
     for ext in LOCKABLE_EXTENSIONS {
@@ -2150,7 +2203,22 @@ pub async fn init_lockable(root: &Path) -> AppResult<InitLockableResult> {
         }
     }
 
-    if added.is_empty() {
+    // Keep SolidWorks temp files and OS litter out of the project history.
+    // Whatever is already in .gitignore stays as it is; missing entries are
+    // appended.
+    let ignore_path = root.join(".gitignore");
+    let ignore_existing = std::fs::read_to_string(&ignore_path).unwrap_or_default();
+    let mut ignore_content = ignore_existing.clone();
+    let ignore_added = missing_ignore_entries(&ignore_existing);
+    for entry in &ignore_added {
+        if !ignore_content.is_empty() && !ignore_content.ends_with('\n') {
+            ignore_content.push('\n');
+        }
+        ignore_content.push_str(entry);
+        ignore_content.push('\n');
+    }
+
+    if added.is_empty() && ignore_added.is_empty() {
         return Ok(InitLockableResult {
             added,
             committed: false,
@@ -2158,16 +2226,31 @@ pub async fn init_lockable(root: &Path) -> AppResult<InitLockableResult> {
         });
     }
 
-    std::fs::write(&attrs_path, &content).map_err(AppError::from)?;
     crate::logger::info(format!(
-        "init_lockable: added {} attribute rule(s)",
-        added.len()
+        "init_lockable: added {} attribute rule(s) and {} ignore entries",
+        added.len(),
+        ignore_added.len()
     ));
 
-    run_git_ok(root, &["add", "--", ".gitattributes"], 30).await?;
+    let mut staged = Vec::new();
+    if !added.is_empty() {
+        std::fs::write(&attrs_path, &content).map_err(AppError::from)?;
+        staged.push(".gitattributes");
+    }
+    if !ignore_added.is_empty() {
+        std::fs::write(&ignore_path, &ignore_content).map_err(AppError::from)?;
+        staged.push(".gitignore");
+        if !added.iter().any(|a| a == ".gitignore") {
+            added.push(".gitignore".to_string());
+        }
+    }
+
+    let mut add_args = vec!["add", "--"];
+    add_args.extend(&staged);
+    run_git_ok(root, &add_args, 30).await?;
     let commit = run_git(
         root,
-        &["commit", "-m", "Set up Git LFS locking (via SolidLocker)"],
+        &["commit", "-m", "Set up Git LFS locking and ignore rules (via SolidLocker)"],
         60,
     )
     .await?;

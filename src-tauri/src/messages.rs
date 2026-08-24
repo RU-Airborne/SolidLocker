@@ -140,7 +140,7 @@ pub fn restore_files_open(files: &str) -> String {
 }
 
 pub fn could_not_fix_files(stderr: &str) -> String {
-    format!("Could not fix the files, are they still open in SolidWorks? ({stderr})")
+    format!("Could not put the files back: SolidWorks is still holding one of them. A part stays held as long as an assembly using it is open, so close that assembly (or all of SolidWorks) and try again. ({stderr})")
 }
 
 // ---- Locking and unlocking ----
@@ -157,8 +157,14 @@ pub const RELEASE_BRANCH_NEVER_SHARED: &str =
 pub const RELEASE_NEEDS_PUSH: &str =
     "Your latest changes to this file are not on GitHub yet. Use Save & Share first.";
 
-pub const RELEASE_OPEN_IN_SW: &str =
-    "This file is open in SolidWorks. Close it there first, then unlock.";
+// Unlocking no longer requires closing the file in SolidWorks first; the
+// read-only flag keeps an unlocked file safe on its own.
+// pub const RELEASE_OPEN_IN_SW: &str =
+//     "This file is open in SolidWorks. Close it there first, then unlock.";
+
+#[allow(dead_code)] // only read by the Windows build
+pub const RELEASE_UNSAVED_IN_SW: &str =
+    "This file has unsaved changes in SolidWorks. Save or discard them there, then unlock.";
 
 // ---- Getting the latest / conflicts ----
 

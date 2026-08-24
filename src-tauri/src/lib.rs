@@ -972,6 +972,28 @@ async fn release_files(
     workflow::release_files(&root, paths, &report, &cancel).await
 }
 
+/// Close documents in SolidWorks without saving, throwing their unsaved
+/// changes away. The UI asks for confirmation before calling this.
+#[tauri::command]
+async fn discard_sw_changes(app: AppHandle, paths: Vec<String>) -> AppResult<()> {
+    let root = current_repo(&app)?;
+    #[cfg(windows)]
+    {
+        let abs: Vec<String> = paths
+            .iter()
+            .map(|p| root.join(p).to_string_lossy().replace('/', "\\"))
+            .collect();
+        swrefs::solidworks_close_documents(&abs).await?;
+        crate::logger::info(format!(
+            "discarded unsaved SolidWorks changes in {} file(s)",
+            paths.len()
+        ));
+    }
+    #[cfg(not(windows))]
+    let _ = (root, paths);
+    Ok(())
+}
+
 #[tauri::command]
 async fn force_unlock(
     app: AppHandle,
@@ -1390,6 +1412,7 @@ fn report_window_failure(app: &tauri::AppHandle, detail: &str) {
             get_locks,
             claim_files,
             release_files,
+            discard_sw_changes,
             force_unlock,
             resolve_references,
             sync_attributes,

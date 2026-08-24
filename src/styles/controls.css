@@ -155,7 +155,9 @@
 
 .lockjump .lockname {
   display: block;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Long folder text wraps onto more lines; the held time and branch pill
@@ -169,7 +171,9 @@
 }
 
 .lockmetatext {
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   min-width: 0;
 }
 
@@ -237,4 +241,36 @@
   background: transparent;
   border: 1px dashed #986ee2;
   color: #986ee2;
+}
+
+.offbranch-pills {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.offbranch-goto {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.offbranch-where {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.offbranch-when {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.offbranch-goto button {
+  flex-shrink: 0;
 }

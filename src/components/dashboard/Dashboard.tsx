@@ -22,6 +22,7 @@ import {
   undoMerge,
   cancelLockRun,
   checkOutsideRefs,
+  discardSwChanges,
   type CommitInfo,
   type LockProgress,
   type OutsideRef,
@@ -85,6 +86,8 @@ import {
 } from "../dialogs/RestoreVersionDialog";
 import { RestoreFilesDialog } from "../dialogs/RestoreFilesDialog";
 import { DiscardChangesDialog } from "../dialogs/DiscardChangesDialog";
+import { DiscardSwDialog } from "../dialogs/DiscardSwDialog";
+import { OffBranchFileDialog } from "../dialogs/OffBranchFileDialog";
 import { OutsideRefsDialog } from "../dialogs/OutsideRefsDialog";
 import { FolderLockDialog } from "../dialogs/FolderLockDialog";
 import {
@@ -334,6 +337,8 @@ export function Dashboard({ appState }: { appState: AppState }) {
     commit: VersionRef;
   } | null>(null);
   const [discardOpen, setDiscardOpen] = useState(false);
+  // Unlock was held back: these files have unsaved changes in SolidWorks.
+  const [swUnsaved, setSwUnsaved] = useState<string[] | null>(null);
   // waiting-changes push in flight (the no-message Save & Share case)
   const [pushing, setPushing] = useState(false);
   const [createBranchOpen, setCreateBranchOpen] = useState(false);
@@ -359,6 +364,11 @@ export function Dashboard({ appState }: { appState: AppState }) {
   const [highlightedPath, setHighlightedPath] = useState<string | null>(null);
   const [panelTab, setPanelTab] = useState<"locks" | "activity">("locks");
   const [forceTarget, setForceTarget] = useState<Lock | null>(null);
+  // A locked file living on another branch was clicked in "Who has what".
+  const [offBranchFile, setOffBranchFile] = useState<{
+    path: string;
+    branches: string[];
+  } | null>(null);
   const [setAside, setSetAside] = useState<{ branch: string; files: string[] } | null>(
     null,
   );
@@ -593,6 +603,17 @@ export function Dashboard({ appState }: { appState: AppState }) {
   }, [rows, searchQuery, showOnlyMine, typeFilter]);
 
   const myClaimCount = locks.data?.ours.length ?? 0;
+  // The filter can only ever show files that exist on this branch, so the
+  // chip counts those; locks living on other branches get named separately
+  // rather than leaving the filter mysteriously empty.
+  const myClaimsHere = useMemo(
+    () =>
+      (locks.data?.ours ?? []).filter((l) =>
+        knownPaths.has(l.path.toLowerCase()),
+      ).length,
+    [locks.data, knownPaths],
+  );
+  const myClaimsElsewhere = myClaimCount - myClaimsHere;
 
   const openDocs = useQuery({
     queryKey: ["openDocuments"],
@@ -624,8 +645,8 @@ export function Dashboard({ appState }: { appState: AppState }) {
   // your last one with the filter on, the chip vanishes but the filter would
   // stay active and leave the list stuck empty, so turn it off.
   useEffect(() => {
-    if (showOnlyMine && myClaimCount === 0) setShowOnlyMine(false);
-  }, [showOnlyMine, myClaimCount]);
+    if (showOnlyMine && myClaimsHere === 0) setShowOnlyMine(false);
+  }, [showOnlyMine, myClaimsHere]);
 
   const sizeByPath = useMemo(() => {
     const m = new Map<string, number>();
@@ -921,16 +942,25 @@ export function Dashboard({ appState }: { appState: AppState }) {
           if (blocked.length === 0) {
             succeed(copy.releasedOk(outcomes.map((o) => o.path)));
           } else {
-            const released = outcomes.length - blocked.length;
-            const first = `${blocked[0].path.split("/").pop()}: ${blocked[0].message}`;
-            warn(
-              copy.releasePartial(
-                released,
-                outcomes.length,
-                first,
-                blocked.length - 1,
-              ),
-            );
+            // Files with unsaved SolidWorks edits get a dialog with a way
+            // out (discard in SolidWorks and unlock) instead of a warning.
+            const unsaved = blocked
+              .filter((o) => o.code === "UNSAVED_IN_SW")
+              .map((o) => o.path);
+            const others = blocked.filter((o) => o.code !== "UNSAVED_IN_SW");
+            if (others.length > 0) {
+              const released = outcomes.length - blocked.length;
+              const first = `${others[0].path.split("/").pop()}: ${others[0].message}`;
+              warn(
+                copy.releasePartial(
+                  released,
+                  outcomes.length,
+                  first,
+                  others.length - 1,
+                ),
+              );
+            }
+            if (unsaved.length > 0) setSwUnsaved(unsaved);
           }
         } catch (e) {
           endRun(false);
@@ -1192,16 +1222,24 @@ export function Dashboard({ appState }: { appState: AppState }) {
           </button>
         </div>
       )}
-      {!appState.repo!.lockable_ok && (
+      {(!appState.repo!.lockable_ok || !appState.repo!.ignore_ok) && (
         <div className="notice warn">
-          <span>{copy.noLockingRules}</span>
+          <span>
+            {appState.repo!.lockable_ok
+              ? copy.noIgnoreRules
+              : copy.noLockingRules}
+          </span>
           <button
             className="notice-ok"
             onClick={handleInitLockable}
             disabled={settingUpLocking}
-            title="Adds the locking rules for .sldprt, .sldasm and .slddrw files to this branch and shares them with the team"
+            title="Adds the locking rules for .sldprt, .sldasm and .slddrw files and a .gitignore for temp files to this branch, and shares them with the team"
           >
-            {settingUpLocking ? "Setting up…" : "Set up locking"}
+            {settingUpLocking
+              ? "Setting up…"
+              : appState.repo!.lockable_ok
+                ? "Add ignore rules"
+                : "Set up locking"}
           </button>
         </div>
       )}
@@ -1393,9 +1431,18 @@ export function Dashboard({ appState }: { appState: AppState }) {
                 <button
                   className={`minechip${showOnlyMine ? " active" : ""}`}
                   onClick={() => setShowOnlyMine((v) => !v)}
-                  title="Show only the files you have locked"
+                  disabled={myClaimsHere === 0}
+                  title={
+                    myClaimsHere === 0
+                      ? `Everything you hold is on other branches — "Who has what" shows where`
+                      : myClaimsElsewhere > 0
+                        ? `Show only the files you have locked on this branch. ${myClaimsElsewhere} more ${myClaimsElsewhere === 1 ? "is" : "are"} on other branches — "Who has what" shows where`
+                        : "Show only the files you have locked"
+                  }
                 >
-                  Files you hold ({myClaimCount})
+                  {myClaimsHere === 0
+                    ? `Files you hold (${myClaimCount} on other branches)`
+                    : `Files you hold (${myClaimsHere}${myClaimsElsewhere > 0 ? ` +${myClaimsElsewhere} elsewhere` : ""})`}
                 </button>
                 <button
                   className="minechip unlockall"
@@ -1441,6 +1488,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
               rows={visibleRows}
               actions={actions}
               sort={sortMode}
+              repoPath={appState.repo!.repo_path}
               forceExpand={
                 searchQuery.trim() !== "" || showOnlyMine || typeFilter !== "all"
               }
@@ -1479,6 +1527,9 @@ export function Dashboard({ appState }: { appState: AppState }) {
               }
               knownPaths={knownPaths}
               onSelectFile={focusFile}
+              onOffBranchFile={(path, branchesOn) =>
+                setOffBranchFile({ path, branches: branchesOn })
+              }
               onForceRelease={setForceTarget}
             />
           ) : (
@@ -1550,6 +1601,35 @@ export function Dashboard({ appState }: { appState: AppState }) {
           )}
           onClose={() => setDiscardOpen(false)}
           onConfirm={handleDiscardChanges}
+        />
+      )}
+      {offBranchFile && (
+        <OffBranchFileDialog
+          path={offBranchFile.path}
+          branches={offBranchFile.branches}
+          currentBranch={currentBranch}
+          switchingTo={switchingTo}
+          switching={switching}
+          onGo={(br) => {
+            // The switch has its own progress UI; this dialog is done.
+            const path = offBranchFile.path;
+            setOffBranchFile(null);
+            void handleSwitchBranch(br).then(() => focusFile(path));
+          }}
+          onClose={() => setOffBranchFile(null)}
+        />
+      )}
+      {swUnsaved && (
+        <DiscardSwDialog
+          paths={swUnsaved}
+          onClose={() => setSwUnsaved(null)}
+          onConfirm={() => {
+            const paths = swUnsaved;
+            setSwUnsaved(null);
+            discardSwChanges(paths)
+              .then(() => actions.release(paths))
+              .catch((e) => warn(isAppError(e) ? e.message : String(e)));
+          }}
         />
       )}
       {showCollisions && collisions.data && (

@@ -397,14 +397,54 @@ pub async fn release_files(
         to_unlock.push(path);
     }
 
+    // We used to refuse to unlock a file while it was open in SolidWorks.
+    // That turned out to be more hassle than protection: everything reaching
+    // this point is already committed and pushed, and the read-only flag set
+    // right after unlocking stops SolidWorks from writing its in-memory copy
+    // back. The open copy just goes stale, which is the user's call to make.
+    // #[cfg(windows)]
+    // if !to_unlock.is_empty() {
+    //     let open_docs: HashSet<String> = swrefs::solidworks_open_documents()
+    //         .await
+    //         .into_iter()
+    //         .map(|p| p.replace('\\', "/").to_lowercase())
+    //         .collect();
+    //     if !open_docs.is_empty() {
+    //         let mut still_ok = Vec::new();
+    //         for path in to_unlock {
+    //             let abs = root
+    //                 .join(&path)
+    //                 .to_string_lossy()
+    //                 .replace('\\', "/")
+    //                 .to_lowercase();
+    //             if open_docs.contains(&abs) {
+    //                 outcomes.push(ReleaseOutcome {
+    //                     path,
+    //                     ok: false,
+    //                     code: Some("OPEN_IN_SW".into()),
+    //                     message: Some(messages::RELEASE_OPEN_IN_SW.into()),
+    //                 });
+    //             } else {
+    //                 still_ok.push(path);
+    //             }
+    //         }
+    //         to_unlock = still_ok;
+    //     }
+    // }
+
+    // A file that is merely open is safe: it matches GitHub, and the
+    // read-only flag set after unlocking keeps SolidWorks from writing its
+    // copy back. Unsaved edits are different: they live only in SolidWorks
+    // memory, and unlocking would strand them. Those get turned away here,
+    // and the UI offers to discard them in SolidWorks after a confirmation.
     #[cfg(windows)]
     if !to_unlock.is_empty() {
-        let open_docs: HashSet<String> = swrefs::solidworks_open_documents()
+        let unsaved: HashSet<String> = swrefs::solidworks_unsaved_documents()
             .await
             .into_iter()
             .map(|p| p.replace('\\', "/").to_lowercase())
             .collect();
-        if !open_docs.is_empty() {
+        if !unsaved.is_empty() {
             let mut still_ok = Vec::new();
             for path in to_unlock {
                 let abs = root
@@ -412,12 +452,12 @@ pub async fn release_files(
                     .to_string_lossy()
                     .replace('\\', "/")
                     .to_lowercase();
-                if open_docs.contains(&abs) {
+                if unsaved.contains(&abs) {
                     outcomes.push(ReleaseOutcome {
                         path,
                         ok: false,
-                        code: Some("OPEN_IN_SW".into()),
-                        message: Some(messages::RELEASE_OPEN_IN_SW.into()),
+                        code: Some("UNSAVED_IN_SW".into()),
+                        message: Some(messages::RELEASE_UNSAVED_IN_SW.into()),
                     });
                 } else {
                     still_ok.push(path);
@@ -476,7 +516,9 @@ pub async fn release_files(
                     });
                 }
                 Err(e) => {
-                    progress(LockProgress::new("failed", &path, total));
+                    // Not a verdict yet: the unlock may have reached GitHub
+                    // before the command failed. The recovery pass below
+                    // decides, and the row stays "working…" until it does.
                     failed_raw.push((path, e))
                 }
             }
@@ -487,6 +529,9 @@ pub async fn release_files(
         .iter()
         .any(|(_, e)| crate::error::looks_offline(&e.message))
     {
+        for (path, _) in &failed_raw {
+            progress(LockProgress::new("failed", path, total));
+        }
         return Err(AppError::offline(messages::RELEASE_OFFLINE));
     }
 
@@ -502,7 +547,15 @@ pub async fn release_files(
                 None => true,
             };
             if !still_locked {
+                // The unlock reached GitHub before the command errored — a
+                // file absent from this branch fails the local read-only step
+                // with exit 2, for one. The lock is gone, so this file is a
+                // success; tell the progress dialog it changed its mind.
+                crate::logger::info(format!(
+                    "unlock: {path} was released on GitHub despite the error"
+                ));
                 let _ = fsattr::set_readonly(&root.join(&path), true);
+                progress(LockProgress::new("done", &path, total));
                 outcomes.push(ReleaseOutcome {
                     path,
                     ok: true,
@@ -514,6 +567,7 @@ pub async fn release_files(
             match lfs::unlock_file(root, &path, false).await {
                 Ok(()) => {
                     let _ = fsattr::set_readonly(&root.join(&path), true);
+                    progress(LockProgress::new("done", &path, total));
                     outcomes.push(ReleaseOutcome {
                         path,
                         ok: true,
@@ -521,12 +575,15 @@ pub async fn release_files(
                         message: None,
                     });
                 }
-                Err(e) => outcomes.push(ReleaseOutcome {
-                    path,
-                    ok: false,
-                    code: Some(e.code),
-                    message: Some(e.message),
-                }),
+                Err(e) => {
+                    progress(LockProgress::new("failed", &path, total));
+                    outcomes.push(ReleaseOutcome {
+                        path,
+                        ok: false,
+                        code: Some(e.code),
+                        message: Some(e.message),
+                    })
+                }
             }
         }
     }

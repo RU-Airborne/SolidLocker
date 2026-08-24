@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { locateLockPaths } from "../../api";
 import type { Lock, LocksResult } from "../../types";
+import { useBranchColors } from "../common/BranchName";
 import { FilePreview } from "../common/FilePreview";
 import { UserAvatar } from "../common/UserAvatar";
 import { formatPerson, usePeople } from "../../identity";
@@ -11,10 +12,10 @@ function heldFor(lockedAt: string | null): string {
   if (!lockedAt) return "";
   const ms = Date.now() - new Date(lockedAt).getTime();
   const minutes = Math.floor(ms / 60_000);
-  if (minutes < 60) return `${Math.max(minutes, 1)}m`;
+  if (minutes < 60) return `${Math.max(minutes, 1)}m ago`;
   const hours = Math.floor(minutes / 60);
-  if (hours < 48) return `${hours}h`;
-  return `${Math.floor(hours / 24)}d`;
+  if (hours < 48) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
 }
 
 interface PersonLocks {
@@ -29,12 +30,14 @@ export function LocksPanel({
   lockError,
   knownPaths,
   onSelectFile,
+  onOffBranchFile,
   onForceRelease,
 }: {
   locks: LocksResult | undefined;
   lockError: string | null;
   knownPaths: Set<string>;
   onSelectFile: (path: string) => void;
+  onOffBranchFile: (path: string, branches: string[]) => void;
   onForceRelease: (lock: Lock) => void;
 }) {
   const offBranchPaths = useMemo(
@@ -53,6 +56,7 @@ export function LocksPanel({
     staleTime: 5 * 60_000,
   });
   const directory = usePeople();
+  const branchColor = useBranchColors();
 
   const people: PersonLocks[] = useMemo(() => {
     if (!locks) return [];
@@ -104,7 +108,8 @@ export function LocksPanel({
             {person.locks.map((lock) => {
               const parts = lock.path.split("/");
               const name = parts.pop();
-              const folder = parts.join("/");
+              const folder =
+                parts.length > 1 ? `…/${parts[parts.length - 1]}` : parts.join("/");
               const onBranch = knownPaths.has(lock.path.toLowerCase());
               return (
                 <li key={lock.id} title={lock.path} className="lockitem">
@@ -119,8 +124,17 @@ export function LocksPanel({
                   )}
                   <button
                     className="lockjump"
-                    disabled={!onBranch}
-                    onClick={() => onSelectFile(lock.path)}
+                    disabled={
+                      !onBranch && (locations.data?.[lock.path] ?? []).length === 0
+                    }
+                    onClick={() =>
+                      onBranch
+                        ? onSelectFile(lock.path)
+                        : onOffBranchFile(
+                            lock.path,
+                            locations.data?.[lock.path] ?? [],
+                          )
+                    }
                   >
                     <span className="lockname">
                       <FilePreview path={lock.path} className="fthumb lockthumb" />
@@ -139,10 +153,38 @@ export function LocksPanel({
                         (() => {
                           const on = locations.data?.[lock.path];
                           if (on && on.length > 0) {
+                            // One pill per branch, in that branch's colour.
                             return (
-                              <span className="offbranch">
-                                on {on.slice(0, 2).join(", ")}
-                                {on.length > 2 ? "…" : ""}
+                              <span className="offbranch-pills">
+                                {on.slice(0, 3).map((br) => {
+                                  const c = branchColor(br);
+                                  return (
+                                    <span
+                                      key={br}
+                                      className="offbranch"
+                                      style={
+                                        c
+                                          ? {
+                                              color: c,
+                                              borderColor: `color-mix(in srgb, ${c} 55%, transparent)`,
+                                              background: `color-mix(in srgb, ${c} 8%, transparent)`,
+                                            }
+                                          : undefined
+                                      }
+                                      title={`On branch ${br}`}
+                                    >
+                                      {br}
+                                    </span>
+                                  );
+                                })}
+                                {on.length > 3 && (
+                                  <span
+                                    className="offbranch"
+                                    title={on.slice(3).join(", ")}
+                                  >
+                                    +{on.length - 3}
+                                  </span>
+                                )}
                               </span>
                             );
                           }

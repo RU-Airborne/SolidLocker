@@ -48,8 +48,7 @@ export function CollisionNotice({
                 <strong>{oneFile}</strong>
               ) : (
                 `${only.cad_files.length} files`
-              )}{" "}
-              &mdash; and so is this one.
+              )}{" "}.
             </>
           ) : (
             <>
