@@ -48,7 +48,7 @@ export function SetupChecks() {
               </span>
               <span className="checkbody">
                 <strong>{c.label}</strong>
-                <span className="muted small"> — {c.detail}</span>
+                <span className="muted small">, {c.detail}</span>
                 {c.fix && <span className="checkfix">{c.fix}</span>}
               </span>
             </li>

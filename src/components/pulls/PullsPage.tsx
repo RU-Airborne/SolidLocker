@@ -1,5 +1,5 @@
 import { StatusMark } from "../common/StatusMark";
-import { BranchName } from "../common/BranchName";
+import { BranchName, useBranchColors } from "../common/BranchName";
 import { MergeDiagram, TrashGlyph } from "../common/HistoryDiagrams";
 import { useEffect, useReducer, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -27,7 +27,6 @@ import {
 } from "../../api";
 import { clearPicks, picksFor, type Side } from "../../conflictPicks";
 import { ConflictPicker, type Proposal } from "../common/ConflictPicker";
-import { useClashLayout } from "../common/ClashRailway";
 import { formatDateTime } from "../../dates";
 import { isAppError } from "../../types";
 import { UserAvatar } from "../common/UserAvatar";
@@ -621,7 +620,7 @@ function PullView({
 
   const d = pr.data;
   const onBase = d ? currentBranch === d.base : false;
-  const lanes = useClashLayout(d?.base ?? "", d?.head ?? "").laid?.colors;
+  const branchColor = useBranchColors();
 
   // From origin/* so the table reads the same on any branch. Keyed on the head commit and last update, 
   // so a push makes a fresh list.
@@ -731,9 +730,14 @@ function PullView({
               </div>
             </div>
             <div className="prbranches">
+              {/* The same colour the branch has everywhere else, so the
+                  pill and the name in the text below agree. */}
               <span
                 className="gg-chip prchip"
-                style={{ color: lanes?.theirs, borderColor: lanes?.theirs }}
+                style={{
+                  color: branchColor(d.head),
+                  borderColor: branchColor(d.head),
+                }}
               >
                 {d.head}
               </span>
@@ -742,7 +746,10 @@ function PullView({
               </span>
               <span
                 className="gg-chip prchip"
-                style={{ color: lanes?.ours, borderColor: lanes?.ours }}
+                style={{
+                  color: branchColor(d.base),
+                  borderColor: branchColor(d.base),
+                }}
               >
                 {d.base}
               </span>

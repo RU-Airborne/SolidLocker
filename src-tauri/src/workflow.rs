@@ -547,7 +547,7 @@ pub async fn release_files(
                 None => true,
             };
             if !still_locked {
-                // The unlock reached GitHub before the command errored — a
+                // The unlock reached GitHub before the command errored, a
                 // file absent from this branch fails the local read-only step
                 // with exit 2, for one. The lock is gone, so this file is a
                 // success; tell the progress dialog it changed its mind.

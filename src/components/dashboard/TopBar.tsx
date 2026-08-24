@@ -188,7 +188,7 @@ export function TopBar({
               label: b,
               color: branchColorOf(b),
             })),
-            // not a branch — intercepted upstream to open the create dialog
+            // not a branch, intercepted upstream to open the create dialog
             { value: "__create__", label: "＋ New branch…" },
           ]}
         />

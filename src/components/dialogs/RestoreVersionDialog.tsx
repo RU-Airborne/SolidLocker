@@ -28,7 +28,7 @@ export interface VersionRef {
   sha: string;
   date: string;
   author_name: string;
-  /** Commit subject, when the caller has it — used to label the diagrams. */
+  /** Commit subject, when the caller has it, used to label the diagrams. */
   message?: string;
 }
 
@@ -191,7 +191,7 @@ export function RestoreVersionDialog({
           )}
         </div>
 
-        {/* Two equal ways to use this version — pick a lane. */}
+        {/* Two equal ways to use this version, pick a lane. */}
         <div className="versiontabs" role="tablist">
           <button
             role="tab"
@@ -300,7 +300,7 @@ export function RestoreVersionDialog({
         {mode === "branch" && (
           <div className="branchoffpanel">
             {/* Branching can carry the whole project back, or just this
-                file — say which, out loud, and let the user pick. */}
+                file, say which, out loud, and let the user pick. */}
             <p className="small">What should the new branch carry back?</p>
             <div
               className={`branchscope${branchScopeDefault === "all" ? " allfirst" : ""}`}

@@ -821,12 +821,33 @@ button.linkish:hover {
 .gg-rails path,
 .gg-rails g,
 .gg-fillrails line,
-.gg-detailrails line {
+.gg-fillrails g,
+.gg-detailrails line,
+.gg-detailrails g {
   transition: opacity 0.25s ease;
 }
 
 .gg-quiet {
   opacity: 0.22;
+}
+
+/* Show why this change's line is grey. */
+.gg-spurnote {
+  margin: 0.35rem 0 0.5rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--muted) 8%, transparent);
+  line-height: 1.45;
+}
+
+/* The little grey rail in the legend line above the railway. */
+.gg-legendspur {
+  display: inline-block;
+  width: 1.1rem;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--muted);
+  vertical-align: middle;
 }
 
 .branchsubject {

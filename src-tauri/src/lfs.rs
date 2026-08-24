@@ -76,7 +76,7 @@ fn bucket_by_owner(locks: Vec<Lock>, username: Option<&str>) -> (Vec<Lock>, Vec<
 
 /// Concurrent git-lfs processes can corrupt their shared lock cache, after
 /// which EVERY lock command fails ("gob: encoded unsigned integer out of
-/// range"). The cache is disposable — delete it and git-lfs rebuilds it.
+/// range"). The cache is disposable, delete it and git-lfs rebuilds it.
 fn is_lockcache_corruption(stderr: &str) -> bool {
     stderr.contains("lockcache.db") || stderr.contains("lock cache initialization")
 }
@@ -118,7 +118,7 @@ pub async fn get_locks(repo: &Path, username_hint: Option<&str>) -> AppResult<Lo
             let locks = parse_flat_json(&out.stdout)?;
             // An EMPTY cache is no answer: on a machine that never created a
             // lock (fresh clone, teammate's first run) it just mirrors that
-            // nothing was cached — presenting it as "no locks" hides real
+            // nothing was cached, presenting it as "no locks" hides real
             // locks held by others. Fall through to the verify error instead.
             if !locks.is_empty() {
                 let (ours, theirs) = bucket_by_owner(locks, username_hint);

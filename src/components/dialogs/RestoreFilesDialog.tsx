@@ -95,7 +95,7 @@ export function RestoreFilesDialog({
           {commit.message?.trim() ? (
             <>
               {" "}
-              — “<em>{commit.message}</em>”
+             , “<em>{commit.message}</em>”
             </>
           ) : null}
           .

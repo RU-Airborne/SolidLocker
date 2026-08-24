@@ -168,14 +168,504 @@ const LANE_COLORS = [
 ];
 
 const ROW_H = 34;
-const COL_W = 14;
+const COL_W = 16;
 
 export function laneColor(i: number): string {
   return LANE_COLORS[i % LANE_COLORS.length];
 }
 
-function FillRails({ lanes, laneCount }: { lanes: { lane: number; on: boolean }[]; laneCount: number }) {
-  const w = laneCount * COL_W + 4;
+/* Subway-map trunks: every branch is its tip's first parent chain,
+   drawn as its own strand. Where several routes share a stretch of history
+   the strands run in parallel, each in a fixed slot for the whole lane so a
+   branch's line stays straight while neighbours come and go, and every stop
+   stretches into a station bar crossing the strands present. Merges are
+   plain connectors between lines, not part of any route. */
+const STRAND_GAP = 5;
+const RAIL_W = 3;
+/** Solid, then dashed, then dotted */
+const DASH_PATTERNS: (string | undefined)[] = [undefined, "7 4", "2 3"];
+/** A stretch no named branch runs along (history behind a deleted branch, or
+    the far side of a merge) is track without a line: neutral, never a hue
+    that would read as somebody's branch. */
+const NO_ROUTE = "var(--muted)";
+
+/** The routes riding the edges into `childs`, in stable order. */
+function routesForShas(routes: RouteMap, shas: string[]): string[] {
+  const seen = new Set<string>();
+  for (const s of shas) {
+    for (const r of routes.bySha.get(s) ?? []) seen.add(r);
+  }
+  return [...seen].sort(
+    (a, b) => (routes.orderIndex.get(a) ?? 0) - (routes.orderIndex.get(b) ?? 0),
+  );
+}
+
+/** The routes riding the edge child->parent: normally the lines both ends
+    are on, which is the whole bundle along a trunk. Where they share none,
+    the edge is a merge connector, and the stretch running down into where
+    a line ends belongs to that line, so it wears its colour and sits on its
+    strand all the way to the tip. Anything else is track no line runs
+    along, and stays neutral. */
+export function edgeRoutesOf(
+  routes: RouteMap,
+  childs: string[],
+  parentSha: string,
+): string[] {
+  return edgeRoutes(routes, childs, parentSha);
+}
+
+function edgeRoutes(
+  routes: RouteMap,
+  childs: string[],
+  parentSha: string,
+): string[] {
+  const onParent = new Set(routes.bySha.get(parentSha) ?? []);
+  const above = routesForShas(routes, childs);
+  const shared = above.filter((r) => onParent.has(r));
+  if (shared.length > 0) return shared;
+  // The stretch where a line leaves the one it broke off from belongs to
+  // the line above, the same way the stretch into a tip belongs to the line
+  // ending there.
+  const leaving = above.filter((r) => routes.forkPoint.get(r) === parentSha);
+  if (leaving.length > 0) return leaving;
+  return (routes.tipOf.get(parentSha) ?? []).slice(0, 1);
+}
+
+export type LaneSlots = Map<number, Map<string, number>>;
+
+export interface LaneLayout {
+  /** Strand offsets to use for each row, by lane then route. */
+  slots: LaneSlots[];
+  /** Centre x of each lane. Lanes are only as wide as their own bundle
+      needs, so a single-branch lane stays narrow next to a busy trunk. */
+  laneX: number[];
+  totalW: number;
+}
+
+/** Where each line sits across a lane. The rule: for as long as a lane is
+    continuously occupied, every line running down it keeps one fixed offset,
+    and the bundle is centred on the lane, so lines stay straight while
+    neighbours come and go. When a lane empties and is later reused by
+    unrelated history, that new occupancy is centred on its own, rather than
+    inheriting slots from lines it never runs beside. */
+export function computeLaneSlots(
+  rows: LaidRow[],
+  routes: RouteMap,
+  laneCount: number,
+): LaneLayout {
+  // What each row draws in each lane, and which lanes it touches at all.
+  const drawn: Map<number, Set<string>>[] = [];
+  const touched: Set<number>[] = [];
+  for (const row of rows) {
+    const m = new Map<number, Set<string>>();
+    const add = (lane: number, rs: string[]) => {
+      let s = m.get(lane);
+      if (!s) m.set(lane, (s = new Set()));
+      for (const r of rs) s.add(r);
+    };
+    // Only lines that actually run through this lane get a slot. A branch
+    // that calls at a single stop and goes nowhere, parked with no commits
+    // of its own, would otherwise reserve a strand's width down the entire
+    // lane to show one bead, which is what pushes everything else outwards.
+    // Its bead is packed at the stop instead.
+    if (row.hasTop) {
+      add(row.lane, edgeRoutes(routes, row.topChilds, row.commit.sha));
+    }
+    row.passes.forEach((j, k) =>
+      add(j, edgeRoutes(routes, row.passChilds[k] ?? [], row.passShas[k])),
+    );
+    row.joins.forEach((j, k) =>
+      add(j, edgeRoutes(routes, row.joinChilds[k] ?? [], row.commit.sha)),
+    );
+    row.below.forEach((j, k) =>
+      add(j, edgeRoutes(routes, row.belowChilds[k] ?? [], row.belowShas[k])),
+    );
+    drawn.push(m);
+    const here = new Set<number>([row.lane]);
+    for (const j of row.passes) here.add(j);
+    for (const j of row.joins) here.add(j);
+    for (const m2 of row.forks) here.add(m2);
+    for (const j of row.below) here.add(j);
+    touched.push(here);
+  }
+
+  // Break each lane into runs of rows where the same history stays in it. A
+  // run carries on only while the lane still holds the commit it was
+  // waiting for, a lane freed on one row and picked up by unrelated
+  // history on the next looks continuous but is not, and letting those
+  // share one allocation leaves both sitting off the lane's centre. A
+  // stretch carrying no line does not end a run, so a line's offset
+  // survives a neutral gap in the middle of its lane.
+  const runOfRow: Map<number, number>[] = rows.map(() => new Map());
+  const runRoutes = new Map<string, Set<string>>();
+  const openRun = new Map<number, number>();
+  const runCount = new Map<number, number>();
+  const held = new Map<number, string>();
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const carriesOn = new Set<number>();
+    row.passes.forEach((j, k) => {
+      if (held.get(j) === row.passShas[k]) carriesOn.add(j);
+    });
+    if (row.hasTop && held.get(row.lane) === row.commit.sha) {
+      carriesOn.add(row.lane);
+    }
+    for (const j of row.joins) {
+      if (held.get(j) === row.commit.sha) carriesOn.add(j);
+    }
+    for (const lane of touched[i]) {
+      let run = carriesOn.has(lane) ? openRun.get(lane) : undefined;
+      if (run === undefined) {
+        run = runCount.get(lane) ?? 0;
+        runCount.set(lane, run + 1);
+        openRun.set(lane, run);
+      }
+      runOfRow[i].set(lane, run);
+      const key = `${lane}:${run}`;
+      let set = runRoutes.get(key);
+      if (!set) runRoutes.set(key, (set = new Set()));
+      for (const r of drawn[i].get(lane) ?? []) set.add(r);
+    }
+    held.clear();
+    row.below.forEach((j, k) => held.set(j, row.belowShas[k]));
+    for (const lane of [...openRun.keys()]) {
+      if (!held.has(lane)) openRun.delete(lane);
+    }
+  }
+
+  // One centred allocation per run, and a lane sized by its busiest run.
+  const runSlots = new Map<string, Map<string, number>>();
+  const widest = new Map<number, number>();
+  for (const [key, set] of runRoutes) {
+    const lane = Number(key.slice(0, key.indexOf(":")));
+    const ordered = [...set].sort(
+      (a, b) =>
+        (routes.orderIndex.get(a) ?? 0) - (routes.orderIndex.get(b) ?? 0),
+    );
+    const m = new Map<string, number>();
+    ordered.forEach((r, i) =>
+      m.set(r, (i - (ordered.length - 1) / 2) * STRAND_GAP),
+    );
+    runSlots.set(key, m);
+    widest.set(lane, Math.max(widest.get(lane) ?? 1, ordered.length));
+  }
+
+  const slots: LaneSlots[] = rows.map((_, i) => {
+    const m: LaneSlots = new Map();
+    for (const [lane, run] of runOfRow[i]) {
+      const s = runSlots.get(`${lane}:${run}`);
+      if (s) m.set(lane, s);
+    }
+    return m;
+  });
+
+  // Each lane is only as wide as its own bundle plus room for the station
+  // bar capping it, so the diagram stays tight and forks travel a short way.
+  const laneX: number[] = [];
+  let edge = 0;
+  // Width comes from the strands that run down the lane, and nothing else.
+  // Beads for branches that only call at one stop hang off the end of that
+  // stop's bar instead of buying width along the whole lane, a lane is
+  // costly, and they have no line to put in it.
+  for (let i = 0; i < Math.max(laneCount, widest.size); i++) {
+    const width = Math.max(COL_W, ((widest.get(i) ?? 1) - 1) * STRAND_GAP + 12);
+    laneX.push(edge + width / 2);
+    edge += width;
+  }
+  return { slots, laneX, totalW: edge };
+}
+
+/** Tags arrive decorated by the backend ("🏷 v1"), which is how they are
+    told apart from branch names. */
+export function isTagRef(ref: string): boolean {
+  return ref.startsWith("🏷");
+}
+
+export interface RouteMap {
+  /** Stable drawing order for every route (branch or tag) label. */
+  orderIndex: Map<string, number>;
+  /** sha -> the route labels whose line runs through it. */
+  bySha: Map<string, string[]>;
+  /** sha -> its first parent, for telling route edges from connectors. */
+  firstParent: Map<string, string | undefined>;
+  /** sha -> the routes that END here, i.e. whose branch tip this is. */
+  tipOf: Map<string, string[]>;
+  /** Route -> the commit it broke off at, where its strip starts. */
+  forkPoint: Map<string, string | undefined>;
+  /** The colour each route keeps everywhere it is drawn. */
+  color: Map<string, string>;
+  /** Once the palette is exhausted, lines reuse a hue but take a dash
+      pattern, so neighbours still tell apart. Undefined means solid. */
+  dash: Map<string, string | undefined>;
+  /** sha -> every branch whose history holds it, however it got there.
+      Which line is *drawn* along a stretch is a different question: a
+      merge diamond's side path is one spur, not the whole bundle. */
+  containedIn: Map<string, string[]>;
+  /** Branch -> the line it is drawn as. Branches sitting on the same commit
+      have the same history, so they share one line. */
+  repOf: Map<string, string>;
+  /** That line -> every branch riding it. */
+  members: Map<string, string[]>;
+}
+
+/** Which routes pass through each commit. A route is its tip's first-parent
+    chain, the line the branch draws on the map; merges connect lines but
+    do not spread them. */
+export function routeSets(commits: GraphCommit[]): RouteMap {
+  const byShaCommit = new Map(commits.map((c) => [c.sha, c]));
+  const firstParent = new Map<string, string | undefined>(
+    commits.map((c) => [c.sha, c.parents[0]]),
+  );
+  const tips = new Map<string, string>();
+  for (const c of commits) {
+    for (const r of c.refs) {
+      // Only branches draw a line. A tag marks one stop, like a landmark
+      // beside a station, and would otherwise claim the whole history
+      // behind it as a route of its own.
+      if (r === "HEAD" || r === "origin/HEAD" || isTagRef(r)) continue;
+      const name = r.startsWith("origin/") ? r.slice(7) : r;
+      if (!tips.has(name)) tips.set(name, c.sha);
+    }
+  }
+  // Every branch is its own line with its own colour, including two sitting
+  // on the same commit: they are different branches and the team has to
+  // tell them apart, so they run alongside each other with a bead each.
+  const repOf = new Map<string, string>();
+  const members = new Map<string, string[]>();
+  const orderIndex = new Map<string, number>();
+  const bySha = new Map<string, string[]>();
+  const tipOf = new Map<string, string[]>();
+  const forkPoint = new Map<string, string | undefined>();
+  let order = 0;
+  for (const [label, tipSha] of tips) {
+    repOf.set(label, label);
+    members.set(label, [label]);
+    orderIndex.set(label, order++);
+    let ends = tipOf.get(tipSha);
+    if (!ends) tipOf.set(tipSha, (ends = []));
+    ends.push(label);
+  }
+
+  // Has this branch broken off, or is it parked on someone else's line?
+  // Git keeps no record of when a branch was made, but this question is
+  // answerable and it is the one that matters: a branch is parked when its
+  // tip sits on another line's own run of commits. Being merged into
+  // another branch does not make it parked, its work still went its own
+  // way first, so it keeps a strip that ends where it merged. Branches on
+  // the very same commit do not park each other either; neither is behind
+  // the other, so they simply run together.
+  const chainOf = new Map<string, Set<string>>();
+  for (const [label, tipSha] of tips) {
+    const seen = new Set<string>();
+    let sha: string | undefined = tipSha;
+    while (sha && !seen.has(sha)) {
+      seen.add(sha);
+      sha = byShaCommit.get(sha)?.parents[0];
+    }
+    chainOf.set(label, seen);
+  }
+  const brokeOff = new Map<string, boolean>();
+  for (const [label, tipSha] of tips) {
+    let parked = false;
+    for (const [other, otherTip] of tips) {
+      if (other === label || otherTip === tipSha) continue;
+      if (chainOf.get(other)?.has(tipSha)) {
+        parked = true;
+        break;
+      }
+    }
+    brokeOff.set(label, !parked);
+  }
+
+  // Lines that broke off go first and take the commits their first parents
+  // reach, stopping where they meet a line already running, that meeting
+  // point is the commit they were made from, and their strip starts there.
+  // Nothing of theirs is drawn before it.
+  const claimed = new Set<string>();
+  const drewOwn = new Set<string>();
+  for (const [label, tipSha] of tips) {
+    if (!brokeOff.get(label)) continue;
+    const seen = new Set<string>();
+    let sha: string | undefined = tipSha;
+    while (sha && !seen.has(sha) && !claimed.has(sha)) {
+      seen.add(sha);
+      claimed.add(sha);
+      let list = bySha.get(sha);
+      if (!list) bySha.set(sha, (list = []));
+      list.push(label);
+      sha = byShaCommit.get(sha)?.parents[0];
+    }
+    if (seen.size === 0) continue; // a twin on the same commit got there first
+    drewOwn.add(label);
+    forkPoint.set(label, sha && !seen.has(sha) ? sha : undefined);
+  }
+
+  // A branch with no stretch of its own to draw, parked on another line,
+  // or sharing a commit with a twin, runs the whole way alongside it in
+  // its own colour, so the stops they share become pods naming both.
+  for (const [label, tipSha] of tips) {
+    if (drewOwn.has(label)) continue;
+    const seen = new Set<string>();
+    let sha: string | undefined = tipSha;
+    while (sha && !seen.has(sha)) {
+      seen.add(sha);
+      let list = bySha.get(sha);
+      if (!list) bySha.set(sha, (list = []));
+      list.push(label);
+      sha = byShaCommit.get(sha)?.parents[0];
+    }
+    forkPoint.set(label, undefined);
+  }
+  // Keep every stop's lines in the drawing order the strands use.
+  for (const [sha, rs] of bySha) {
+    if (rs.length > 1) {
+      bySha.set(
+        sha,
+        [...rs].sort(
+          (a, b) => (orderIndex.get(a) ?? 0) - (orderIndex.get(b) ?? 0),
+        ),
+      );
+    }
+  }
+
+  // Work that arrived through a merge sits on a second parent, a `git pull`
+  // puts the incoming commits there, so no tip's first-parent chain reaches
+  // Nothing is adopted onto a line it does not run along. When two people
+  // commit on the same base and one pulls, git writes a merge whose second
+  // side is the other person's work: real history, but no branch of its own
+  // ever ran there. That stretch stays neutral, and the commit's own panel
+  // lists the branches whose history holds it.
+
+  // Colours: every branch gets its own, outright. Only colouring lines that
+  // touch was not enough, two branches on opposite sides of the diagram
+  // never meet, so they were handed the same hue and read as one branch.
+  // Sixteen colours times three dash patterns is 48 before any repeat.
+  const color = new Map<string, string>();
+  const dash = new Map<string, string | undefined>();
+  for (const [label, i] of orderIndex) {
+    color.set(label, LANE_COLORS[i % LANE_COLORS.length]);
+    // Solid right through the palette first, so dashes only appear once
+    // there are more branches than colours.
+    const round = Math.floor(i / LANE_COLORS.length);
+    dash.set(
+      label,
+      DASH_PATTERNS[Math.min(round, DASH_PATTERNS.length - 1)],
+    );
+  }
+  // Which branches is this commit on? Every branch whose own run of commits
+  // passes through it, its first parents, back through whatever it was made
+  // from and on into the history behind that. So a branch made from this
+  // commit later still counts: its line runs back through here.
+  //
+  // A branch that merged this work in does not. The merge happened at a
+  // later commit; the work was never on that branch at this point in the
+  // story, it arrived afterwards. This is also how the railway picks what to
+  // draw, so the lines and the words agree.
+  const containedIn = new Map<string, string[]>();
+  for (const [label] of tips) {
+    for (const sha of chainOf.get(label) ?? []) {
+      let list = containedIn.get(sha);
+      if (!list) containedIn.set(sha, (list = []));
+      list.push(label);
+    }
+  }
+  // Plain containment, every parent followed, merges included. Kept for the
+  // day the question is "who has this work now?" rather than "whose line was
+  // it made on?", the two differ the moment anything is merged.
+  // const containedIn = new Map<string, string[]>();
+  // for (const [label, tipSha] of tips) {
+  //   const seen = new Set<string>();
+  //   const stack = [tipSha];
+  //   while (stack.length > 0) {
+  //     const sha = stack.pop()!;
+  //     if (seen.has(sha)) continue;
+  //     seen.add(sha);
+  //     let list = containedIn.get(sha);
+  //     if (!list) containedIn.set(sha, (list = []));
+  //     list.push(label);
+  //     const c = byShaCommit.get(sha);
+  //     if (c) stack.push(...c.parents);
+  //   }
+  // }
+  return {
+    orderIndex,
+    bySha,
+    firstParent,
+    tipOf,
+    forkPoint,
+    color,
+    dash,
+    containedIn,
+    repOf,
+    members,
+  };
+}
+
+/** A line ends where it merges, so the last stretch, the connector running
+    up into the merge commit, belongs to it and lights with it. Without the
+    merge commit in the lit set that final segment would stay dim. */
+function addMergePoint(set: Set<string>, rows: LaidRow[], topSha: string) {
+  const merger = rows.find(
+    (r) =>
+      !set.has(r.commit.sha) &&
+      r.commit.parents.indexOf(topSha) > 0,
+  );
+  if (merger) set.add(merger.commit.sha);
+}
+
+/** Every route keeps one colour everywhere it is drawn. */
+export function routeColor(routes: RouteMap, r: string): string {
+  const line = routes.repOf.get(r) ?? r;
+  return routes.color.get(line) ?? laneColor(routes.orderIndex.get(line) ?? 0);
+}
+
+/** A fork or merge crossing between lanes: out of its own lane, through a
+    rounded corner, across, then back in through another. Both railways draw
+    it with this one function. `lane` runs across the tracks and `travel`
+    along them, Branches runs down the page and Progress across it, so the
+    two hand the same pair of numbers in the other way round and get the
+    identical curve back. */
+export function crossPath(
+  lane0: number,
+  travel0: number,
+  lane1: number,
+  travel1: number,
+  along: "x" | "y",
+): string {
+  const pt = (l: number, t: number) =>
+    along === "y" ? `${l} ${t}` : `${t} ${l}`;
+  if (lane0 === lane1) return `M ${pt(lane0, travel0)} L ${pt(lane1, travel1)}`;
+  // Tangents along the track at both ends, so the turn eases in and out with
+  // no corner anywhere.
+  const mid = (travel0 + travel1) / 2;
+  return `M ${pt(lane0, travel0)} C ${pt(lane0, mid)} ${pt(lane1, mid)} ${pt(lane1, travel1)}`;
+}
+
+function crossing(x0: number, y0: number, x1: number, y1: number): string {
+  return crossPath(x0, y0, x1, y1, "y");
+}
+
+/** Solid until the palette runs out; then dashes tell the reused hues apart. */
+export function routeDash(routes: RouteMap, r: string): string | undefined {
+  return routes.dash.get(routes.repOf.get(r) ?? r);
+}
+
+/** One strand at an absolute x, optionally quieted (not the focused route). */
+interface Strand {
+  x: number;
+  cls?: string;
+  color?: string;
+  dash?: string;
+}
+
+interface FillLane {
+  lane: number;
+  on: boolean;
+  strands: Strand[];
+}
+
+function FillRails({ lanes, totalW }: { lanes: FillLane[]; totalW: number }) {
+  const w = totalW + 4;
   return (
     <svg
       className="gg-fillrails"
@@ -184,17 +674,22 @@ function FillRails({ lanes, laneCount }: { lanes: { lane: number; on: boolean }[
       preserveAspectRatio="none"
       aria-hidden="true"
     >
-      {lanes.map(({ lane: j, on }) => (
-        <line
-          key={j}
-          className={on ? undefined : "gg-quiet"}
-          x1={j * COL_W + COL_W / 2}
-          y1={0}
-          x2={j * COL_W + COL_W / 2}
-          y2={10}
-          stroke={laneColor(j)}
-          strokeWidth="2"
-        />
+      {lanes.map(({ lane: j, on, strands }) => (
+        <g key={j} className={on ? undefined : "gg-quiet"}>
+          {strands.map(({ x: sx, cls: sc, color: scol, dash: sd }) => (
+            <line
+              key={sx}
+              className={sc}
+              x1={sx}
+              y1={0}
+              x2={sx}
+              y2={10}
+              stroke={scol ?? NO_ROUTE}
+              strokeWidth={RAIL_W}
+              strokeDasharray={sd}
+            />
+          ))}
+        </g>
       ))}
     </svg>
   );
@@ -202,19 +697,36 @@ function FillRails({ lanes, laneCount }: { lanes: { lane: number; on: boolean }[
 
 function RowRails({
   row,
-  laneCount,
   open,
   lit,
+  routes,
+  slots,
+  laneX,
+  totalW,
+  focusRoute,
+  litRoutes,
 }: {
   row: LaidRow;
-  laneCount: number;
   open?: boolean;
   /** The one line of history that stays bright; null lights everything. */
   lit?: Set<string> | null;
+  /** Which routes run through which commit (see routeSets). */
+  routes: RouteMap;
+  /** Fixed strand slot per lane and route (see computeLaneSlots). */
+  slots: LaneSlots;
+  laneX: number[];
+  totalW: number;
+  /** The branch whose own strand stays lit on shared trunks. */
+  focusRoute?: string | null;
+  /** Which branches the highlight is actually about. `lit` is commits, and a
+      commit belongs to every line running through it, so a shared stretch
+      lights branches that merely pass along it. These are the ones that were
+      asked for; the rest step back even on lit track. */
+  litRoutes?: Set<string> | null;
 }) {
-  const w = laneCount * COL_W + 4;
+  const w = totalW + 4;
   const mid = ROW_H / 2;
-  const x = (i: number) => i * COL_W + COL_W / 2;
+  const x = (i: number) => laneX[i] ?? i * COL_W + COL_W / 2;
   const xl = x(row.lane);
   const c = row.commit;
   const edgeOn = (childs: string[], parent: string) =>
@@ -226,19 +738,161 @@ function RowRails({
   const forkOn = (k: number) => edgeOn([c.sha], row.forkShas[k]);
   const nodeOn = !lit || lit.has(c.sha);
   const cls = (on: boolean) => (on ? undefined : "gg-quiet");
-  const topLanes = [
-    ...row.passes.map((j, k) => ({ lane: j, on: passOn(k) })),
-    ...(row.hasTop ? [{ lane: row.lane, on: topOn }] : []),
-    ...row.joins.map((j, k) => ({ lane: j, on: joinOn(k) })),
+
+  // Strand math: a route rides only its own first-parent edges, in a fixed
+  // slot per lane, so each branch keeps one straight line. An edge with no
+  // route (a merge connector, or history no label points at) draws a single
+  // centre line.
+  const slotX = (lane: number, r: string) =>
+    x(lane) + (slots.get(lane)?.get(r) ?? 0);
+  /** Where a lane's line sits for a given set of routes: the middle of
+      their strands, or the lane centre when the stretch is nobody's line. */
+  const laneAnchor = (lane: number, rs: string[]) => {
+    const xs = rs.map((r) => slotX(lane, r));
+    return xs.length ? (Math.min(...xs) + Math.max(...xs)) / 2 : x(lane);
+  };
+  const allNodeRs = routes.bySha.get(c.sha) ?? [];
+  const laneSlots = slots.get(row.lane);
+  // Lines with a strand in this lane sit on it; ones that only call here
+  // are packed beside them.
+  const nodeRs = allNodeRs.filter((r) => laneSlots?.has(r));
+  // Branches parked here with no line of their own are stashed to the right
+  // of the ones that run, in the order their chips are listed on the row, 
+  // so reading the beads left to right matches reading the names.
+  const chipOrder = new Map<string, number>();
+  c.refs.forEach((ref, i) => {
+    const name = ref.startsWith("origin/") ? ref.slice(7) : ref;
+    if (!chipOrder.has(name)) chipOrder.set(name, i);
+  });
+  const restingRs = allNodeRs
+    .filter((r) => !laneSlots?.has(r))
+    .sort(
+      (a, b) =>
+        (chipOrder.get(a) ?? Number.MAX_SAFE_INTEGER) -
+        (chipOrder.get(b) ?? Number.MAX_SAFE_INTEGER),
+    );
+
+  // Where the stop sits: centred on the strands present at this commit.
+  const nodeXs = nodeRs.map((r) => slotX(row.lane, r));
+  const nMin = nodeXs.length ? Math.min(...nodeXs) : xl;
+  const nMax = nodeXs.length ? Math.max(...nodeXs) : xl;
+  const ncx = (nMin + nMax) / 2;
+
+  // A segment carrying no route of its own (a merge connector, or history
+  // no label points at) is a single line, drawn where its line sits rather
+  // than at the bare lane centre, so nothing jumps sideways.
+  const strandsFor = (lane: number, rs: string[], fallbackX: number): Strand[] => {
+    if (rs.length === 0) return [{ x: fallbackX }];
+    const litHere = litRoutes != null && rs.some((r) => litRoutes.has(r));
+    return rs.map((r) => ({
+      x: slotX(lane, r),
+      color: routeColor(routes, r),
+      dash: routeDash(routes, r),
+      cls:
+        litHere && rs.length > 1 && !litRoutes!.has(r) ? "gg-quiet" : undefined,
+    }));
+  };
+
+  const topRs = row.hasTop ? edgeRoutes(routes, row.topChilds, c.sha) : [];
+  const contRs = nodeRs;
+  const passRs = row.passes.map((_, k) =>
+    edgeRoutes(routes, row.passChilds[k] ?? [], row.passShas[k]),
+  );
+  const passFallback = row.passes.map((j) => x(j));
+  const forkRs = row.forks.map((_, k) =>
+    edgeRoutes(routes, [c.sha], row.forkShas[k]),
+  );
+  const joinRs = row.joins.map((_, k) =>
+    edgeRoutes(routes, row.joinChilds[k] ?? [], c.sha),
+  );
+  // Every line calling at this stop: the ones running through, plus any
+  // that break off here, this commit is where their history starts, so
+  // they call here. A line merging in does not: the merge commit belongs
+  // to the line it merged into, not to the one that ended. Lines passing
+  // through keep their own strand; a line starting here takes a bead
+  // beside them, since its own track lies in another lane.
+  // Order matters: branches that break off here come first, so their beads
+  // sit close to the lanes they leave for and their connectors stay short.
+  // The parked ones, no line, nowhere to go, are stashed on the far end,
+  // where they cost nobody anything.
+  const callingRs = [
+    ...new Set(joinRs.flat()),
+    ...restingRs,
+  ].filter((r, i, a) => !nodeRs.includes(r) && a.indexOf(r) === i);
+  const beads = [
+    ...nodeRs.map((r) => ({ r, bx: slotX(row.lane, r) })),
+    // Packed straight onto the end, so the bar has no empty space in it.
+    ...callingRs.map((r, i) => ({ r, bx: nMax + (i + 1) * STRAND_GAP })),
   ];
-  const bottomLanes = [
-    ...row.passes.map((j, k) => ({ lane: j, on: passOn(k) })),
-    ...(row.continues ? [{ lane: row.lane, on: contOn }] : []),
-    ...row.forks.map((m, k) => ({ lane: m, on: forkOn(k) })),
+  const junction = beads.length > 1;
+  /** Where a line's own bead sits, so its track runs into it and not into
+      the middle of the bar. */
+  const beadAt = new Map(beads.map((b) => [b.r, b.bx]));
+  const bMin = Math.min(nMin, ...beads.map((b) => b.bx));
+  const bMax = Math.max(nMax, ...beads.map((b) => b.bx));
+  // A stop on one line wears that line's colour; an interchange stays
+  // neutral rather than picking a winner among the lines calling there.
+  const nodeColor =
+    nodeRs.length === 1 && !junction
+      ? routeColor(routes, nodeRs[0])
+      : NO_ROUTE;
+  // While a branch is picked out, its stops are drawn as its own dot instead
+  // of hiding inside the interchange bar, on its own strand where it runs
+  // through, and on its own bead where it only calls here. Either way the
+  // dot lands exactly where that branch sits in the bar, so the bar can step
+  // back behind it.
+  const focusStop = focusRoute != null ? (beadAt.get(focusRoute) ?? null) : null;
+  // Lit, but none of the highlighted branches actually calls here: this is
+  // the stop their line ran into, where another line picked the work up.
+  // Hollow says "change here", it keeps the stop's own colour, which is
+  // somebody else's, without pretending the branch you are following carries
+  // on through it. A stop a branch was made from is not one of these: the
+  // branch does call there, which is where its line starts.
+  const terminus =
+    litRoutes != null &&
+    lit != null &&
+    lit.has(c.sha) &&
+    !beads.some((b) => litRoutes.has(b.r));
+
+  const topLanes: FillLane[] = [
+    ...row.passes.map((j, k) => ({
+      lane: j,
+      on: passOn(k),
+      strands: strandsFor(j, passRs[k], passFallback[k]),
+    })),
+    ...(row.hasTop
+      ? [{ lane: row.lane, on: topOn, strands: strandsFor(row.lane, topRs, ncx) }]
+      : []),
+    ...row.joins.map((j, k) => ({
+      lane: j,
+      on: joinOn(k),
+      strands: strandsFor(j, joinRs[k], x(j)),
+    })),
+  ];
+  const bottomLanes: FillLane[] = [
+    ...row.passes.map((j, k) => ({
+      lane: j,
+      on: passOn(k),
+      strands: strandsFor(j, passRs[k], passFallback[k]),
+    })),
+    ...(row.continues
+      ? [{ lane: row.lane, on: contOn, strands: strandsFor(row.lane, contRs, ncx) }]
+      : []),
+    ...row.forks.map((m, k) => ({
+      lane: m,
+      on: forkOn(k),
+      strands: [
+        {
+          x: laneAnchor(m, forkRs[k]),
+          color: forkRs[k].length ? routeColor(routes, forkRs[k][0]) : undefined,
+          dash: forkRs[k].length ? routeDash(routes, forkRs[k][0]) : undefined,
+        },
+      ],
+    })),
   ];
   return (
     <span className="gg-railcol" aria-hidden="true">
-    <FillRails lanes={topLanes} laneCount={laneCount} />
+    <FillRails lanes={topLanes} totalW={totalW} />
     <svg
       className="gg-rails"
       width={w}
@@ -247,80 +901,243 @@ function RowRails({
       aria-hidden="true"
     >
       {row.passes.map((j, k) => (
-        <line
-          key={`p${j}`}
-          className={cls(passOn(k))}
-          x1={x(j)}
-          y1={0}
-          x2={x(j)}
-          y2={ROW_H}
-          stroke={laneColor(j)}
-          strokeWidth="2"
-        />
+        <g key={`p${j}`} className={cls(passOn(k))}>
+          {strandsFor(j, passRs[k], passFallback[k]).map(({ x: sx, cls: sc, color: scol, dash: sd }) => (
+            <line
+              key={sx}
+              className={sc}
+              x1={sx}
+              y1={0}
+              x2={sx}
+              y2={ROW_H}
+              stroke={scol ?? NO_ROUTE}
+              strokeWidth={RAIL_W}
+              strokeDasharray={sd}
+            />
+          ))}
+        </g>
       ))}
       {row.hasTop && (
-        <line className={cls(topOn)} x1={xl} y1={0} x2={xl} y2={mid} stroke={laneColor(row.lane)} strokeWidth="2" />
+        <g className={cls(topOn)}>
+          {strandsFor(row.lane, topRs, ncx).map(({ x: sx, cls: sc, color: scol, dash: sd }) => (
+            <line
+              key={sx}
+              className={sc}
+              x1={sx}
+              y1={0}
+              x2={sx}
+              y2={mid}
+              stroke={scol ?? NO_ROUTE}
+              strokeWidth={RAIL_W}
+              strokeDasharray={sd}
+            />
+          ))}
+        </g>
       )}
       {row.joins.map((j, k) => (
-        <path
-          key={`j${j}`}
-          className={cls(joinOn(k))}
-          d={`M ${x(j)} 0 C ${x(j)} ${mid} ${xl} ${mid * 0.4} ${xl} ${mid}`}
-          fill="none"
-          stroke={laneColor(j)}
-          strokeWidth="2"
-        />
+        <g key={`j${j}`} className={cls(joinOn(k))}>
+          {(joinRs[k].length > 0 ? joinRs[k] : [null]).map((r) => {
+            const x0 = r ? slotX(j, r) : x(j);
+            const x1 = (r ? beadAt.get(r) : undefined) ?? ncx;
+            const litHere =
+              litRoutes != null && joinRs[k].some((q) => litRoutes.has(q));
+            return (
+              <path
+                key={r ?? "-"}
+                className={
+                  r && litHere && joinRs[k].length > 1 && !litRoutes!.has(r)
+                    ? "gg-quiet"
+                    : undefined
+                }
+                d={crossing(x0, 0, x1, mid)}
+                fill="none"
+                stroke={r ? routeColor(routes, r) : NO_ROUTE}
+                strokeWidth={RAIL_W}
+                strokeDasharray={r ? routeDash(routes, r) : undefined}
+              />
+            );
+          })}
+        </g>
       ))}
       {row.continues && (
-        <line className={cls(contOn)} x1={xl} y1={mid} x2={xl} y2={ROW_H} stroke={laneColor(row.lane)} strokeWidth="2" />
+        <g className={cls(contOn)}>
+          {strandsFor(row.lane, contRs, ncx).map(({ x: sx, cls: sc, color: scol, dash: sd }) => (
+            <line
+              key={sx}
+              className={sc}
+              x1={sx}
+              y1={mid}
+              x2={sx}
+              y2={ROW_H}
+              stroke={scol ?? NO_ROUTE}
+              strokeWidth={RAIL_W}
+              strokeDasharray={sd}
+            />
+          ))}
+        </g>
       )}
-      {row.forks.map((m, k) => (
-        <path
-          key={`f${m}`}
-          className={cls(forkOn(k))}
-          d={`M ${xl} ${mid} C ${xl} ${(mid + ROW_H) / 2} ${x(m)} ${(mid + ROW_H) / 2} ${x(m)} ${ROW_H}`}
-          fill="none"
-          stroke={laneColor(m)}
-          strokeWidth="2"
-        />
-      ))}
+      {row.forks.map((m, k) => {
+        // Merge connector: it wears the colour of the line being merged in
+        // when it reaches that branch's tip, and lands on its strand rather
+        // than the bare lane centre.
+        const prs = forkRs[k];
+        const xm = laneAnchor(m, prs);
+        return (
+          <path
+            key={`f${m}`}
+            className={cls(forkOn(k))}
+            d={crossing(ncx, mid, xm, ROW_H)}
+            fill="none"
+            stroke={prs.length ? routeColor(routes, prs[0]) : NO_ROUTE}
+            strokeWidth={RAIL_W}
+            strokeDasharray={prs.length ? routeDash(routes, prs[0]) : undefined}
+          />
+        );
+      })}
       {row.commit.is_head ? (
         // "You are here": a pulsing halo and a double ring, unmissable
-        // against the plain dots.
+        // against the plain dots, centred on this commit's strands.
         <g className="gg-head">
-          <circle className="gg-halo" cx={xl} cy={mid} r={10} fill="var(--accent)" />
+          <circle className="gg-halo" cx={ncx} cy={mid} r={12} fill="var(--accent)" />
           <circle
-            cx={xl}
+            cx={ncx}
             cy={mid}
-            r={6.5}
+            r={8}
             fill="none"
             stroke="var(--accent)"
-            strokeWidth="2"
+            strokeWidth={RAIL_W}
           />
-          <circle cx={xl} cy={mid} r={3.4} fill="var(--accent)" />
+          <circle cx={ncx} cy={mid} r={4} fill="var(--accent)" />
         </g>
+      ) : focusStop !== null ? (
+        // One line is picked out: its stops show as its own colour, and the
+        // interchange bar behind them steps back rather than dominating.
+        <g className={cls(nodeOn)}>
+          {junction && (
+            <g className="gg-quiet">
+              <rect
+                x={bMin - 5}
+                y={mid - 5}
+                width={bMax - bMin + 10}
+                height={10}
+                rx={5}
+                fill="var(--headbg)"
+                stroke={NO_ROUTE}
+                strokeWidth={RAIL_W}
+              />
+              {/* The lines sharing the stop stay in the bar, stepped back,
+                  so it still reads as an interchange behind the lit dot. */}
+              {beads
+                .filter((b) => b.r !== focusRoute)
+                .map(({ r, bx }) => (
+                  <circle
+                    key={r}
+                    cx={bx}
+                    cy={mid}
+                    r={2}
+                    fill={routeColor(routes, r)}
+                  />
+                ))}
+            </g>
+          )}
+          {open && (
+            <circle
+              className="gg-halo"
+              cx={focusStop}
+              cy={mid}
+              r={11}
+              fill={routeColor(routes, focusRoute!)}
+            />
+          )}
+          <circle
+            cx={focusStop}
+            cy={mid}
+            r={open ? 6 : 5}
+            fill={routeColor(routes, focusRoute!)}
+          />
+        </g>
+      ) : junction ? (
+        // A stop several lines call at: a rounded station bar crossing them
+        // all, background-filled and outlined, the interchange marker from
+        // subway maps. Its outline stays neutral, since no one branch owns
+        // the stop.
+        (() => {
+          const sw = bMax - bMin + 10 + (open ? 2 : 0);
+          const sh = 10 + (open ? 1 : 0);
+          const bcx = (bMin + bMax) / 2;
+          return (
+            <g className={cls(nodeOn)}>
+              {open && (
+                <rect
+                  className="gg-halo"
+                  x={bcx - sw / 2 - 3}
+                  y={mid - sh / 2 - 3}
+                  width={sw + 6}
+                  height={sh + 6}
+                  rx={(sh + 6) / 2}
+                  fill={nodeColor}
+                />
+              )}
+              <rect
+                x={bcx - sw / 2}
+                y={mid - sh / 2}
+                width={sw}
+                height={sh}
+                rx={sh / 2}
+                fill="var(--headbg)"
+                stroke={nodeColor}
+                strokeWidth={RAIL_W}
+              />
+              {/* Each line calling here keeps a bead of its own colour
+                  inside the bar, so the stop still says who stops at it. */}
+              {beads.map(({ r, bx }) => (
+                <circle
+                  key={r}
+                  // A line that only passes along the lit stretch is not what
+                  // the highlight is about; its bead steps back with its
+                  // strand.
+                  className={
+                    litRoutes && !litRoutes.has(r) ? "gg-quiet" : undefined
+                  }
+                  cx={bx}
+                  cy={mid}
+                  r={open ? 2.4 : 2}
+                  fill={routeColor(routes, r)}
+                />
+              ))}
+            </g>
+          );
+        })()
       ) : (
         <g className={cls(nodeOn)}>
           {open && (
-            <circle className="gg-halo" cx={xl} cy={mid} r={10} fill={laneColor(row.lane)} />
+            <circle className="gg-halo" cx={ncx} cy={mid} r={10} fill={nodeColor} />
           )}
-          <circle cx={xl} cy={mid} r={open ? 5 : 4} fill={laneColor(row.lane)} />
+          {terminus ? (
+            // Where the line being followed ends. Hollow is the "change
+            // here" marker: it keeps the stop's own colour while making
+            // clear the followed line stops rather than carries on.
+            <circle
+              cx={ncx}
+              cy={mid}
+              r={open ? 6 : 5}
+              fill="var(--headbg)"
+              stroke={nodeColor}
+              strokeWidth={RAIL_W}
+            />
+          ) : (
+            <circle cx={ncx} cy={mid} r={open ? 6 : 5} fill={nodeColor} />
+          )}
         </g>
       )}
     </svg>
-    <FillRails lanes={bottomLanes} laneCount={laneCount} />
+    <FillRails lanes={bottomLanes} totalW={totalW} />
     </span>
   );
 }
 
-function DetailRails({
-  lanes,
-  laneCount,
-}: {
-  lanes: { lane: number; on: boolean }[];
-  laneCount: number;
-}) {
-  const w = laneCount * COL_W + 4;
+function DetailRails({ lanes, totalW }: { lanes: FillLane[]; totalW: number }) {
+  const w = totalW + 4;
   return (
     <svg
       className="gg-detailrails"
@@ -329,17 +1146,22 @@ function DetailRails({
       preserveAspectRatio="none"
       aria-hidden="true"
     >
-      {lanes.map(({ lane: j, on }) => (
-        <line
-          key={j}
-          className={on ? undefined : "gg-quiet"}
-          x1={j * COL_W + COL_W / 2}
-          y1={0}
-          x2={j * COL_W + COL_W / 2}
-          y2={10}
-          stroke={laneColor(j)}
-          strokeWidth="2"
-        />
+      {lanes.map(({ lane: j, on, strands }) => (
+        <g key={j} className={on ? undefined : "gg-quiet"}>
+          {strands.map(({ x: sx, cls: sc, color: scol, dash: sd }) => (
+            <line
+              key={sx}
+              className={sc}
+              x1={sx}
+              y1={0}
+              x2={sx}
+              y2={10}
+              stroke={scol ?? NO_ROUTE}
+              strokeWidth={RAIL_W}
+              strokeDasharray={sd}
+            />
+          ))}
+        </g>
       ))}
     </svg>
   );
@@ -363,8 +1185,16 @@ function CommitDetail({
   onViewVersion,
   onRestoreFiles,
   onPreviewCommit,
+  onBranch,
+  colorOf,
+  mergedBy,
 }: {
   commit: GraphCommit;
+  /** Every branch holding this commit, however it reached them. */
+  onBranch: string[];
+  colorOf: (branch: string) => string;
+  /** Set when this change sits on a grey spur: the merge that took it in. */
+  mergedBy: GraphCommit | null;
   onBranchOff: (sha: string, label: string) => void;
   onViewVersion: (
     path: string,
@@ -400,6 +1230,31 @@ function CommitDetail({
       <p className="muted small">
         {formatDateTime(commit.date)} · {commit.sha.slice(0, 8)}
       </p>
+      {onBranch.length > 0 && (
+        <p className="muted small gg-onbranches">
+          On{" "}
+          {onBranch.map((b, i) => (
+            <span key={b}>
+              {i > 0 && ", "}
+              <strong style={{ color: colorOf(b) }}>{b}</strong>
+            </span>
+          ))}
+        </p>
+      )}
+      {mergedBy && (
+        <p className="gg-spurnote muted small">
+          Its line is grey because this change never sat on a branch of its
+          own.{" "}
+          {commit.author_name === mergedBy.author_name
+            ? "It was saved"
+            : `${commit.author_name} saved it`}{" "}
+          from the same starting point as someone else, and the two were
+          brought together by {mergedBy.author_name}
+          {"'"}s update
+          {mergedBy.date ? ` on ${formatDate(mergedBy.date)}` : ""}. Nobody
+          branched here. It is part of every branch listed above.
+        </p>
+      )}
       {files.isLoading && <p className="muted small">Reading what changed…</p>}
       {files.data && files.data.length > 0 && (
         <ul className="gg-files">
@@ -538,7 +1393,7 @@ export function HistoryPage({
   });
   const identities = useIdentities();
   const [openSha, setOpenSha] = useState<string | null>(null);
-  // branch card being hovered — its line in the railway lights up
+  // branch card being hovered, its line in the railway lights up
   const [hoverBranch, setHoverBranch] = useState<string | null>(null);
   // clicked card: stays highlighted and shows its buttons until clicked again
   const [pickedBranch, setPickedBranch] = useState<string | null>(null);
@@ -559,11 +1414,51 @@ export function HistoryPage({
     () => layoutGraph(graph.data ?? []),
     [graph.data],
   );
+  const routes = useMemo(() => routeSets(graph.data ?? []), [graph.data]);
+  const { slots, laneX, totalW } = useMemo(
+    () => computeLaneSlots(laid.rows, routes, laid.laneCount),
+    [laid, routes],
+  );
 
-  // The branch the open commit sits on: first parents downwards, and the
-  // same line carried upwards. Everything off it goes quiet.
+  /** Exactly one branch's stops, plus the stop it broke off at and the one
+      it merged into, so the connectors at either end light with it. Without
+      those two a one-commit branch would light a dot and no line at all. */
+  const lineOf = useMemo(
+    () => (route: string | null) => {
+      if (!route) return null;
+      const set = new Set<string>();
+      for (const row of laid.rows) {
+        // Exactly the commits drawn in this branch's colour, so what lights
+        // up and what is coloured can never disagree.
+        if ((routes.bySha.get(row.commit.sha) ?? []).includes(route)) {
+          set.add(row.commit.sha);
+        }
+      }
+      if (set.size === 0) return null;
+      // rows run newest first, so the line's tip is the first one in it.
+      const tip = laid.rows.find((r) => set.has(r.commit.sha));
+      if (tip) addMergePoint(set, laid.rows, tip.commit.sha);
+      const from = routes.forkPoint.get(route);
+      if (from) set.add(from);
+      return set;
+    },
+    [laid, routes],
+  );
+
+  // Opening a commit asks "who came this way?". Every branch whose history
+  // runs through it did, including ones that broke off further along, so
+  // they all light; a branch that never reaches it goes quiet.
   const litLine = useMemo(() => {
     if (!openSha) return null;
+    const on = routes.containedIn.get(openSha) ?? [];
+    if (on.length > 0) {
+      const all = new Set<string>([openSha]);
+      for (const r of on) for (const sha of lineOf(r) ?? []) all.add(sha);
+      return all;
+    }
+    // No branch reaches it any more, history behind a branch someone
+    // deleted. Nothing to name it by, so follow its own first parents down
+    // and the same line back up, and light that.
     const bySha = new Map(laid.rows.map((r) => [r.commit.sha, r]));
     const set = new Set<string>();
     let sha: string | undefined = openSha;
@@ -582,27 +1477,27 @@ export function HistoryPage({
       set.add(pick.commit.sha);
       cur = pick.commit.sha;
     }
+    addMergePoint(set, laid.rows, cur);
     return set;
-  }, [openSha, laid]);
+  }, [openSha, laid, routes, lineOf]);
 
   // Same idea for a hovered or picked branch card: its line stays lit.
   const focusBranch = hoverBranch ?? pickedBranch;
-  const hoverLine = useMemo(() => {
-    if (!focusBranch) return null;
-    const bySha = new Map(laid.rows.map((r) => [r.commit.sha, r]));
-    const tip = laid.rows.find((r) =>
-      r.commit.refs.some((x) => x === focusBranch || x === `origin/${focusBranch}`),
-    );
-    if (!tip) return null;
-    const set = new Set<string>();
-    let sha: string | undefined = tip.commit.sha;
-    while (sha && bySha.has(sha) && !set.has(sha)) {
-      set.add(sha);
-      sha = bySha.get(sha)!.commit.parents[0];
-    }
-    return set;
-  }, [focusBranch, laid]);
+  // Several branches parked on one commit share a line, so focus works on
+  // the line, not the name. An open commit wins outright: running the mouse
+  // down the branch list must not relight the diagram under it.
+  const focusLine =
+    openSha || !focusBranch ? null : (routes.repOf.get(focusBranch) ?? null);
+  const hoverLine = useMemo(() => lineOf(focusLine), [focusLine, lineOf]);
   const quietSet = litLine ?? hoverLine;
+  // Which branches the highlight is about. The lit set is commits, and a
+  // commit belongs to every line running through it, so a shared trunk
+  // lights branches that merely pass along it. These are the ones that were
+  // asked for; the rest step back even on lit track.
+  const litRoutes = useMemo(() => {
+    if (openSha) return new Set(routes.containedIn.get(openSha) ?? []);
+    return focusLine ? new Set([focusLine]) : null;
+  }, [openSha, focusLine, routes]);
 
   // Where each branch's tip sits in the railway, so the card list and the
   // diagram share colors and can point at each other.
@@ -677,7 +1572,13 @@ export function HistoryPage({
           {branches.isLoading && <Loading what="Reading the branches…" />}
           {(branches.data ?? []).map((b) => {
             const tip = tips.get(b.name);
-            const color = tip ? laneColor(tip.lane) : "var(--muted)";
+            // Every branch card wears its own line's colour, the same one
+            // its strand has on the railway.
+            const color = routes.repOf.has(b.name)
+              ? routeColor(routes, b.name)
+              : tip
+                ? laneColor(tip.lane)
+                : "var(--muted)";
             // same name and picture as the railway, via GitHub identities
             const person = tip ? authors.get(tip.sha) : undefined;
             const who = person
@@ -715,6 +1616,9 @@ export function HistoryPage({
                 // buttons inside do their own thing
                 if ((e.target as HTMLElement).closest("button")) return;
                 const picking = pickedBranch !== b.name;
+                // Only one thing is ever called out, so picking a branch
+                // puts away whatever commit was open.
+                setOpenSha(null);
                 setPickedBranch(picking ? b.name : null);
                 if (picking) jumpToBranch(b.name);
               }}
@@ -726,7 +1630,18 @@ export function HistoryPage({
                   onClick={() => jumpToBranch(b.name)}
                   title="Show this branch's line in the diagram"
                 >
-                  <span className="branchdot" style={{ background: color }} />
+                  <span
+                    className="branchdot"
+                    style={
+                      routeDash(routes, b.name)
+                        ? {
+                            // Matches a dashed line on the railway.
+                            background: "transparent",
+                            border: `2px dashed ${color}`,
+                          }
+                        : { background: color }
+                    }
+                  />
                   {b.name}
                 </button>
                 {b.is_default && <span className="badge">default</span>}
@@ -851,15 +1766,25 @@ export function HistoryPage({
           {graph.isError && (
             <p className="muted">{String(graph.error)}</p>
           )}
-          {laid.rows.map((row) => {
+          {laid.rows.map((row, rowIndex) => {
             const c = row.commit;
+            const rowSlots = slots[rowIndex] ?? new Map();
             const person = authors.get(c.sha);
             const open = openSha === c.sha;
             return (
               <div
                 key={c.sha}
                 id={`gg-${c.sha}`}
-                style={{ "--lane": laneColor(row.lane) } as React.CSSProperties}
+                style={
+                  {
+                    "--lane": (() => {
+                      const rs = routes.bySha.get(c.sha) ?? [];
+                      return rs.length === 1
+                        ? routeColor(routes, rs[0])
+                        : laneColor(row.lane);
+                    })(),
+                  } as React.CSSProperties
+                }
                 className={`gg-row${open ? " open" : ""}${c.is_head ? " here" : ""}${
                   hoverBranch &&
                   c.refs.some(
@@ -871,17 +1796,27 @@ export function HistoryPage({
               >
                 <button
                   className="gg-line"
-                  onClick={() => setOpenSha(open ? null : c.sha)}
+                  onClick={() => {
+                    // ...and the other way round: opening a commit drops a
+                    // picked branch rather than lighting two lines at once.
+                    setPickedBranch(null);
+                    setOpenSha(open ? null : c.sha);
+                  }}
                 >
                   <RowRails
                     row={row}
-                    laneCount={laid.laneCount}
                     open={
                       open ||
                       (focusBranch !== null &&
                         tips.get(focusBranch)?.sha === c.sha)
                     }
                     lit={quietSet}
+                    routes={routes}
+                    slots={rowSlots}
+                    laneX={laneX}
+                    totalW={totalW}
+                    focusRoute={focusLine}
+                    litRoutes={litRoutes}
                   />
                   <span className="gg-refs">
                     {c.is_head && (
@@ -910,7 +1845,11 @@ export function HistoryPage({
                           <span
                             key={name}
                             className={`gg-chip${name === currentBranch ? " here" : ""}`}
-                            style={{ borderColor: laneColor(row.lane) }}
+                            style={{
+                              borderColor: routes.repOf.has(name)
+                                ? routeColor(routes, name)
+                                : laneColor(row.lane),
+                            }}
                           >
                             {label}
                           </span>,
@@ -942,17 +1881,52 @@ export function HistoryPage({
                 {open && (
                   <div className="gg-open">
                     <DetailRails
-                      lanes={row.below.map((j, k) => ({
-                        lane: j,
-                        on:
-                          !quietSet ||
-                          (quietSet.has(row.belowShas[k]) &&
-                            (row.belowChilds[k] ?? []).some((ch) => quietSet.has(ch))),
-                      }))}
-                      laneCount={laid.laneCount}
+                      lanes={row.below.map((j, k) => {
+                        const rs = edgeRoutes(
+                          routes,
+                          row.belowChilds[k] ?? [],
+                          row.belowShas[k],
+                        );
+                        const focusHere =
+                          focusBranch != null && rs.includes(focusBranch);
+                        const cx = laneX[j] ?? j * COL_W + COL_W / 2;
+                        const strands = rs.length
+                          ? rs.map((r) => ({
+                              x: cx + (rowSlots.get(j)?.get(r) ?? 0),
+                              color: routeColor(routes, r),
+                              dash: routeDash(routes, r),
+                              cls:
+                                focusHere && rs.length > 1 && r !== focusBranch
+                                  ? "gg-quiet"
+                                  : undefined,
+                            }))
+                          : [{ x: cx }];
+                        return {
+                          lane: j,
+                          on:
+                            !quietSet ||
+                            (quietSet.has(row.belowShas[k]) &&
+                              (row.belowChilds[k] ?? []).some((ch) =>
+                                quietSet.has(ch),
+                              )),
+                          strands,
+                        };
+                      })}
+                      totalW={totalW}
                     />
                     <CommitDetail
                       commit={c}
+                      onBranch={routes.containedIn.get(c.sha) ?? []}
+                      colorOf={(b) => routeColor(routes, b)}
+                      mergedBy={
+                        // Only a change on a grey spur needs explaining:
+                        // no line runs along it, so say how it got here.
+                        (routes.bySha.get(c.sha) ?? []).length === 0
+                          ? (laid.rows.find(
+                              (r) => r.commit.parents.indexOf(c.sha) > 0,
+                            )?.commit ?? null)
+                          : null
+                      }
                       onBranchOff={onBranchOff}
                       onViewVersion={onViewVersion}
                       onRestoreFiles={onRestoreFiles}

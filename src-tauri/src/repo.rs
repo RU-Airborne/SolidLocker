@@ -1424,7 +1424,7 @@ pub async fn branch_overview(root: &Path) -> AppResult<Vec<BranchSummary>> {
                     let ahead = it.next().and_then(|n| n.parse().ok()).unwrap_or(0);
                     (ahead, behind)
                 }
-                _ => (0, 0),                    // No common ancestor
+                _ => (0, 0),                   // No common ancestor
             }
         };
 
@@ -2157,7 +2157,7 @@ pub struct InitLockableResult {
 
 /// Makes the current branch lockable: SolidWorks files go through Git LFS and
 /// carry the `lockable` attribute, which is what the whole locking model
-/// hangs on. Idempotent — existing rules are left alone.
+/// hangs on. Idempotent, existing rules are left alone.
 pub async fn init_lockable(root: &Path) -> AppResult<InitLockableResult> {
     let attrs_path = root.join(".gitattributes");
     let existing = std::fs::read_to_string(&attrs_path).unwrap_or_default();

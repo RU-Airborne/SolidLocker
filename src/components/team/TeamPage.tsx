@@ -177,7 +177,7 @@ export function TeamPage({
         <div className="settingstitle">
           <h2>Who&rsquo;s working on what</h2>
           <span className="muted">
-            Held files, branches and waiting merge requests, person by person —
+            Held files, branches and waiting merge requests, person by person, 
             so nobody steps on anyone&rsquo;s toes.
           </span>
         </div>

@@ -43,7 +43,7 @@ export default function DialLogo({
 
   /* The spin is driven here rather than from CSS so that when the work
      finishes we can read where the dial actually is, let it run on a little
-     further, and swing it back to the nearest mark — the way a dial lands on
+     further, and swing it back to the nearest mark, the way a dial lands on
      its number instead of stopping dead. */
   useEffect(() => {
     const el = face.current;

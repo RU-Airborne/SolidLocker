@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { getGraph, type GraphCommit } from "../../api";
 import { RailCard } from "./RailCard";
 import { formatPerson, type Person } from "../../identity";
-import { laneColor, layoutGraph } from "../history/HistoryPage";
+import { laneColor, routeColor, routeSets } from "../history/HistoryPage";
 import { githubAvatarFromEmail } from "./UserAvatar";
 
 // Branch name from a merge commit's subject line.
@@ -160,17 +160,20 @@ export function clashLayout(
   }
   const laneCount = 2 + spans.length;
 
-  // Same colours as the Branches page.
-  const fullLane = new Map(
-    layoutGraph(all).rows.map((r) => [r.commit.sha, r.lane]),
-  );
+  const routes = routeSets(all);
+  const ofBranch = (name: string, fallback: number) =>
+    routes.repOf.has(name) ? routeColor(routes, name) : laneColor(fallback);
+  const ofSha = (sha: string, fallback: number) => {
+    const rs = routes.bySha.get(sha) ?? [];
+    return rs.length > 0 ? routeColor(routes, rs[0]) : laneColor(fallback);
+  };
   const colors = {
-    ours: laneColor(fullLane.get(a.sha) ?? 0),
-    theirs: laneColor(fullLane.get(b.sha) ?? 1),
+    ours: ofBranch(ours, 0),
+    theirs: ofBranch(theirs, 1),
   };
   const colorOf = (sha: string) =>
     stubs.has(sha)
-      ? laneColor(fullLane.get(sha) ?? 0)
+      ? ofSha(sha, 0)
       : onTheirs.has(sha)
         ? colors.theirs
         : colors.ours;

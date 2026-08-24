@@ -619,7 +619,7 @@ async fn resolve_references_at(
     workflow::resolve_references_at(&root, &path, &sha).await
 }
 
-/// Opens a read-only scratch copy of a file as it was at a commit — for an
+/// Opens a read-only scratch copy of a file as it was at a commit, for an
 /// assembly, together with its referenced parts from that same commit.
 #[tauri::command]
 async fn open_version(app: AppHandle, path: String, sha: String) -> AppResult<String> {
@@ -1015,7 +1015,7 @@ async fn get_avatar(
     avatars::get_avatar(&cache, url).await
 }
 
-/// Real names for people the commit history has never seen — someone who
+/// Real names for people the commit history has never seen, someone who
 /// holds a lock but has never committed here is known only by @username.
 #[tauri::command]
 async fn get_profile_names(

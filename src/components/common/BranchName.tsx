@@ -1,9 +1,9 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getGraph } from "../../api";
-import { laneColor, layoutGraph } from "../history/HistoryPage";
+import { routeColor, routeSets } from "../history/HistoryPage";
 
-/** Branch name -> its Branches-page colour (the lane its tip is on). */
+/** Branch name -> its Branches-page colour (the line it draws there). */
 export function useBranchColors(): (name: string) => string | undefined {
   const graph = useQuery({
     queryKey: ["graph"],
@@ -11,15 +11,9 @@ export function useBranchColors(): (name: string) => string | undefined {
     staleTime: 60_000,
   });
   return useMemo(() => {
-    const byName = new Map<string, string>();
-    for (const row of layoutGraph(graph.data ?? []).rows) {
-      for (const r of row.commit.refs) {
-        const name = r.startsWith("origin/") ? r.slice(7) : r;
-        if (name === "HEAD" || r.startsWith("tag: ")) continue;
-        if (!byName.has(name)) byName.set(name, laneColor(row.lane));
-      }
-    }
-    return (name: string) => byName.get(name);
+    const routes = routeSets(graph.data ?? []);
+    return (name: string) =>
+      routes.repOf.has(name) ? routeColor(routes, name) : undefined;
   }, [graph.data]);
 }
 

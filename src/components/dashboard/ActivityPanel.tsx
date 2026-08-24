@@ -157,7 +157,7 @@ function CommitRow({
           ))}
         </ul>
       )}
-      {/* took these out of the sidebar, too busy — Branches page has them
+      {/* took these out of the sidebar, too busy, Branches page has them
       {open && (
         <div className="commitactions">
           {cadFiles.length > 0 && (

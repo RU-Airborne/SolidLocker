@@ -764,7 +764,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
         if (known.has(key)) continue;
         fresh.push(key);
         const who = c.is_mine ? "your other branch" : c.author;
-        lines.push(`${f.split("/").pop() ?? f} — you and ${who}, on ${c.branch}`);
+        lines.push(`${f.split("/").pop() ?? f}, you and ${who}, on ${c.branch}`);
       }
     }
     if (fresh.length === 0) return;
@@ -1434,9 +1434,9 @@ export function Dashboard({ appState }: { appState: AppState }) {
                   disabled={myClaimsHere === 0}
                   title={
                     myClaimsHere === 0
-                      ? `Everything you hold is on other branches — "Who has what" shows where`
+                      ? `Everything you hold is on other branches, "Who has what" shows where`
                       : myClaimsElsewhere > 0
-                        ? `Show only the files you have locked on this branch. ${myClaimsElsewhere} more ${myClaimsElsewhere === 1 ? "is" : "are"} on other branches — "Who has what" shows where`
+                        ? `Show only the files you have locked on this branch. ${myClaimsElsewhere} more ${myClaimsElsewhere === 1 ? "is" : "are"} on other branches, "Who has what" shows where`
                         : "Show only the files you have locked"
                   }
                 >
