@@ -260,32 +260,34 @@ function BranchRailway({
   }, [sel]);
   const selRow = sel ? rows.find((r) => r.commit.sha === sel) : undefined;
 
-  /** Exactly one line's stops, plus the stop it broke off at and the one it
-      merged into, so the connectors at either end light with it. Only this
-      branch, never the ones it came from. */
-  const lineOf = useMemo(
+  const stopsOf = useMemo(
     () => (route: string | null) => {
       if (!route) return null;
-      const set = new Set<string>();
+      const own = new Set<string>();
       for (const r of rows) {
         if ((routes.bySha.get(r.commit.sha) ?? []).includes(route)) {
-          set.add(r.commit.sha);
+          own.add(r.commit.sha);
         }
       }
-      if (set.size === 0) return null;
+      if (own.size === 0) return null;
+      const all = new Set(own);
       const from = routes.forkPoint.get(route);
-      if (from) set.add(from);
+      if (from) all.add(from);
       // rows run newest first, so the line's tip is the earliest one in it.
-      const tip = rows.find((r) => set.has(r.commit.sha))?.commit.sha;
+      const tip = rows.find((r) => own.has(r.commit.sha))?.commit.sha;
       const merger = tip
         ? rows.find(
-            (r) => !set.has(r.commit.sha) && r.commit.parents.indexOf(tip) > 0,
+            (r) => !own.has(r.commit.sha) && r.commit.parents.indexOf(tip) > 0,
           )
         : undefined;
-      if (merger) set.add(merger.commit.sha);
-      return set;
+      if (merger) all.add(merger.commit.sha);
+      return { own, all };
     },
     [rows, routes],
+  );
+  const lineOf = useMemo(
+    () => (route: string | null) => stopsOf(route)?.all ?? null,
+    [stopsOf],
   );
   // A clicked stop wins outright. Running the mouse down the branch list
   // below would otherwise keep relighting the diagram out from under the
@@ -294,6 +296,10 @@ function BranchRailway({
   const hl = useMemo(
     () => lineOf(hover ? (routes.repOf.get(hover) ?? null) : null),
     [hover, routes, lineOf],
+  );
+  const hlOwn = useMemo(
+    () => stopsOf(hover ? (routes.repOf.get(hover) ?? null) : null)?.own ?? null,
+    [hover, routes, stopsOf],
   );
   /** Every branch the clicked stop is on, not just the ones drawn through
       it. A branch that broke off further along still came this way, so it
@@ -312,7 +318,16 @@ function BranchRailway({
     // A stop no line runs along lights only itself.
     return all.size > 0 ? all : new Set([sel]);
   }, [sel, selRoutes, lineOf]);
+  const selOwn = useMemo(() => {
+    if (!sel) return null;
+    const all = new Set<string>();
+    for (const r of selRoutes) {
+      for (const sha of stopsOf(r)?.own ?? []) all.add(sha);
+    }
+    return all.size > 0 ? all : new Set([sel]);
+  }, [sel, selRoutes, stopsOf]);
   const line = selLine ?? hl;
+  const lineOwn = selOwn ?? hlOwn;
 
   // Scrolling the page to the railway is only half the job: the branch you
   // asked for is usually off to one side of a diagram wider than its box.
@@ -362,8 +377,8 @@ function BranchRailway({
     [rows],
   );
   const mergedOut = (childs: string[] | undefined, parent: string) =>
-    line !== null &&
-    line.has(parent) &&
+    lineOwn !== null &&
+    lineOwn.has(parent) &&
     (childs ?? []).some((ch) => {
       const ps = parentsOf.get(ch);
       return !!ps && ps.length > 1 && ps.slice(1).includes(parent);
@@ -654,8 +669,8 @@ function BranchRailway({
                     className={dim(
                       edgeLit([c.sha], row.forkShas[k]) ||
                         // this "fork" is really the line merging in and ending
-                        (line !== null &&
-                          line.has(row.forkShas[k]) &&
+                        (lineOwn !== null &&
+                          lineOwn.has(row.forkShas[k]) &&
                           c.parents.length > 1 &&
                           c.parents.slice(1).includes(row.forkShas[k])),
                     )}
