@@ -1,6 +1,6 @@
 [package]
 name = "solidlocker"
-version = "0.6.3"
+version = "0.7.0"
 description = "Version control for SolidWorks teams: Git and Git LFS behind plain buttons, with file locking built in"
 edition = "2021"
 

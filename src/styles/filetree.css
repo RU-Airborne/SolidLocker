@@ -4,7 +4,12 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0 0.4rem 0.6rem;
+  flex: none;
+  padding: 0.2rem 1.5rem 0.6rem;
+}
+
+.treetoolbar .treesearch {
+  order: 1;
 }
 
 .treesearch {
@@ -103,6 +108,13 @@
   color: var(--accent);
 }
 
+/* Every name is a button, so only colour can say which one is open. */
+.namebtn.open {
+  color: var(--accent);
+  font-weight: 600;
+  border-color: var(--accent) !important;
+}
+
 .filerow.isdeleted .namebtn {
   text-decoration: line-through;
   opacity: 0.75;
@@ -188,7 +200,8 @@
 }
 
 .filehead .filename {
-  justify-content: center;
+  justify-content: flex-start;
+  padding-left: 0.35rem;
 }
 
 .filehead .actionshead {
@@ -309,20 +322,28 @@
   display: block;
 }
 
+/* Accent is what "yours" means everywhere else in this app. */
 .minechip {
-  border: 1px solid var(--border);
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--border));
   border-radius: 6px;
-  background: transparent;
-  color: inherit;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
   font: inherit;
   font-size: 0.8rem;
-  padding: 0.25rem 0.6rem;
+  font-weight: 600;
+  padding: 0.25rem 0.7rem;
   cursor: pointer;
   white-space: nowrap;
 }
 
 .minechip:hover:not(.active):not(:disabled) {
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  border-color: var(--accent);
+}
+
+.minechip.unlockall {
+  border-style: solid;
+  border-color: var(--accent);
 }
 
 .minechip.active {

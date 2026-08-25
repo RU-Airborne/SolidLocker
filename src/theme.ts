@@ -32,3 +32,9 @@ export function applySavedTheme() {
     document.documentElement.setAttribute("data-theme", saved);
   }
 }
+
+/** Nothing stored means nobody has been asked yet. */
+export function themeUnchosen(): boolean {
+  const saved = read("theme");
+  return saved === null || !THEMES.includes(saved as Theme);
+}

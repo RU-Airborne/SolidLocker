@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { BranchGlyph } from "./HistoryDiagrams";
 
 export interface GlassOption {
   value: string;
@@ -11,12 +12,17 @@ export interface GlassOption {
 function Label({ o }: { o: GlassOption }) {
   return (
     <>
+      {/* A coloured branch mark rather than a coloured dot: `color` is only
+          ever set by the two branch pickers, and the app now draws a branch
+          the same way wherever it names one. */}
       {o.color && (
         <span
-          className="gselect-dot"
-          style={{ background: o.color }}
+          className="gselect-mark"
+          style={{ color: o.color }}
           aria-hidden="true"
-        />
+        >
+          <BranchGlyph size={13} />
+        </span>
       )}
       <span className="gselect-word">{o.label}</span>
     </>

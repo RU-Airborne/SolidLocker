@@ -145,7 +145,7 @@ export const FileRow = memo(function FileRow({
         </button>
         <FilePreview path={path} />
         <button
-          className="namebtn"
+          className={`namebtn${expanded ? " open" : ""}`}
           title={`${path}\nClick for details`}
           onClick={() => setExpanded((v) => !v)}
         >

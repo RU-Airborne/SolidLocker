@@ -1,10 +1,7 @@
 import { useCallback, useState } from "react";
 
 /**
- * Settings that outlive the window, kept in localStorage.
- *
- * Anything in here may have been written by an older build, so every reader
- * validates rather than trusting what it finds.
+ * Settings that outlive the window kept in localStorage.
  */
 const NS = "solidlocker.";
 
@@ -117,4 +114,53 @@ export function usePathSet(
   );
 
   return [paths, toggle, edit];
+}
+
+/** A project this computer has opened before. */
+export interface RecentRepo {
+  slug: string;
+  path: string;
+}
+
+const RECENT_KEY = "recentRepos";
+const RECENT_MAX = 8;
+
+/**
+ * The projects opened on this machine, most recent first. Paths are compared
+ * case-insensitively: Windows hands back the same folder spelled differently
+ * depending on how you got to it, and the same project twice in the list
+ * would be worse than not remembering it at all.
+ */
+export function readRecentRepos(): RecentRepo[] {
+  try {
+    const raw = JSON.parse(read(RECENT_KEY) ?? "[]") as unknown;
+    if (!Array.isArray(raw)) return [];
+    return raw.filter(
+      (r): r is RecentRepo =>
+        !!r &&
+        typeof r === "object" &&
+        typeof (r as RecentRepo).slug === "string" &&
+        typeof (r as RecentRepo).path === "string",
+    );
+  } catch {
+    return [];
+  }
+}
+
+export function rememberRepo(entry: RecentRepo): RecentRepo[] {
+  const key = entry.path.toLowerCase();
+  const next = [
+    entry,
+    ...readRecentRepos().filter((r) => r.path.toLowerCase() !== key),
+  ].slice(0, RECENT_MAX);
+  write(RECENT_KEY, JSON.stringify(next));
+  return next;
+}
+
+/** Drops one the user no longer wants offered, or that has gone missing. */
+export function forgetRepo(path: string): RecentRepo[] {
+  const key = path.toLowerCase();
+  const next = readRecentRepos().filter((r) => r.path.toLowerCase() !== key);
+  write(RECENT_KEY, JSON.stringify(next));
+  return next;
 }

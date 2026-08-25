@@ -378,7 +378,7 @@ export function ConflictPicker({
                   onClick={() => light(isLit ? null : c.path)}
                 >
                   <BulbGlyph />
-                  <span>Highlight in railway</span>
+                  <span>Highlight</span>
                 </button>
               </span>
               <SideCell

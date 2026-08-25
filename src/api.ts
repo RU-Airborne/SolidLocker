@@ -352,6 +352,13 @@ export const abandonConflicts = () => invoke<void>("abandon_conflicts");
 export const getUsedBy = (path: string) =>
   invoke<string[]>("get_used_by", { path });
 
+export interface DepEdge {
+  parent: string;
+  child: string;
+}
+
+export const getDependencyGraph = () => invoke<DepEdge[]>("get_dependency_graph");
+
 export const checkOutsideRefs = (paths: string[]) =>
   invoke<OutsideCheck>("check_outside_refs", { paths });
 

@@ -185,7 +185,7 @@ const Folder = memo(function Folder({
           <button
             className="iconbtn openbtn"
             title="Open this folder on your computer"
-            aria-label="Open folder"
+            aria-label="Open in File Explorer"
             onClick={() => actions.open(node.path)}
           >
             <svg
@@ -346,7 +346,7 @@ export const FileTree = memo(function FileTree({
     [],
   );
 
-  // Jumping to a file from "Who has what" must expand its ancestors first.
+  // Jumping to a file from "Locked files" must expand its ancestors first.
   const highlighted = actions.highlightedPath;
   useEffect(() => {
     if (!highlighted) return;

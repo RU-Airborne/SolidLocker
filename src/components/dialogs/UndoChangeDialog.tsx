@@ -54,8 +54,7 @@ export function UndoChangeDialog({
           {commit.author_name}
           {commit.message?.trim() ? (
             <>
-              {" "}
-             , “<em>{commit.message}</em>”
+              , “<em>{commit.message}</em>”
             </>
           ) : null}
           .

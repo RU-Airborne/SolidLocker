@@ -45,7 +45,16 @@ import { isAppError } from "../../types";
 import type { Lock } from "../../types";
 import { copy } from "../../copy";
 import { notifyDesktop } from "../../notify";
-import { read, useChoice, useFlag, usePathSet, usePersisted, write } from "../../persist";
+import {
+  forgetRepo,
+  read,
+  rememberRepo,
+  useChoice,
+  useFlag,
+  usePathSet,
+  usePersisted,
+  write,
+} from "../../persist";
 import { useExitBehavior } from "../../exit";
 import { useShortcuts } from "../../shortcuts";
 import { useSignIn } from "../../signin";
@@ -100,6 +109,7 @@ import { isSwTemp } from "../../types";
 import { HistoryPage } from "../history/HistoryPage";
 import { ActivityPanel } from "./ActivityPanel";
 import { TopBar } from "./TopBar";
+import { NavRail, type RailView } from "./NavRail";
 import { FileTree, type SortMode } from "./FileTree";
 import { useSwInstalled } from "./FileRow";
 import { LocksPanel } from "./LocksPanel";
@@ -298,13 +308,16 @@ export function Dashboard({ appState }: { appState: AppState }) {
     queryFn: getDefaultBranch,
     staleTime: 5 * 60_000,
   });
+  // Runs on every launch, since this cache is memory only.
   const update = useQuery({
     queryKey: ["updateCheck"],
     queryFn: checkForUpdate,
     staleTime: 24 * 60 * 60_000,
     refetchInterval: 24 * 60 * 60_000,
-    retry: false,
+    retry: 3,
+    retryDelay: (attempt) => Math.min(30_000, 2_000 * 2 ** attempt),
   });
+  const { data: updateInfo, refetch: recheckUpdate } = update;
   const [skippedUpdate, setSkippedUpdate] = useState(
     () => localStorage.getItem("skippedUpdate") ?? "",
   );
@@ -363,8 +376,8 @@ export function Dashboard({ appState }: { appState: AppState }) {
   const [commitDialogOpen, setCommitDialogOpen] = useState(false);
   const [highlightedPath, setHighlightedPath] = useState<string | null>(null);
   const [panelTab, setPanelTab] = useState<"locks" | "activity">("locks");
+  const [panelOpen, setPanelOpen] = useFlag("panelOpen", true);
   const [forceTarget, setForceTarget] = useState<Lock | null>(null);
-  // A locked file living on another branch was clicked in "Who has what".
   const [offBranchFile, setOffBranchFile] = useState<{
     path: string;
     branches: string[];
@@ -379,7 +392,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
     window.clearTimeout(highlightTimer.current);
     highlightTimer.current = window.setTimeout(
       () => setHighlightedPath(null),
-      2200,
+      2600,
     );
   }
   const lastSyncAt = useRef(0);
@@ -1055,10 +1068,16 @@ export function Dashboard({ appState }: { appState: AppState }) {
       title: "Select the repository folder SolidLocker should manage",
     });
     if (typeof dir !== "string") return;
+    await handleOpenRepo(dir);
+  }
+
+  async function handleOpenRepo(dir: string) {
     try {
       await selectExistingRepo(dir);
       forgetRepoData();
     } catch (e) {
+      // A remembered project can be renamed, moved, or on an unplugged drive.
+      forgetRepo(dir);
       setNotice(isAppError(e) ? e.message : String(e));
     }
   }
@@ -1116,56 +1135,91 @@ export function Dashboard({ appState }: { appState: AppState }) {
     }
   }, [offline, notifyConnection]);
 
+  useEffect(() => {
+    if (!offline && !updateInfo) void recheckUpdate();
+  }, [offline, updateInfo, recheckUpdate]);
+
+  const repoPath = appState.repo?.repo_path;
+  const repoSlug = appState.repo?.repo_slug;
+  useEffect(() => {
+    if (repoPath && repoSlug) rememberRepo({ slug: repoSlug, path: repoPath });
+  }, [repoPath, repoSlug]);
+
   const updating = getLatestMut.isPending || saveShareMut.isPending;
   const locking = claim.isPending || release.isPending;
 
+  const view: RailView = pullsOpen
+    ? "pulls"
+    : historyOpen
+      ? "branches"
+      : progressOpen
+        ? "progress"
+        : settingsOpen
+          ? "settings"
+          : "files";
+
+  function goTo(next: RailView) {
+    setPullsOpen(next === "pulls");
+    setHistoryOpen(next === "branches");
+    setProgressOpen(next === "progress");
+    setSettingsOpen(next === "settings");
+    if (next !== "branches") setHistoryFocusSha(null);
+  }
+
   return (
     <div className="app">
+      <NavRail
+        view={view}
+        onGo={goTo}
+        appState={appState}
+        locking={locking}
+        defaultBranch={defaultBranch.data ?? "main"}
+      />
+      <div className={`appmain${view === "files" ? "" : " onpage"}`}>
       <TopBar
         appState={appState}
         branches={branches.data}
         currentBranch={currentBranch}
         onSwitchBranch={handleSwitchBranch}
         switchingTo={switchingTo}
-        locking={locking}
-        onSwitchRepo={handleSwitchRepo}
+        onSwitchRepo={() => void handleSwitchRepo()}
+        onOpenRepo={(dir) => void handleOpenRepo(dir)}
         status={repoStatus.data}
         lastFetchAt={sync.lastFetchAt}
         offline={offline}
         stale={stale}
         onSyncNow={sync.syncNow}
         syncing={sync.syncing}
+        checking={sync.checking}
         onSaveShare={() => !previewing && setCommitDialogOpen(true)}
         onPushOnly={() => !previewing && handlePushOnly()}
         onDiscard={() => !previewing && setDiscardOpen(true)}
         fetchIntervalS={sync.intervalS}
         updating={updating || pushing}
-        onOpenSettings={() => setSettingsOpen(true)}
-        onOpenProgress={() => setProgressOpen(true)}
-        onOpenHistory={() => setHistoryOpen(true)}
-        onOpenPulls={() => setPullsOpen(true)}
-        defaultBranch={defaultBranch.data ?? "main"}
       />
-      {update.data?.newer && update.data.latest !== skippedUpdate && (
+      {/* Stays put, and comes back every time the app opens, until the member
+          dismisses this particular version. The next release says hello again. */}
+      {updateInfo?.newer && updateInfo.latest !== skippedUpdate && (
         <div className="notice">
           <span>
-            SolidLocker {update.data.latest} is out. Right now you have {" "}
-            {update.data.current}. Update soon to get the latest features and fixes.
+            SolidLocker {updateInfo.latest} is out. Right now you have {" "}
+            {updateInfo.current}. Update soon to get the latest features and fixes.
           </span>
           <button
             className="notice-ok"
-            onClick={() => void openUrl(update.data!.url)}
+            onClick={() => void openUrl(updateInfo.url)}
           >
             See what&rsquo;s new
           </button>
           <button
             className="notice-ok"
+            title={`Stop showing this for ${updateInfo.latest}. You will hear about the version after it`}
             onClick={() => {
-              localStorage.setItem("skippedUpdate", update.data!.latest);
-              setSkippedUpdate(update.data!.latest);
+              localStorage.setItem("skippedUpdate", updateInfo.latest);
+              setSkippedUpdate(updateInfo.latest);
             }}
           >
-            Later
+            Dismiss
           </button>
         </div>
       )}
@@ -1381,7 +1435,10 @@ export function Dashboard({ appState }: { appState: AppState }) {
           onQuit={(remember) => exit.answerPrompt(false, remember)}
         />
       )}
-      <div className="stage">
+      {/* Outside the file list, because the file list is hidden while you are
+          on another page and a switch can be started from the branch picker
+          wherever you are. A switch holds up the whole window, so it says so
+          across the whole window. */}
       {switching && (
         <div className="switchblock" role="status" aria-live="polite">
           <div className="switchblock-card">
@@ -1393,88 +1450,136 @@ export function Dashboard({ appState }: { appState: AppState }) {
           </div>
         </div>
       )}
+      <div className="stage">
       <div className="body">
-        <main className="content">
-          <div className="treetoolbar">
-            <GlassSelect
-              className="sortselect"
-              title="Sort files and folders"
-              ariaLabel="Sort files and folders"
-              value={sortMode}
-              onChange={(v) => handleSortChange(v as SortMode)}
-              options={[
-                { value: "name", label: "Sort: A to Z" },
-                { value: "size", label: "Sort: Biggest first" },
-                { value: "modified", label: "Sort: Recently changed" },
-              ]}
-            />
-            <div className="typefilter">
-              {(
-                [
-                  ["all", "All"],
-                  ["sldasm", "Assemblies"],
-                  ["sldprt", "Parts"],
-                  ["slddrw", "Drawings"],
-                ] as const
-              ).map(([value, label]) => (
-                <button
-                  key={value}
-                  className={typeFilter === value ? "active" : ""}
-                  onClick={() => setTypeFilter(value)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            {myClaimCount > 0 && (
-              <>
-                <button
-                  className={`minechip${showOnlyMine ? " active" : ""}`}
-                  onClick={() => setShowOnlyMine((v) => !v)}
-                  disabled={myClaimsHere === 0}
-                  title={
-                    myClaimsHere === 0
-                      ? `Everything you hold is on other branches, "Who has what" shows where`
-                      : myClaimsElsewhere > 0
-                        ? `Show only the files you have locked on this branch. ${myClaimsElsewhere} more ${myClaimsElsewhere === 1 ? "is" : "are"} on other branches, "Who has what" shows where`
-                        : "Show only the files you have locked"
-                  }
-                >
-                  {myClaimsHere === 0
-                    ? `Files you hold (${myClaimCount} on other branches)`
-                    : `Files you hold (${myClaimsHere}${myClaimsElsewhere > 0 ? ` +${myClaimsElsewhere} elsewhere` : ""})`}
-                </button>
-                <button
-                  className="minechip unlockall"
-                  onClick={() => setReleaseAllOpen(true)}
-                  disabled={switching}
-                  title="Unlock everything you are finished with"
-                >
-                  Unlock all…
-                </button>
-              </>
-            )}
-            <span className="spacer" />
-            <input
-              ref={searchRef}
-              className="treesearch"
-              placeholder="Search files…  (Ctrl+F)"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-            {(searchQuery !== "" || showOnlyMine || typeFilter !== "all") && (
+        {/* The heading belongs to the file list, not to the whole window.
+            Spanning both columns left the divider starting halfway down the
+            page with nothing above it; inside the column, the line runs from
+            the toolbar to the bottom in one piece. */}
+        <div className="filescolumn">
+        {/* Named like the other places, but on one line: this is the only page
+            whose content is a table that wants every row it can get, and a
+            heading with a paragraph under it was costing a whole band of it.
+            The side pane's switch lives here too, rather than in the toolbar
+            above, where it would have been the one button that came and went
+            depending on which page you were on. */}
+        <div className="pagehead filespagehead">
+          <h2>Files</h2>
+          <p className="muted small">
+            Lock a file before opening it. Once locked, only you can edit the file until you release the lock.
+          </p>
+          <button
+            className={`barbtn panelbtn${panelOpen ? " on" : ""}`}
+            onClick={() => setPanelOpen(!panelOpen)}
+            title={
+              panelOpen
+                ? "Hide who has what and the team's activity"
+                : "Show who has what and the team's activity"
+            }
+            aria-pressed={panelOpen}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              width="16"
+              height="16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="3" y="4.5" width="18" height="15" rx="2" />
+              <line x1="15" y1="4.5" x2="15" y2="19.5" />
+            </svg>
+            {/* Hidden, the pane has to name both the things it holds; out,
+                its own tabs do that and the switch goes back to an icon. */}
+            {!panelOpen && <span>Locked files &amp; Activity</span>}
+          </button>
+        </div>
+        {/* Outside .content on purpose. In there it loses the width of the
+            list's scrollbar, so the search box never lines up with the pane
+            switch above it, and it scrolls out of sight. */}
+        <div className="treetoolbar">
+          <GlassSelect
+            className="sortselect"
+            title="Sort files and folders"
+            ariaLabel="Sort files and folders"
+            value={sortMode}
+            onChange={(v) => handleSortChange(v as SortMode)}
+            options={[
+              { value: "name", label: "Sort: A to Z" },
+              { value: "size", label: "Sort: Biggest first" },
+              { value: "modified", label: "Sort: Recently changed" },
+            ]}
+          />
+          <div className="typefilter">
+            {(
+              [
+                ["all", "All"],
+                ["sldasm", "Assemblies"],
+                ["sldprt", "Parts"],
+                ["slddrw", "Drawings"],
+              ] as const
+            ).map(([value, label]) => (
               <button
-                className="linkish"
-                onClick={() => {
-                  setSearchQuery("");
-                  setShowOnlyMine(false);
-                  setTypeFilter("all");
-                }}
+                key={value}
+                className={typeFilter === value ? "active" : ""}
+                onClick={() => setTypeFilter(value)}
               >
-                Clear
+                {label}
               </button>
-            )}
+            ))}
           </div>
+          {myClaimCount > 0 && (
+            <>
+              <button
+                className={`minechip${showOnlyMine ? " active" : ""}`}
+                onClick={() => setShowOnlyMine((v) => !v)}
+                disabled={myClaimsHere === 0}
+                title={
+                  myClaimsHere === 0
+                    ? `Everything you hold is on other branches, "Locked files" shows where`
+                    : myClaimsElsewhere > 0
+                      ? `Show only the files you have locked on this branch. ${myClaimsElsewhere} more ${myClaimsElsewhere === 1 ? "is" : "are"} on other branches, "Locked files" shows where`
+                      : "Show only the files you have locked"
+                }
+              >
+                {myClaimsHere === 0
+                  ? `Files you hold (${myClaimCount} on other branches)`
+                  : `Files you hold (${myClaimsHere}${myClaimsElsewhere > 0 ? ` +${myClaimsElsewhere} elsewhere` : ""})`}
+              </button>
+              <button
+                className="minechip unlockall"
+                onClick={() => setReleaseAllOpen(true)}
+                disabled={switching}
+                title="Unlock everything you are finished with"
+              >
+                Unlock all…
+              </button>
+            </>
+          )}
+          <span className="spacer" />
+          <input
+            ref={searchRef}
+            className="treesearch"
+            placeholder="Search files…  (Ctrl+F)"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+          {(searchQuery !== "" || showOnlyMine || typeFilter !== "all") && (
+            <button
+              className="linkish"
+              onClick={() => {
+                setSearchQuery("");
+                setShowOnlyMine(false);
+                setTypeFilter("all");
+              }}
+            >
+              Clear
+            </button>
+          )}
+        </div>
+        <main className="content">
           {files.isLoading ? (
             <p className="muted">Verifying references…</p>
           ) : files.isError ? (
@@ -1495,18 +1600,22 @@ export function Dashboard({ appState }: { appState: AppState }) {
             />
           )}
         </main>
+        </div>
+        {panelOpen && (
         <div
           className="panelresizer"
           onPointerDown={startPanelResize}
           title="Drag to resize"
         />
+        )}
+        {panelOpen && (
         <aside className="branchpanel" style={{ width: panelWidth }}>
           <div className="paneltabs">
             <button
               className={panelTab === "locks" ? "active" : ""}
               onClick={() => setPanelTab("locks")}
             >
-              Who has what
+              Locked files
             </button>
             <button
               className={panelTab === "activity" ? "active" : ""}
@@ -1551,6 +1660,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
             />
           )}
         </aside>
+        )}
       </div>
       {releaseAllOpen && locks.data && locks.data.ours.length > 0 && (
         <ReleaseAllDialog
@@ -1744,8 +1854,8 @@ export function Dashboard({ appState }: { appState: AppState }) {
           }}
         />
       )}
-      {(progressOpen || settingsOpen || historyOpen || pullsOpen) && (
-        <div className="glasspage">
+      {view !== "files" && (
+        <div className="pagearea">
           {/*
           teamOpen ? (
             <TeamPage
@@ -1766,7 +1876,6 @@ export function Dashboard({ appState }: { appState: AppState }) {
           {pullsOpen ? (
             <PullsPage
               currentBranch={currentBranch}
-              onClose={() => setPullsOpen(false)}
               ask={pullsAsk}
               onAsked={() => setPullsAsk(null)}
               onOpenCommit={(sha) => {
@@ -1779,10 +1888,6 @@ export function Dashboard({ appState }: { appState: AppState }) {
             <HistoryPage
               currentBranch={currentBranch}
               focusSha={historyFocusSha}
-              onClose={() => {
-                setHistoryOpen(false);
-                setHistoryFocusSha(null);
-              }}
               onSwitchBranch={(name) => {
                 setHistoryOpen(false);
                 void handleSwitchBranch(name);
@@ -1802,7 +1907,6 @@ export function Dashboard({ appState }: { appState: AppState }) {
           ) : progressOpen ? (
             <ProgressPage
               rows={rows}
-              onClose={() => setProgressOpen(false)}
               onOpenBranches={() => {
                 setProgressOpen(false);
                 setHistoryOpen(true);
@@ -1835,7 +1939,6 @@ export function Dashboard({ appState }: { appState: AppState }) {
                 setNotice(message);
                 forgetRepoData();
               }}
-              onClose={() => setSettingsOpen(false)}
             />
           )}
         </div>
@@ -1914,6 +2017,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
           onClose={() => setReleaseDialogPath(null)}
         />
       )}
+      </div>
     </div>
   );
 }

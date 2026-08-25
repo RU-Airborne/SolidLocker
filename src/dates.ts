@@ -6,6 +6,18 @@ export function formatDate(when: string | number | Date): string {
   return new Date(when).toLocaleDateString();
 }
 
+export function formatAgo(when: string | number | Date): string {
+  const ms = Date.now() - new Date(when).getTime();
+  const min = Math.floor(ms / 60_000);
+  if (min < 1) return "just now";
+  if (min < 60) return `${min}m ago`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `${d}d ago`;
+  return formatDate(when);
+}
+
 export function formatDateTime(when: string | number | Date): string {
   const d = new Date(when);
   const time = d.toLocaleTimeString(undefined, {

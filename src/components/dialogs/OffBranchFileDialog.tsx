@@ -6,7 +6,8 @@ import {
   resolveAuthorsByName,
   useIdentities,
 } from "../../identity";
-import { BranchName } from "../common/BranchName";
+import { BranchName, useBranchColors } from "../common/BranchName";
+import { BranchGlyph } from "../common/HistoryDiagrams";
 import { UserAvatar } from "../common/UserAvatar";
 
 function ago(unixS: number): string {
@@ -42,6 +43,7 @@ export function OffBranchFileDialog({
     staleTime: 30_000,
   });
   const identities = useIdentities();
+  const branchColorOf = useBranchColors();
   const authors = useMemo(
     () =>
       resolveAuthorsByName(
@@ -70,7 +72,16 @@ export function OffBranchFileDialog({
             return (
               <li key={br} className="offbranch-goto">
                 <span className="offbranch-where">
-                  <BranchName name={br} />
+                  <span className="branchline">
+                    <span
+                      className="branchmark"
+                      style={{ color: branchColorOf(br) }}
+                      aria-hidden="true"
+                    >
+                      <BranchGlyph size={13} />
+                    </span>
+                    <BranchName name={br} />
+                  </span>
                   {info && (
                     <span className="muted small offbranch-when">
                       <UserAvatar

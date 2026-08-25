@@ -56,3 +56,105 @@
 .restart-callout strong {
   font-weight: 800;
 }
+.themepick .modal {
+  max-width: 44rem;
+  text-align: center;
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent),
+    0 24px 70px rgba(0, 0, 0, 0.5),
+    0 0 90px color-mix(in srgb, var(--accent) 32%, transparent),
+    0 0 200px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.themelogo {
+  display: block;
+  margin: 0 auto 0.2rem;
+}
+
+.themelogo svg {
+  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--accent) 85%, transparent))
+    drop-shadow(0 0 22px color-mix(in srgb, var(--accent) 55%, transparent))
+    drop-shadow(0 0 48px color-mix(in srgb, var(--accent) 30%, transparent));
+}
+
+.themepick .modal-actions {
+  justify-content: center;
+}
+
+.themerow {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.7rem;
+  margin: 1rem 0 0.4rem;
+}
+
+.themecard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+  padding: 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.themecard:hover {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+}
+
+.themecard.on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.themeswatch {
+  display: block;
+  width: 100%;
+  height: 3.4rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 0.35rem;
+}
+
+.themeswatch-bar {
+  display: block;
+  height: 30%;
+}
+
+.themeswatch-body {
+  display: block;
+  height: 70%;
+}
+
+.themeswatch.dark .themeswatch-bar {
+  background: #2a2f37;
+}
+
+.themeswatch.dark .themeswatch-body {
+  background: #1b1e24;
+}
+
+.themeswatch.light .themeswatch-bar {
+  background: #e7ebef;
+}
+
+.themeswatch.light .themeswatch-body {
+  background: #ffffff;
+}
+
+.themeswatch.system {
+  background: linear-gradient(135deg, #1b1e24 0 50%, #ffffff 50% 100%);
+}
+
+.themeswatch.system .themeswatch-bar,
+.themeswatch.system .themeswatch-body {
+  background: transparent;
+}

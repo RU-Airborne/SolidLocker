@@ -37,18 +37,17 @@ const shortName = (p: string) => p.split("/").pop() ?? p;
 
 export function PullsPage({
   currentBranch,
-  onClose,
   onOpenCommit,
   ask,
   onAsked,
 }: {
   currentBranch: string;
-  onClose: () => void;
   onOpenCommit: (sha: string) => void;
   ask?: { head: string; base: string } | null;
   onAsked?: () => void;
 }) {
   const [open, setOpen] = useState<{ number: number; tidy?: boolean } | null>(null);
+  const [back, setBack] = useState(false);
   const overview = useQuery({
     queryKey: ["branchOverview"],
     queryFn: getBranchOverview,
@@ -83,10 +82,10 @@ export function PullsPage({
 
   if (open !== null) {
     return (
-      <main className="settingspage pullspage">
-        <div className="settingshead">
-          <button className="backbtn" onClick={() => setOpen(null)}>
-            ← All merge requests
+      <main className="settingspage pullspage pageforward">
+        <div className="pagehead">
+          <button className="backbtn" onClick={() => { setBack(true); setOpen(null); }}>
+            ← Merge requests
           </button>
         </div>
         <div className="settingsbody">
@@ -103,20 +102,13 @@ export function PullsPage({
   }
 
   return (
-    <main className="settingspage pullspage">
-      <div className="settingshead">
-        <button className="backbtn" onClick={onClose}>
-          ← Back
-        </button>
-        <div className="settingsbrand">
-          <div className="settingstitle">
-            <h2>Merge Requests</h2>
-            <p className="muted small">
-              Requests to merge a branch, waiting for a team lead to approve
-              them, and the ones already approved or closed.
-            </p>
-          </div>
-        </div>
+    <main className={`settingspage pullspage${back ? " pageback" : ""}`}>
+      <div className="pagehead">
+        <h2>Merge Requests</h2>
+        <p className="muted small">
+          Merge requests submitted by team members that are still waiting for approval, 
+          as well as those that have already been reviewed.
+        </p>
       </div>
 
       {asking && (
@@ -130,9 +122,13 @@ export function PullsPage({
           }}
         />
       )}
-      <div className="settingsbody">
+      <div className="settingsbody cardgrid">
             <section className="setupsection">
               <h3>Open requests</h3>
+              <p className="muted">
+                Requests still waiting for approval. Open one to see what it changes, pick
+                which version of a file to keep, and approve or comment on it.
+              </p>
               {pulls.isLoading && <Loading what="Fetching information from GitHub…" />}
               {pulls.isError && (
                 <p className="errdetail">
@@ -144,20 +140,20 @@ export function PullsPage({
               <PullList
                 items={(pulls.data ?? []).filter((p) => p.state === "open")}
                 empty="Nothing waiting. Requests made here or on GitHub show up in this list."
-                onOpen={(number) => setOpen({ number })}
+                onOpen={(number) => { setBack(false); setOpen({ number }); }}
               />
             </section>
 
             <section className="setupsection">
               <h3>Closed requests</h3>
               <p className="muted">
-                Merged, or closed without being merged. Open one to see
-                what was kept from which branch.
+                Requests that have merged branches or were closed without their branches being merged. 
+                Open a request to see which changes were kept from each branch.
               </p>
               <PullList
                 items={(pulls.data ?? []).filter((p) => p.state !== "open")}
                 empty="None yet."
-                onOpen={(number) => setOpen({ number })}
+                onOpen={(number) => { setBack(false); setOpen({ number }); }}
                 tidyable={tidyable}
                 onTidy={(number) => setOpen({ number, tidy: true })}
               />
@@ -870,18 +866,27 @@ function PullView({
             </ul>
           </section>
 
+          {/* Reads across the card: what and why on the left, the button that
+              does it on the right, the way the settings rows do. */}
           {canTidy && (
             <section
-              className={`setupsection${tidyLit ? " litcard" : ""}`}
+              className={`setupsection settingsplit${tidyLit ? " litcard" : ""}`}
               ref={tidyCard}
             >
-              <h3>Tidy up</h3>
-              <p className="muted">
-                Everything on <BranchName name={d.head} /> is in{" "}
-                <BranchName name={d.base} /> now, so the branch can go. Its
-                commits stay in the history.
-              </p>
-              <div className="setuprow">
+              <div className="settingtext">
+                <h3>Tidy up</h3>
+                <p className="muted">
+                  Everything on <BranchName name={d.head} /> is in{" "}
+                  <BranchName name={d.base} /> now, so the branch can go. Its
+                  commits stay in the history.
+                </p>
+                {currentBranch === d.head && (
+                  <p className="muted small">
+                    You are on it. Switch to another branch first.
+                  </p>
+                )}
+              </div>
+              <div className="setuprow prtidyaction">
                 <button
                   className="branchoffbtn"
                   onClick={() => setTidying(true)}
@@ -890,11 +895,6 @@ function PullView({
                   <TrashGlyph />
                   {busy === "delete" ? "Deleting…" : `Delete ${d.head}`}
                 </button>
-                {currentBranch === d.head && (
-                  <span className="muted small">
-                    You are on it. Switch to another branch first.
-                  </span>
-                )}
               </div>
               {said && <p className="muted small prsaid">{said}</p>}
               {error && <p className="errdetail">{error}</p>}

@@ -23,6 +23,8 @@ import { GlassSelect } from "../common/GlassSelect";
 import { FilterBar } from "../common/FilterBar";
 import { SetupChecks } from "./SetupChecks";
 import { useTheme } from "../../theme";
+import { BranchName, useBranchColors } from "../common/BranchName";
+import { BranchGlyph } from "../common/HistoryDiagrams";
 
 const THEME_CHOICES = [
   { value: "system", label: "System" },
@@ -31,8 +33,9 @@ const THEME_CHOICES = [
 ];
 
 const FETCH_CHOICES = [
+  { seconds: 15, short: "15 sec", label: "Every 15 seconds (recommended)" },
   { seconds: 30, short: "30 sec", label: "Every 30 seconds" },
-  { seconds: 60, short: "1 min", label: "Every minute (recommended)" },
+  { seconds: 60, short: "1 min", label: "Every minute" },
   { seconds: 120, short: "2 min", label: "Every 2 minutes" },
   { seconds: 300, short: "5 min", label: "Every 5 minutes" },
 ];
@@ -124,7 +127,6 @@ export function SettingsPage({
   onCloseBehaviorChange,
   onFixPerms,
   onRepoChanged,
-  onClose,
 }: {
   appState: AppState;
   fetchIntervalS: number;
@@ -139,7 +141,6 @@ export function SettingsPage({
   onCloseBehaviorChange: (mode: "ask" | "tray" | "quit") => void;
   onFixPerms: () => void;
   onRepoChanged: (message: string) => void;
-  onClose: () => void;
 }) {
   const [theme, setTheme] = useTheme();
   const [error, setError] = useState<string | null>(null);
@@ -185,6 +186,13 @@ export function SettingsPage({
 
   const repo = appState.repo!;
   const directory = usePeople();
+  const branchColorOf = useBranchColors();
+  const [owner, shortRepo] = (() => {
+    const cut = repo.repo_slug.lastIndexOf("/");
+    return cut < 0
+      ? ["", repo.repo_slug]
+      : [repo.repo_slug.slice(0, cut), repo.repo_slug.slice(cut + 1)];
+  })();
 
   async function pickExisting() {
     if (cloning) return;
@@ -252,9 +260,6 @@ export function SettingsPage({
         </div>
       )}
       <div className="settingshead">
-        <button className="backbtn" onClick={onClose} disabled={cloning}>
-          ← Back
-        </button>
         <div className="settingsbrand">
           <span className="logoglow">
             <DialLogo className="settingslogo" label="" />
@@ -264,7 +269,8 @@ export function SettingsPage({
               <h2>SolidLocker</h2>
               {version && <span className="versiontag">v{version}</span>}
             </div>
-            <span className="muted">
+            {/* The only line under the name, so it carries its weight. */}
+            <span className="muted settingsby">
               by{" "}
               <a
                 className="linkish inline"
@@ -397,27 +403,64 @@ export function SettingsPage({
           </div>
         </section>
 
+        {/* Was three facts in one muted paragraph with a <br> in the middle.
+            The folder path is what people come here for when something is
+            wrong, so it gets its own line in a monospace face. */}
         <section className="setupsection">
           <h3>Repository</h3>
-          <p className="muted" title={repo.repo_path}>
-            {repo.repo_slug} · branch {repo.branch}
-            <br />
-            {repo.repo_path}
+          <p className="muted">
+            The currently opened project in SolidLocker.
           </p>
-          <div className="setuprow">
-            <button onClick={pickExisting} disabled={cloning}>
-              Select a different folder…
-            </button>
-            <button
-              onClick={() =>
-                openRepoFolder().catch((e) =>
-                  setError(isAppError(e) ? e.message : String(e)),
-                )
-              }
-              disabled={cloning}
-            >
-              Open folder
-            </button>
+          <div className="repocard">
+            <span className="repoicon" aria-hidden="true">
+              <svg
+                viewBox="0 0 16 16"
+                width="26"
+                height="26"
+                fill="currentColor"
+              >
+                <path d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2A1.75 1.75 0 0 0 5 1H1.75Z" />
+              </svg>
+            </span>
+            <div className="repodetails">
+              <span className="reponame">
+                {/* Owner and name as one run, so the ellipsis has something
+                    to bite on. Loose in the flex row they were an anonymous
+                    item that could only wrap, and it wrapped into the
+                    buttons. */}
+                <span className="repotitle" title={repo.repo_slug}>
+                  <span className="repoowner">{owner ? `${owner}/` : ""}</span>
+                  {shortRepo}
+                </span>
+                <span
+                  className="repobranch"
+                  title={`On branch ${repo.branch}`}
+                >
+                  <span style={{ color: branchColorOf(repo.branch) }}>
+                    <BranchGlyph size={12} />
+                  </span>
+                  <BranchName name={repo.branch} />
+                </span>
+              </span>
+              <code className="repopath" title={repo.repo_path}>
+                {repo.repo_path}
+              </code>
+            </div>
+            <div className="repoaction">
+              <button
+                onClick={() =>
+                  openRepoFolder().catch((e) =>
+                    setError(isAppError(e) ? e.message : String(e)),
+                  )
+                }
+                disabled={cloning}
+              >
+                Open in File Explorer
+              </button>
+              <button onClick={pickExisting} disabled={cloning}>
+                Change…
+              </button>
+            </div>
           </div>
         </section>
 
@@ -570,7 +613,7 @@ export function SettingsPage({
             <div className="tool">
               <div className="settingtext">
                 <strong>Fix file permissions</strong>
-                <p className="muted small">
+                <p className="muted">
                   Sets every file back to view-only except the ones you hold.
                   Run it if a file is editable when it shouldn't be, or won't
                   open when it should.
@@ -584,14 +627,14 @@ export function SettingsPage({
             <div className="tool">
               <div className="settingtext">
                 <strong>Open log folder</strong>
-                <p className="muted small">
+                <p className="muted">
                   Errors and slow operations are recorded here. Attach this
                   when reporting a problem.
                 </p>
               </div>
               <div className="setuprow">
                 <button onClick={() => void openLogsFolder().catch(() => {})}>
-                  Open folder
+                  Open in File Explorer
                 </button>
               </div>
             </div>
@@ -599,7 +642,7 @@ export function SettingsPage({
             <div className="tool">
               <div className="settingtext">
                 <strong>Check this computer</strong>
-                <p className="muted small">
+                <p className="muted">
                   Checks Git, Git LFS, locking, CAD files and previews on this
                   machine. Run it after setup, or when something is off.
                 </p>

@@ -3,29 +3,13 @@
 .historypage {
   display: flex;
   flex-direction: column;
-  padding: 2.5rem 2.5rem 2rem;
+  padding: 0.75rem 1.5rem 1.5rem;
   overflow: hidden;
-}
-
-.historypage .pagehead {
-  flex: none;
-  width: 100%;
-  max-width: 1100px;
-  margin: 0 auto;
 }
 
 .historypage .historybody {
   width: 100%;
-  max-width: 1100px;
-  margin: 0 auto;
-}
-
-.historypage .pagehead h2 {
-  margin: 0.6rem 0 0.25rem;
-}
-
-.historypage .pagehead p {
-  margin: 0 0 0.8rem;
+  margin: 0;
 }
 
 .historybody {
@@ -123,12 +107,25 @@
   text-decoration: underline;
 }
 
+.branchmark {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+
+.branchmark.dashed svg circle,
+.branchmark.dashed svg path {
+  stroke-dasharray: 3 2.5;
+}
+
+/* --- was: the coloured dot this replaced -----------------------------
 .branchdot {
   width: 10px;
   height: 10px;
   border-radius: 50%;
   flex: none;
 }
+--- */
 
 /* Same box as an open row, so the two highlights line up. */
 .gg-row.hl {

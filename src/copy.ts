@@ -112,7 +112,7 @@ export const copy = {
 
   // Banners
   cantVerifyClaims:
-    "Can't verify locks with GitHub right now. \"Who has what\" may be missing teammates' locks. If this doesn't clear, check your internet and make sure you're signed in to GitHub (opening GitHub Desktop or doing any git pull triggers the sign in).",
+    "Can't verify locks with GitHub right now. \"Locked files\" may be missing teammates' locks. If this doesn't clear, check your internet and make sure you're signed in to GitHub (opening GitHub Desktop or doing any git pull triggers the sign in).",
   noLockingRules:
     "This branch has no file locking rules (.gitattributes with `lockable`), so locking won't protect files here. Switch to a branch that has them, or ask your lead to add them to this branch.",
   noIgnoreRules:
@@ -122,7 +122,7 @@ export const copy = {
   checkConnection:
     "Check your connection. SolidLocker can't reach GitHub, so locking, Save & Share, and unlocking are paused until you're back online.",
   notSignedIn:
-    "You're not signed in to GitHub. Locking may not work, and \"Who has what\" may not be up to date. Sign in to GitHub to fix this.",
+    "You're not signed in to GitHub. Locking may not work, and \"Locked files\" may not be up to date. Sign in to GitHub to fix this.",
   offlineStillWorking:
     "You can still open and edit any file you locked before you lost connection. Need to work on a file you did not lock?",
   // The git detail is in the log; it means nothing here.

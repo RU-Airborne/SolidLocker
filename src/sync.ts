@@ -16,8 +16,8 @@ export interface SyncControls {
   lastFetchAt: number | null;
   intervalS: number;
   setIntervalS: (seconds: number) => void;
-  /** A sync is running */
   syncing: boolean;
+  checking: boolean;
   /** The last fetch failed */
   failed: boolean;
   setFailed: (failed: boolean) => void;
@@ -45,7 +45,8 @@ export function useSync(options: SyncOptions): SyncControls {
   const [lastFetchAt, setLastFetchAt] = useState<number | null>(null);
   const [failed, setFailed] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [intervalS, setIntervalS] = useChoice("fetchIntervalS", [30, 60, 120, 300], 60);
+  const [checking, setChecking] = useState(false);
+  const [intervalS, setIntervalS] = useChoice("fetchIntervalS", [15, 30, 60, 120, 300], 15);
   const latest = useRef(options);
   latest.current = options;
 
@@ -54,6 +55,7 @@ export function useSync(options: SyncOptions): SyncControls {
   useEffect(() => {
     const doFetch = () => {
       if (latest.current.paused) return;
+      setChecking(true);
       fetchRemote()
         .then(() => {
           setLastFetchAt(Date.now());
@@ -62,7 +64,8 @@ export function useSync(options: SyncOptions): SyncControls {
           // A fetch can bring in branches teammates just created.
           queryClient.invalidateQueries({ queryKey: ["repoBranches"] });
         })
-        .catch(() => setFailed(true));
+        .catch(() => setFailed(true))
+        .finally(() => setChecking(false));
     };
     doFetch();
     const t = window.setInterval(doFetch, intervalS * 1000);
@@ -104,6 +107,7 @@ export function useSync(options: SyncOptions): SyncControls {
   return {
     lastFetchAt,
     intervalS,
+    checking,
     setIntervalS,
     syncing,
     failed,

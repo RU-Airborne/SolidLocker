@@ -261,6 +261,15 @@ pub const SW_NOT_INSTALLED: &str =
 
 pub const SW_TOO_SLOW: &str = "SolidWorks took too long to answer.";
 
+pub const SW_MAP_NOT_RUNNING: &str =
+    "SolidWorks isn't running, so there is nothing to read the references from. Open SolidWorks and press Redraw.";
+
+pub const SW_MAP_NO_ANSWER: &str =
+    "SolidWorks did not report any references. Either nothing in this project references anything else, or these files aren't models SolidWorks can open.";
+
+pub const SW_MAP_NOT_INSTALLED: &str =
+    "SolidWorks isn't installed on this computer, so SolidLocker can't work out what is built from what.";
+
 pub fn sw_lookup_failed(stderr: &str) -> String {
     format!("SolidWorks reference lookup failed: {stderr}")
 }

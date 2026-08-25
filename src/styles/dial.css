@@ -5,8 +5,13 @@
 }
 
 .brandlogo:hover .dialface,
+.raillogo:hover .dialface,
 .settingslogo:hover .dialface,
 .setuplogo:hover .dialface {
+  transform: rotate(72deg);
+}
+
+.navrail:hover .raillogo .dialface {
   transform: rotate(72deg);
 }
 
@@ -24,6 +29,8 @@
   }
 
   .brandlogo:hover .dialface,
+  .raillogo:hover .dialface,
+  .navrail:hover .raillogo .dialface,
   .settingslogo:hover .dialface,
   .setuplogo:hover .dialface {
     transform: none;

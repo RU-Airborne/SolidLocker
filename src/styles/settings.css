@@ -4,12 +4,11 @@
   flex: 1;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 2.5rem 2.5rem 4rem;
+  padding: 0.75rem 1.5rem 3rem;
 }
 
 .settingshead {
-  max-width: 900px;
-  margin: 0 auto 2.6rem;
+  margin: 0 0 0.9rem;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -19,8 +18,12 @@
 
 .settingshead h2 {
   margin: 0;
-  font-size: 1.9rem;
-  letter-spacing: -0.02em;
+  font-size: 2.1rem;
+  letter-spacing: -0.015em;
+}
+
+.settingsby {
+  font-size: 1.05rem;
 }
 
 .settingsbrand {
@@ -39,7 +42,7 @@
 .settingstitle {
   display: flex;
   flex-direction: column;
-  gap: 0.1rem;
+  gap: 0.25rem;
 }
 
 .settingsname {
@@ -130,12 +133,46 @@
 }
 
 .settingsbody {
-  max-width: 900px;
-  margin: 0 auto;
+  margin: 0;
   display: flex;
   flex-direction: column;
   gap: 1.1rem;
   text-align: left;
+}
+
+.settingsbody.cardgrid {
+  display: block;
+  columns: 26rem 2;
+  column-gap: 1.1rem;
+}
+
+.settingsbody.cardgrid > * {
+  break-inside: avoid;
+  margin-bottom: 1.1rem;
+}
+
+.cardgrid .statrow,
+.cardgrid > .error,
+.cardgrid .setupsection.wide {
+  column-span: all;
+}
+
+.cardgrid .statrow:not(:first-child),
+.cardgrid > .error:not(:first-child),
+.cardgrid .setupsection.wide:not(:first-child) {
+  margin-top: 1.1rem;
+}
+
+.pullspage .settingsbody.cardgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(21rem, 1fr));
+  grid-auto-rows: 1fr;
+  align-items: stretch;
+  column-gap: 1.1rem;
+}
+
+.pullspage .settingsbody.cardgrid > * {
+  margin-bottom: 0;
 }
 
 /* Each section is a roomy card. */
@@ -153,7 +190,6 @@
 
 .settingsbody .setupsection > .muted {
   margin: 0 0 0.9rem;
-  max-width: 60ch;
 }
 
 .settingsbody .setuprow {
@@ -170,6 +206,112 @@
 
 .accountavatar .avatar-img {
   border-radius: 50%;
+}
+
+.repocard {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 0.7rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--muted) 5%, transparent);
+}
+
+.repoicon {
+  display: inline-flex;
+  color: color-mix(in srgb, var(--accent) 85%, var(--muted));
+}
+
+.repodetails {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.reponame {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  min-width: 0;
+}
+
+.repotitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.repoowner {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.repobranch {
+  flex: none;
+  max-width: 14rem;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex: none;
+  padding: 0.05rem 0.5rem 0.1rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 400;
+}
+
+.repopath {
+  font-family: ui-monospace, monospace;
+  font-size: 0.82rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.repoaction {
+  display: flex;
+  gap: 0.5rem;
+  flex: none;
+}
+
+.repoaction button {
+  padding: 0.4rem 1rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.repoaction button:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.repoaction button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+@media (max-width: 44rem) {
+  .repocard {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .repoaction {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+  }
 }
 
 .accountdetails {
@@ -235,6 +377,42 @@
 }
 
 /* ---- Progress page ---- */
+.churnrow .heldwho {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.heldwho-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.heldyou {
+  flex: none;
+  padding: 0 0.4rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.churnrow .heldage {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.churnrow .heldage.stale {
+  color: var(--warning);
+  font-weight: 600;
+}
 
 .statrow {
   display: grid;
@@ -315,6 +493,7 @@
 
 .areabar,
 .contribbar {
+  min-width: 3rem;
   height: 8px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--muted) 22%, transparent);
@@ -345,8 +524,16 @@
   gap: 0.6rem;
 }
 
+.contriblist li > * {
+  min-width: 0;
+}
+
 .contriblist li.churnrow {
-  grid-template-columns: minmax(8rem, 16rem) 1fr auto;
+  grid-template-columns: minmax(8rem, 16rem) minmax(4rem, 1fr) auto;
+}
+
+.setupsection.wide .contriblist li.churnrow {
+  grid-template-columns: minmax(12rem, 2fr) minmax(0, 1fr) auto;
 }
 
 .sectionhead {
@@ -362,10 +549,25 @@
   margin: 0 !important;
 }
 
-.contribname {
+.contribname .branchmark {
+  display: inline-flex;
+  vertical-align: -2px;
+  margin-right: 0.4rem;
+}
+
+.contriblist .contribname {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.contribname .fthumb {
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 0.4rem;
 }
 
 .branchlist {
@@ -379,7 +581,8 @@
 
 .branchrow {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  /* name, ahead/behind, who and when, then the highlight at the far end */
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
   align-items: center;
   gap: 0.9rem;
   padding: 0.35rem 0.5rem;
@@ -532,9 +735,8 @@
 
 /* the rows under the railway scroll on their own */
 .settingsbody .branchlist {
-  max-height: 45vh;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  max-height: none;
+  overflow: visible;
 }
 
 .rr-node {
@@ -770,6 +972,11 @@
 .cfrow {
   padding: 0.45rem 0.55rem;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 45%, transparent);
+}
+
+.cfhead,
+.cfrow {
+  margin-inline: 1.4rem;
 }
 
 .cfrow:last-child {
@@ -1206,8 +1413,9 @@
   flex-wrap: wrap;
 }
 
-.prhead > p {
+.settingsbody .setupsection.prhead > p {
   flex: 1 1 100%;
+  max-width: none;
   margin: 0;
 }
 
@@ -1696,8 +1904,13 @@
 }
 
 .tool > button,
+.tool > .setuprow,
 .tool .checkblock {
   flex: none;
+}
+
+.settingsbody .tool > .setuprow {
+  margin-top: 0;
 }
 
 .checkblock {
@@ -1892,4 +2105,54 @@
   gap: 0.4rem;
   max-width: 16rem;
   text-align: right;
+}
+
+.prtidyaction {
+  flex: none;
+  margin-top: 0;
+}
+
+.settingsbody .setupsection.settingsplit > .prsaid,
+.settingsbody .setupsection.settingsplit > .errdetail {
+  flex: 1 1 100%;
+  margin: 0.6rem 0 0;
+}
+
+.settingsbody.cardgrid > .bugfooter {
+  column-span: all;
+  margin-bottom: 0;
+}
+
+.branchlight {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: none;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.78rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.branchlight:hover {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.branchlight.on {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.branchrow.lit {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border-radius: 8px;
 }

@@ -148,7 +148,7 @@ export function layoutGraph(commits: GraphCommit[]): {
 }
 
 // One hue per lane; 16 before a repeat.
-const LANE_COLORS = [
+const LANE_COLORS_DARK = [
   "#4e8cff", // blue
   "#d29922", // amber
   "#39c5cf", // teal
@@ -167,11 +167,44 @@ const LANE_COLORS = [
   "#dbab7a", // sand
 ];
 
+const LANE_COLORS_LIGHT = [
+  "#2563eb", // blue
+  "#d97706", // amber
+  "#0891b2", // teal
+  "#7c3aed", // violet
+  "#db2777", // pink
+  "#16a34a", // green
+  "#ea580c", // orange
+  "#a16207", // gold
+  "#059669", // mint
+  "#e11d48", // coral
+  "#4f46e5", // periwinkle
+  "#65a30d", // lime
+  "#64748b", // slate
+  "#c026d3", // orchid
+  "#047857", // jade
+  "#92400e", // sand
+];
+
 const ROW_H = 34;
 const COL_W = 16;
 
+/* Read per call rather than cached. Both reads are cheap and neither forces
+   layout. */
+function onLightBackground(): boolean {
+  if (typeof document === "undefined") return false;
+  const chosen = document.documentElement.getAttribute("data-theme");
+  if (chosen === "light") return true;
+  if (chosen === "dark") return false;
+  return window.matchMedia("(prefers-color-scheme: light)").matches;
+}
+
+/** Both palettes are the same length; the dash rounds count against it. */
+export const LANE_COUNT = LANE_COLORS_DARK.length;
+
 export function laneColor(i: number): string {
-  return LANE_COLORS[i % LANE_COLORS.length];
+  const palette = onLightBackground() ? LANE_COLORS_LIGHT : LANE_COLORS_DARK;
+  return palette[i % palette.length];
 }
 
 /* Subway-map trunks: every branch is its tip's first parent chain,
@@ -543,10 +576,10 @@ export function routeSets(commits: GraphCommit[]): RouteMap {
   const color = new Map<string, string>();
   const dash = new Map<string, string | undefined>();
   for (const [label, i] of orderIndex) {
-    color.set(label, LANE_COLORS[i % LANE_COLORS.length]);
+    color.set(label, laneColor(i));
     // Solid right through the palette first, so dashes only appear once
     // there are more branches than colours.
-    const round = Math.floor(i / LANE_COLORS.length);
+    const round = Math.floor(i / LANE_COUNT);
     dash.set(
       label,
       DASH_PATTERNS[Math.min(round, DASH_PATTERNS.length - 1)],
@@ -1340,7 +1373,6 @@ function CommitDetail({
 export function HistoryPage({
   currentBranch,
   focusSha,
-  onClose,
   onSwitchBranch,
   onBranchOff,
   onViewVersion,
@@ -1350,7 +1382,6 @@ export function HistoryPage({
 }: {
   currentBranch: string;
   focusSha?: string | null;
-  onClose: () => void;
   onSwitchBranch: (name: string) => void;
   onBranchOff: (sha: string, label: string) => void;
   onViewVersion: (
@@ -1482,7 +1513,10 @@ export function HistoryPage({
   }, [openSha, laid, routes, lineOf]);
 
   // Same idea for a hovered or picked branch card: its line stays lit.
-  const focusBranch = hoverBranch ?? pickedBranch;
+  // A branch you actually clicked outranks one the pointer is merely passing
+  // over. The other way round, picking a branch and then reaching for it with
+  // the mouse handed the railway to whichever card you crossed on the way.
+  const focusBranch = pickedBranch ?? hoverBranch;
   // Several branches parked on one commit share a line, so focus works on
   // the line, not the name. An open commit wins outright: running the mouse
   // down the branch list must not relight the diagram under it.
@@ -1554,16 +1588,10 @@ export function HistoryPage({
   return (
     <main className="settingspage historypage">
       <div className="pagehead">
-        <button className="backbtn" onClick={onClose}>
-          ← Back
-        </button>
         <h2>Branches</h2>
         <p className="muted small">
-          Each branch is its own line of work on the same project. The
-          railway shows where they split off and where they join back up,
-          newest at the top. Click any change to see what it touched, open an
-          old version, start a branch from that point, or merge a branch
-          once its work is ready.
+          Each branch is its own line of work. The railway shows where they
+          split off and where they join back up, newest at the top.
         </p>
       </div>
 
@@ -1630,18 +1658,17 @@ export function HistoryPage({
                   onClick={() => jumpToBranch(b.name)}
                   title="Show this branch's line in the diagram"
                 >
+                  {/* The branch's own mark, the same drawing the toolbar and
+                      the rail use, in this branch's colour. A dashed line on
+                      the railway still gets a dashed mark, which is what the
+                      dot's dashed border used to say. */}
                   <span
-                    className="branchdot"
-                    style={
-                      routeDash(routes, b.name)
-                        ? {
-                            // Matches a dashed line on the railway.
-                            background: "transparent",
-                            border: `2px dashed ${color}`,
-                          }
-                        : { background: color }
-                    }
-                  />
+                    className={`branchmark${routeDash(routes, b.name) ? " dashed" : ""}`}
+                    style={{ color }}
+                    aria-hidden="true"
+                  >
+                    <BranchGlyph size={14} />
+                  </span>
                   {b.name}
                 </button>
                 {b.is_default && <span className="badge">default</span>}
@@ -1786,9 +1813,9 @@ export function HistoryPage({
                   } as React.CSSProperties
                 }
                 className={`gg-row${open ? " open" : ""}${c.is_head ? " here" : ""}${
-                  hoverBranch &&
+                  focusBranch &&
                   c.refs.some(
-                    (r) => r === hoverBranch || r === `origin/${hoverBranch}`,
+                    (r) => r === focusBranch || r === `origin/${focusBranch}`,
                   )
                     ? " hl"
                     : ""

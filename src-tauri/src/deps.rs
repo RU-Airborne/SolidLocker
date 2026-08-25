@@ -175,6 +175,68 @@ fn place(root: &Path, abs: &str) -> (String, bool) {
     }
 }
 
+#[derive(Debug, Serialize)]
+pub struct DepEdge {
+    pub parent: String,
+    pub child: String,
+}
+
+pub async fn dependency_graph(root: &Path) -> AppResult<Vec<DepEdge>> {
+    let docs = documents_in_project(root).await?;
+    if docs.is_empty() {
+        return Ok(Vec::new());
+    }
+    let pairs = match ask_solidworks(&docs, root).await {
+        Ok(pairs) => pairs,
+        Err(_) if crate::swrefs::solidworks_install_dir().is_none() => {
+            return Err(AppError::quiet(
+                "SWCOM",
+                crate::messages::SW_MAP_NOT_INSTALLED,
+            ));
+        }
+        Err(_) => {
+            return Err(AppError::quiet(
+                "SWCOM",
+                crate::messages::SW_MAP_NOT_RUNNING,
+            ));
+        }
+    };
+
+    if pairs.is_empty() {
+        return Err(AppError::quiet("SWCOM", crate::messages::SW_MAP_NO_ANSWER));
+    }
+
+    let inside = shared_file_names(root).await.unwrap_or_default();
+    let by_name: std::collections::HashMap<String, String> = docs
+        .iter()
+        .map(|p| (file_name_of(p), p.clone()))
+        .collect();
+
+    let mut seen: HashSet<(String, String)> = HashSet::new();
+    let mut edges = Vec::new();
+    for (idx, abs) in pairs {
+        let name = file_name_of(&abs);
+        if !inside.contains(&name) {
+            continue;
+        }
+        let parent = docs[idx].clone();
+        let child = by_name.get(&name).cloned().unwrap_or_else(|| place(root, &abs).0);
+        if parent == child {
+            continue;
+        }
+        if seen.insert((parent.clone(), child.clone())) {
+            edges.push(DepEdge { parent, child });
+        }
+    }
+    edges.sort_by(|a, b| {
+        a.parent
+            .to_lowercase()
+            .cmp(&b.parent.to_lowercase())
+            .then(a.child.to_lowercase().cmp(&b.child.to_lowercase()))
+    });
+    Ok(edges)
+}
+
 /// Assemblies and drawings that reference this part. Same COM call as the
 /// reference check, read the other way round.
 pub async fn used_by(root: &Path, target: &str) -> AppResult<Vec<String>> {

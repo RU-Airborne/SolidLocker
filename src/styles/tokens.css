@@ -7,8 +7,8 @@
   --drop-tint: 6%;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   color-scheme: light dark;
-  --muted: #8b949e;
-  --border: #30363d; /* light was: #d0d7de */
+  --muted: #9aa4af;
+  --border: #444c56; /* light was: #8c99a7 */
   --accent: rgb(169, 46, 49);
   --success: #2da44e;
   --error: #ff7b72; /* light was: #cf222e */
@@ -20,7 +20,10 @@
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
     color-scheme: light;
-    --border: #d0d7de;
+    /* #8b949e is a dark-mode grey; on white it lands near 2.9:1, under the
+       4.5:1 body text needs. #d0d7de borders were invisible against it. */
+    --muted: #55606b;
+    --border: #8c99a7;
     --error: #cf222e;
     --warning: #d93025;
     --headbg: #ffffff;
@@ -30,7 +33,8 @@
 
 :root[data-theme="light"] {
   color-scheme: light;
-  --border: #d0d7de;
+  --muted: #55606b;
+  --border: #8c99a7;
   --error: #cf222e;
   --warning: #d93025;
   --headbg: #ffffff;
@@ -63,6 +67,27 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
+  /* keeps the pool of light behind the card and nothing else */
+  isolation: isolate;
+}
+
+.center::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(860px, 96vw);
+  height: min(640px, 96vh);
+  transform: translate(-50%, -50%);
+  background: radial-gradient(
+    ellipse closest-side,
+    color-mix(in srgb, var(--accent) 20%, transparent),
+    color-mix(in srgb, var(--accent) 9%, transparent) 42%,
+    transparent 78%
+  );
+  z-index: -1;
+  pointer-events: none;
 }
 
 .card {
@@ -71,11 +96,11 @@ body {
   border: 1px solid color-mix(in srgb, var(--accent) 60%, var(--border));
   border-radius: 18px;
   text-align: center;
+  /* Close in only, so it always has room. The far halo is .center::before. */
   box-shadow:
     0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent),
-    0 0 80px color-mix(in srgb, var(--accent) 30%, transparent),
-    0 0 200px color-mix(in srgb, var(--accent) 20%, transparent),
-    0 0 360px color-mix(in srgb, var(--accent) 12%, transparent);
+    0 0 30px color-mix(in srgb, var(--accent) 30%, transparent),
+    0 0 70px color-mix(in srgb, var(--accent) 16%, transparent);
 }
 
 .card button {

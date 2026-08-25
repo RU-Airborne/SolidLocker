@@ -1,0 +1,619 @@
+/* --- Lock timeline ------------------------------------------------------ */
+
+.ltl-people {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.9rem;
+  margin-bottom: 0.7rem;
+  font-size: 0.8rem;
+}
+
+.ltl-person {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.ltl-swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  flex: none;
+}
+
+.ltl-rows {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+/* Day or week lines, behind the bars. */
+.ltl-grid {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: color-mix(in srgb, var(--border) 70%, transparent);
+  pointer-events: none;
+}
+
+.ltl-row {
+  display: grid;
+  grid-template-columns: minmax(6rem, 11rem) minmax(0, 1fr);
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.ltl-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8rem;
+}
+
+.ltl-track {
+  position: relative;
+  height: 17px;
+  min-width: 0;
+}
+
+/* Runs from the moment it was taken to the right edge, which is now. */
+.ltl-bar {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0 0.4rem;
+  border-radius: 999px 4px 4px 999px;
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 600;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.ltl-bar.mine {
+  box-shadow: 0 0 0 1px #fff6 inset;
+}
+
+.ltl-days {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Too narrow to hold a face and a number, so it carries neither. */
+.ltl-bar.tight {
+  border-radius: 999px;
+  min-width: 4px;
+}
+
+.ltl-outside {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.68rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.ltl-axis {
+  position: relative;
+  height: 1.2rem;
+  margin-top: 0.35rem;
+  /* the track starts after the name column plus its gap */
+  margin-left: calc(min(11rem, 40%) + 0.6rem);
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+/* transform is set per tick: the ones at either end pull inward so they do
+   not hang off the panel. */
+.ltl-tick {
+  position: absolute;
+  top: 0;
+  white-space: nowrap;
+}
+
+/* --- Treemap ------------------------------------------------------------ */
+
+.tmap {
+  position: relative;
+  width: 100%;
+  /* Wide and shallow. At 16/9 across a full-width panel this was taller than
+     the window and pushed everything below it off the page. */
+  aspect-ratio: 5 / 2;
+  min-height: 13rem;
+  max-height: 24rem;
+  border-radius: 10px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--muted) 6%, transparent);
+}
+
+.tmap-group {
+  position: absolute;
+  padding: 1.15rem 2px 2px;
+  overflow: hidden;
+}
+
+.tmap-label {
+  position: absolute;
+  top: 2px;
+  left: 5px;
+  right: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.tmap-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.tmap-tile {
+  position: absolute;
+  overflow: hidden;
+  padding: 3px 6px;
+  border: 1px solid color-mix(in srgb, var(--headbg) 55%, transparent);
+  border-radius: 3px;
+  /* --heat is 1 for something changed today, 0 for untouched in 3 months. */
+  background: color-mix(
+    in srgb,
+    var(--accent) calc(8% + var(--heat, 0) * 30%),
+    color-mix(in srgb, var(--muted) 14%, transparent)
+  );
+  color: inherit;
+  font: inherit;
+  font-size: 0.68rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tmap-tile:hover {
+  border-color: var(--accent);
+  z-index: 1;
+}
+
+/* Held files are the exception the colour scale is not for: they get their
+   own edge so they read as a state, not as "recently changed". */
+.tmap-tile.lock-mine {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.tmap-tile.lock-theirs {
+  border-color: #d29922;
+  box-shadow: inset 0 0 0 1px #d29922;
+}
+
+.tmap-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.tmap-tilename {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.25;
+  font-weight: 600;
+}
+
+.tmap-tilesize {
+  display: block;
+  font-size: 0.64rem;
+  opacity: 0.75;
+  white-space: nowrap;
+}
+
+/* The tail of a folder: everything too small to be worth its own block. */
+.tmap-tile.lock-rest {
+  background: color-mix(in srgb, var(--muted) 12%, transparent);
+  border-style: dashed;
+  color: var(--muted);
+}
+
+/* --- Share calendar ----------------------------------------------------- */
+
+/* Centred while it fits, scrolling once the project is old enough not to.
+   justify-content only bites when the weeks have hit their max width and
+   there is room left over, which is exactly when it should. */
+.cal-grid {
+  display: flex;
+  justify-content: center;
+  gap: 3px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  /* Room for the hover ring. A scrolling box clips both axes, so without
+     this the ring round the top row was sliced off. */
+  padding: 4px 4px 0.35rem;
+}
+
+.cal-key {
+  justify-content: center;
+}
+
+/* Grows with the panel but stops. Left to flex freely each day became a tile
+   the size of a button; pinned to 11px it was a postage stamp in the corner
+   of a wide card. A capped flex fills the width it is given and no more. */
+.cal-week {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1 1 0;
+  min-width: 9px;
+  max-width: 18px;
+}
+
+.cal-day {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--muted) 16%, transparent);
+  transition: box-shadow 0.1s ease;
+}
+
+/* A ring rather than a colour change, so the shade the square is carrying —
+   which is the whole point of it — stays readable while you point at it. */
+.cal-grid .cal-day:hover {
+  box-shadow:
+    0 0 0 2px var(--menubg),
+    0 0 0 3px var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cal-day {
+    transition: none;
+  }
+}
+
+.cal-day.l1 {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.cal-day.l2 {
+  background: color-mix(in srgb, var(--accent) 50%, transparent);
+}
+
+.cal-day.l3 {
+  background: color-mix(in srgb, var(--accent) 72%, transparent);
+}
+
+.cal-day.l4 {
+  background: var(--accent);
+}
+
+/* Days outside the project — before its first share, or still to come — are
+   not "quiet", they are nothing. An outline, not a shade. */
+.cal-day.blank {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 60%, transparent);
+}
+
+.cal-key {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.5rem;
+}
+
+.cal-key .cal-day {
+  width: 11px;
+  aspect-ratio: auto;
+  height: 11px;
+  flex: none;
+}
+
+/* --- Branch divergence -------------------------------------------------- */
+
+.dvg-head {
+  display: flex;
+  justify-content: space-between;
+  margin: 0 0 0.4rem;
+  /* lines up with the track, past the name column */
+  padding-left: calc(min(11rem, 45%) + 0.6rem);
+}
+
+.dvg-row {
+  display: grid;
+  grid-template-columns: minmax(6rem, 11rem) minmax(0, 1fr);
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.15rem 0;
+}
+
+.dvg-name {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.dvg-branch {
+  font-weight: 600;
+  font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dvg-track {
+  position: relative;
+  height: 20px;
+  min-width: 0;
+}
+
+.dvg-centre {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: color-mix(in srgb, var(--border) 90%, transparent);
+}
+
+.dvg-behind,
+.dvg-ahead {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  display: flex;
+  align-items: center;
+  font-size: 0.72rem;
+  font-weight: 600;
+  overflow: hidden;
+}
+
+/* Behind grows leftward from the centre: work you have not taken yet. */
+.dvg-behind {
+  right: 50%;
+  justify-content: flex-end;
+  padding-right: 0.35rem;
+  border-radius: 4px 0 0 4px;
+  background: color-mix(in srgb, var(--muted) 40%, transparent);
+}
+
+/* Ahead grows rightward in the branch's own colour: work only it has. */
+.dvg-ahead {
+  left: 50%;
+  justify-content: flex-start;
+  padding-left: 0.35rem;
+  border-radius: 0 4px 4px 0;
+  color: #fff;
+}
+
+.dvg-num {
+  white-space: nowrap;
+}
+
+.dvg-instep {
+  position: absolute;
+  left: calc(50% + 0.5rem);
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+/* A row each. Side by side worked while the grid was a season; a full year
+   of squares needs the whole width to itself. */
+.actstack {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* The range picker drives the bars only, so it sits with them. */
+.actrange {
+  align-self: flex-end;
+  margin: -1.6rem 0 0.5rem;
+}
+
+.actbars,
+.actcal {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Sits over its own chart, so it is not read as part of the panel's opening
+   line. The range picker shares the bars' row with theirs. */
+.chartcap {
+  margin: 0 0 0.5rem !important;
+}
+
+.actbars .chartcap {
+  margin-bottom: 0 !important;
+}
+
+/* --- Assembly map ------------------------------------------------------- */
+
+/* Columns by depth, left to right: the parts, then what is built from them.
+   No drawn edges — eighty CAD files joined by lines is a hairball. Pressing a
+   file dims everything it does not touch instead, which answers the only
+   question this is for: change this, and what else is affected. */
+.amap {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding-bottom: 0.3rem;
+}
+
+.amap-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1 1 0;
+  min-width: 11rem;
+  max-height: 22rem;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
+
+.amap-coltitle {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  /* Over the middle of its own column, not tucked against the left edge. */
+  text-align: center;
+  padding: 0.1rem 0 0.3rem;
+  background: linear-gradient(
+    var(--menubg) 65%,
+    color-mix(in srgb, var(--menubg) 0%, transparent)
+  );
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.amap-node {
+  display: flex;
+  align-items: center;
+  /* Not space-between. A file nothing is built from has no badge, so its two
+     children were the empty lock slot and the name — and space-between threw
+     them to opposite ends, leaving the name hard against the right edge.
+     The badge pushes itself over instead. */
+  justify-content: flex-start;
+  gap: 0.5rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--muted) 7%, transparent);
+  color: inherit;
+  font: inherit;
+  font-size: 0.8rem;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    opacity 0.14s ease,
+    box-shadow 0.14s ease,
+    border-color 0.14s ease;
+}
+
+.amap-node:hover {
+  border-color: var(--accent);
+}
+
+.amap-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* How many other things are built from this one. */
+.amap-count {
+  flex: none;
+  margin-left: auto;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 24%, transparent);
+  font-size: 0.68rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.amap-node.focus {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+/* In the blast radius: change the focused file and these break. Lit in their
+   own right, rather than just being the ones that were not dimmed — "not
+   dark" is not a signal anybody reads. */
+.amap-node.affected {
+  border-color: color-mix(in srgb, var(--warning) 70%, transparent);
+  background: color-mix(in srgb, var(--warning) 16%, transparent);
+  color: var(--warning);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--warning) 28%, transparent);
+}
+
+.amap-reach.on {
+  padding: 0.5rem 0.7rem;
+  margin-bottom: 0.7rem;
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
+  line-height: 1.5;
+}
+
+/* Not connected to whatever is being looked at. */
+.amap-node.dim {
+  opacity: 0.22;
+}
+
+/* A key: a strip of marks with their names, boxed so it reads as a key and
+   not as another line of the caption above it. */
+/* Centred over the columns it describes. */
+.amap-reach {
+  text-align: center;
+}
+
+.amap-legend {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0;
+  padding: 0.3rem 0.2rem;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--muted) 5%, transparent);
+}
+
+.amap-legenditem {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0 0.75rem;
+}
+
+/* Hairlines between the entries rather than guessing at word spacing. */
+.amap-legenditem + .amap-legenditem {
+  border-left: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+/* A fixed slot, so every name in a column starts at the same x whether its
+   file is held or not. */
+.amap-lockslot {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* A padlock says "held". The bar down the left edge means "this is where you
+   are" everywhere else in this app, so it is not free to mean this too. */
+.amap-lock {
+  flex: none;
+  color: #d29922;
+}
+
+.amap-lock.mine {
+  color: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .amap-node {
+    transition: none;
+  }
+}
+
+/* Why the map could not be drawn, over whatever was drawn last time. */
+.deperr {
+  margin: 0 0 0.7rem;
+}

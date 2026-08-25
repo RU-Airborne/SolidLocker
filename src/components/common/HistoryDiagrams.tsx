@@ -4,12 +4,12 @@ function trunc(s: string, n: number): string {
   return t.length > n ? `${t.slice(0, n - 1)}…` : t;
 }
 
-export function BranchGlyph() {
+export function BranchGlyph({ size = 13 }: { size?: number } = {}) {
   return (
     <svg
       viewBox="0 0 24 24"
-      width="13"
-      height="13"
+      width={size}
+      height={size}
       fill="none"
       stroke="currentColor"
       strokeWidth="2"
@@ -22,6 +22,26 @@ export function BranchGlyph() {
       <circle cx="18" cy="7" r="2.4" />
       <path d="M6 7.4v9.2" />
       <path d="M18 9.4c0 3-2.5 4.6-5 4.6H9" />
+    </svg>
+  );
+}
+
+/** Cog. */
+export function CogGlyph({ size = 19 }: { size?: number }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="3.2" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v0c.14.6.63 1.05 1.24 1.09H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
     </svg>
   );
 }
@@ -88,6 +108,28 @@ export function TeamGlyph({ size = 14 }: { size?: number }) {
       <path d="M3.5 19c.6-3 2.8-4.6 5.5-4.6s4.9 1.6 5.5 4.6" />
       <circle cx="16.8" cy="9.4" r="2.6" />
       <path d="M15.4 14.7c2.5.1 4.4 1.5 5.1 4.3" />
+    </svg>
+  );
+}
+
+/** Insights: a reading taken off the work, not just a count of it. */
+export function InsightGlyph({ size = 19 }: { size?: number }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M3.5 20h17" />
+      <path d="M6 20v-4.5M11 20v-8M16 20v-3" />
+      <path d="m4.5 10.5 5-4.5 4 3 6-6" />
+      <path d="M15.5 3h4.5v4.5" />
     </svg>
   );
 }

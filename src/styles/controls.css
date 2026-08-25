@@ -274,3 +274,20 @@
 .offbranch-goto button {
   flex-shrink: 0;
 }
+
+.branchline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.branchline .branchword {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.offbranch-where {
+  min-width: 0;
+}

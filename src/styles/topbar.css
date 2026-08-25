@@ -3,12 +3,249 @@
 .app {
   height: 100%;
   display: flex;
+  flex-direction: row;
+  --railw: 72px;
+}
+
+.appmain {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
   flex-direction: column;
+}
+
+.navrail {
+  position: relative;
+  flex: none;
+  width: var(--railw);
+  z-index: 20;
+  transition: width 0.16s ease;
+}
+
+.navrail.open {
+  width: 15rem;
+}
+
+.railpane {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--railw);
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.5rem;
+  border-right: 1px solid var(--border);
+  background: color-mix(in srgb, var(--muted) 6%, transparent);
+  overflow: hidden;
+  transition: width 0.16s ease;
+}
+
+.navrail:hover .railpane,
+.navrail.open .railpane {
+  width: 15rem;
+}
+
+.railitems {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.railspacer {
+  flex: 1;
+}
+
+.railbrand {
+  display: flex;
+  align-items: center;
+  height: 56px;
+  margin-bottom: 0.5rem;
+  padding: 0 0 0 2px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.raillogo {
+  flex: none;
+  width: 52px;
+  height: 52px;
+}
+
+.railwordmark {
+  margin-left: 0.7rem;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.navrail:hover .railwordmark,
+.navrail.open .railwordmark {
+  opacity: 1;
+}
+
+.railpin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  margin-right: 0.5rem;
+  padding: 0.25rem;
+  border-radius: 6px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent),
+    0 0 14px color-mix(in srgb, var(--accent) 40%, transparent);
+  flex: none;
+}
+
+.railbrand:hover .railpin {
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 20%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--error) 60%, transparent),
+    0 0 16px color-mix(in srgb, var(--error) 45%, transparent);
+}
+
+.railitem {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  height: 40px;
+  padding: 0 1rem;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.92rem;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.railicon {
+  flex: none;
+  width: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+
+.raillabel {
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.navrail:hover .raillabel,
+.navrail.open .raillabel {
+  opacity: 1;
+}
+
+.railitem:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.railitem:hover .railicon {
+  color: var(--accent);
+}
+
+.railitem.active {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  font-weight: 600;
+}
+
+.railitem.active .railicon {
+  color: var(--accent);
+}
+
+.railaccount {
+  height: 52px;
+  padding: 0 0 0 12px;
+  gap: 0.45rem;
+  cursor: default;
+  background: none;
+}
+
+.railaccount:hover {
+  background: none;
+  box-shadow: none;
+}
+
+.railfoot {
+  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  padding-top: 0.4rem;
+  margin-top: 0.2rem;
+}
+
+.railface {
+  width: 32px;
+}
+
+.railwho {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.05rem;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.railwho-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.railwho-handle {
+  font-size: 0.78rem;
+  font-weight: 400;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.railitem.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 17px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .railpane,
+  .raillabel,
+  .railwordmark {
+    transition: none;
+  }
 }
 
 .ghbar {
   display: flex;
-  align-items: stretch;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0 0.55rem;
   border-bottom: 1px solid var(--border);
   background: color-mix(in srgb, var(--muted) 6%, transparent);
   position: relative;
@@ -52,20 +289,25 @@
 }
 
 .ghbar {
-  min-height: 108px;
+  min-height: 44px;
 }
 
 .brand {
-  align-self: stretch;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0 0.5rem;
+  padding: 0 0.15rem;
 }
 
 .brandlogo {
-  height: 88px;
-  width: 88px;
+  height: 26px;
+  width: 26px;
+}
+
+.navrail .logoglow svg {
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--accent) 85%, transparent))
+    drop-shadow(0 0 12px color-mix(in srgb, var(--accent) 55%, transparent))
+    drop-shadow(0 0 26px color-mix(in srgb, var(--accent) 30%, transparent));
 }
 
 .setuplogo {
@@ -95,6 +337,180 @@
   margin: 0;
 }
 
+.crumbs {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  max-width: 32ch;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.97rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+button.crumb:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.crumbword {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.crumbswap {
+  flex: none;
+  color: var(--muted);
+}
+
+.crumbicon {
+  flex: none;
+  color: color-mix(in srgb, var(--accent) 85%, var(--muted));
+}
+
+.branchicon {
+  display: inline-flex;
+  align-items: center;
+  margin-right: -0.05rem;
+}
+
+.crumbs .branchselect .gselect-label .gselect-dot {
+  display: none;
+}
+
+.crumbswap {
+  font-size: 0.85em;
+}
+
+button.crumb:hover .crumbicon,
+button.crumb:hover .crumbswap {
+  color: var(--accent);
+}
+
+.crumbsep {
+  flex: none;
+  color: var(--muted);
+}
+
+.crumbs .gselect.branchselect {
+  margin-left: 0;
+  max-width: 34ch;
+  padding: 0.28rem 0.6rem;
+}
+
+.crumbs .gselect.branchselect .gselect-label {
+  font-size: 0.97rem;
+}
+
+.crumb.switching {
+  color: var(--muted);
+  font-weight: 500;
+  cursor: default;
+}
+
+.syncchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  flex: none;
+  padding: 0.2rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.82rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.syncchip:hover,
+.syncchip[aria-expanded="true"] {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.syncmark {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+}
+
+.syncchip.tone-ok .syncmark {
+  color: var(--success);
+}
+
+.syncchip.tone-warn .syncmark {
+  color: var(--warning);
+}
+
+.syncchip.tone-bad .syncmark {
+  color: var(--error);
+}
+
+.syncchip.tone-warn,
+.syncchip.tone-bad {
+  font-weight: 600;
+}
+
+.syncchip.tone-warn {
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 45%, var(--border));
+}
+
+.syncchip.tone-bad {
+  color: var(--error);
+  border-color: color-mix(in srgb, var(--error) 45%, var(--border));
+}
+
+.syncchip.tone-busy .syncmark {
+  animation: iconspin 1.4s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .syncchip.tone-busy .syncmark {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+
+.syncpop {
+  position: fixed;
+  z-index: 150;
+  padding: 0.75rem 0.85rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--menubg);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+}
+
+.syncpop-state {
+  margin: 0 0 0.25rem;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.syncpop-detail {
+  margin: 0 0 0.7rem;
+  line-height: 1.45;
+}
+
+/* --- was: the boxed segments this replaced -----------------------------
 .seg {
   display: flex;
   flex-direction: column;
@@ -178,6 +594,7 @@ button.seg:hover .segicon {
 .seg-sync .cap {
   flex: 0 1 auto;
 }
+*/
 
 /* Native <select> popups (esp. WebView2 on Windows) ignore page styles unless
    options get explicit colors matching the active scheme. */
@@ -241,7 +658,6 @@ select option:checked {
   align-items: center;
   gap: 0.35rem;
   align-self: center;
-  margin-right: 0.6rem;
   padding: 0.35rem 0.9rem;
   border-radius: 6px;
   border: 1px solid var(--border);
@@ -271,6 +687,21 @@ select option:checked {
   padding: 0.35rem 0.55rem;
 }
 
+.panelbtn {
+  padding: 0.35rem 0.5rem;
+  color: var(--muted);
+}
+
+.panelbtn.on {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.panelbtn svg {
+  display: block;
+}
+
 .spinicon,
 .stillicon {
   display: inline-flex;
@@ -290,4 +721,116 @@ select option:checked {
   .spinicon {
     animation: none;
   }
+}
+
+.repopop {
+  position: fixed;
+  z-index: 150;
+  padding: 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--menubg);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+  max-height: 70vh;
+  overflow-y: auto;
+  /* Nothing in here is worth scrolling sideways for; the path truncates. */
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+}
+
+.repopop-head {
+  margin: 0.2rem 0.55rem 0.3rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.repopop-row {
+  display: flex;
+  align-items: stretch;
+  border-radius: 8px;
+}
+
+.repopop-row:hover {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.repopop-item {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.4rem 0.6rem;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.repopop-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.repopop-path {
+  direction: rtl;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, monospace;
+}
+
+.repopop-forget {
+  flex: none;
+  width: 26px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.repopop-forget:hover {
+  background: color-mix(in srgb, var(--error) 18%, transparent);
+  color: var(--error);
+}
+
+.repopop-rule {
+  height: 1px;
+  margin: 0.3rem 0.4rem;
+  background: color-mix(in srgb, var(--border) 80%, transparent);
+}
+
+.repopop-browse {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.repopop-browse:hover {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: inherit;
+}
+
+.repopop-browseicon {
+  display: inline-flex;
+  flex: none;
 }

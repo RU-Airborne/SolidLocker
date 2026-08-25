@@ -96,6 +96,27 @@
   box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
+.minechip {
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 20%, transparent);
+  transition:
+    box-shadow 0.16s ease,
+    background-color 0.16s ease;
+}
+
+.minechip:hover:not(:disabled) {
+  box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.minechip:disabled {
+  box-shadow: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .minechip {
+    transition: none;
+  }
+}
+
 /* Search: focus is a light coming on. */
 .treesearch input:focus,
 .treesearch input:focus-visible {
@@ -104,7 +125,7 @@
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
-/* Who has what: each person's block lifts slightly under the pointer. */
+/* Locked files: each person's block lifts slightly under the pointer. */
 .lockitem {
   border-radius: 6px;
   transition:
@@ -158,42 +179,36 @@
   }
 }
 
-/* --- Frosted overlay for the settings and progress pages ---------------
-   Both used to replace the file list. They now float above it so the work
-   underneath stays visible through the glass. */
 .stage {
   position: relative;
   flex: 1;
   display: flex;
+  flex-direction: column;
   min-height: 0;
 }
 
 .stage > .body {
   flex: 1;
   min-width: 0;
+  min-height: 0;
 }
 
-.glasspage {
-  /* Fixed, so it covers the whole window including the toolbar. The toolbar
-     stays mounted and reads as frosted shapes behind the glass. Above the
-     toolbar's z-index 3, below dialogs at 100. */
-  position: fixed;
-  inset: 0;
-  z-index: 6;
+.pagearea {
+  position: relative;
+  flex: 1;
+  min-height: 0;
   display: flex;
   overflow: hidden;
-  /* Blur softens what is behind; the tint is what hides it. Keep the tint
-     lighter so the file list stays visible, and lean on a heavier blur to
-     keep the page text readable over it. */
-  background: color-mix(in srgb, var(--headbg) calc(var(--glass-tint) * 0.87), transparent);
-  backdrop-filter: blur(var(--glass-blur)) saturate(140%);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
   animation: glassrise 0.18s ease-out;
 }
 
-.glasspage > * {
+.pagearea > * {
   flex: 1;
   min-width: 0;
+}
+
+.appmain.onpage .stage > .body {
+  display: none;
 }
 
 @keyframes dropunfold {
@@ -223,8 +238,40 @@
   }
 }
 
+@keyframes pagefromright {
+  from {
+    opacity: 0;
+    transform: translateX(2.2rem);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes pagefromleft {
+  from {
+    opacity: 0;
+    transform: translateX(-2.2rem);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.pageforward {
+  animation: pagefromright 0.19s ease-out;
+}
+
+.pageback {
+  animation: pagefromleft 0.19s ease-out;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .glasspage {
+  .pagearea,
+  .pageforward,
+  .pageback {
     animation: none;
   }
 }
@@ -254,6 +301,13 @@
     box-shadow 0.16s ease,
     background-color 0.16s ease,
     color 0.16s ease;
+}
+
+.namebtn.open {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent),
+    0 0 14px color-mix(in srgb, var(--accent) 25%, transparent);
 }
 
 .pinbtn:hover,
@@ -375,27 +429,43 @@
   -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 0.35));
 }
 
-/* Dialogs: frosted sheet lifted off the page, with the accent in its rim. */
+/* Dialogs: frosted sheet lifted off the page, with the accent in its rim.
+   Thinner than it was now that the page behind is blurred as well: two coats
+   of frost do the hiding, so the sheet itself can stay glass. */
 .modal {
+  position: relative;
   background: color-mix(
     in srgb,
-    var(--headbg) clamp(72%, calc(var(--glass-tint) * 1.38), 92%),
+    var(--headbg) clamp(32%, calc(var(--glass-tint) * 1.42), 56%),
     transparent
   );
-  backdrop-filter: blur(calc(var(--glass-blur) * 0.93)) saturate(140%);
-  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 0.93)) saturate(140%);
-  border-color: color-mix(in srgb, var(--accent) 32%, var(--border));
+  backdrop-filter: blur(calc(var(--glass-blur) * 1.85)) saturate(180%);
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.85)) saturate(180%);
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
   border-radius: 14px;
   box-shadow:
-    0 24px 70px rgba(0, 0, 0, 0.45),
-    0 0 46px color-mix(in srgb, var(--accent) 18%, transparent);
+    0 24px 70px rgba(0, 0, 0, 0.5),
+    0 0 60px color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
-/* No blur here. This is the dialog's parent, and an ancestor with
-   backdrop-filter becomes a backdrop root: the dialog could then only sample
-   this flat black wash, so its glass came out dead grey. */
+/* The blur goes on a pseudo element, never on .modal-backdrop itself. An
+   ancestor with backdrop-filter becomes a backdrop root, and the dialog would
+   then have nothing to sample but this flat wash: its glass came out dead
+   grey. As a pseudo it is a sibling in paint order, so the page gets frosted
+   and the dialog still has something to be glass against. z-index keeps it
+   behind the dialog, which is in normal flow. */
 .modal-backdrop {
-  background: rgba(0, 0, 0, 0.42);
+  background: transparent;
+}
+
+.modal-backdrop::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(16px) saturate(115%);
+  -webkit-backdrop-filter: blur(16px) saturate(115%);
 }
 
 /* Inactive filter and panel tabs had almost no hover state: the filter only
@@ -564,7 +634,7 @@
   white-space: nowrap;
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.5rem;
 }
 
 .gselect-dot {
@@ -601,6 +671,102 @@
   font-weight: 600;
 }
 
+.railpane {
+  background: color-mix(in srgb, var(--headbg) calc(var(--glass-tint) * 0.95), transparent);
+  backdrop-filter: blur(calc(var(--glass-blur) * 0.6)) saturate(130%);
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 0.6)) saturate(130%);
+  border-right-color: color-mix(in srgb, var(--accent) 20%, var(--border));
+  transition:
+    width 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.navrail:hover .railpane,
+.navrail.open .railpane {
+  background: color-mix(in srgb, var(--headbg) var(--glass-tint), transparent);
+  backdrop-filter: blur(calc(var(--glass-blur) * 1.4)) saturate(150%);
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.4)) saturate(150%);
+  box-shadow:
+    10px 0 40px rgba(0, 0, 0, 0.4),
+    0 0 40px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.railitem {
+  transition:
+    background-color 0.14s ease,
+    box-shadow 0.14s ease;
+}
+
+.railitem:hover {
+  box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+/* Not something to press. */
+.railaccount:hover {
+  background: none;
+  box-shadow: none;
+}
+
+.railitem.active::before {
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 75%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .railpane,
+  .railitem {
+    transition: none;
+  }
+}
+
+.syncchip {
+  background: color-mix(in srgb, var(--headbg) calc(var(--drop-tint) * 0.7), transparent);
+  backdrop-filter: blur(var(--drop-blur)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--drop-blur)) saturate(180%);
+  transition:
+    box-shadow 0.16s ease,
+    background-color 0.16s ease;
+}
+
+.syncchip:hover,
+.syncchip[aria-expanded="true"] {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent),
+    0 0 16px color-mix(in srgb, var(--accent) 32%, transparent);
+}
+
+.syncchip.tone-ok .syncmark {
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--success) 70%, transparent));
+}
+
+.syncchip.tone-warn .syncmark {
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--warning) 70%, transparent));
+}
+
+.syncchip.tone-bad .syncmark {
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--error) 70%, transparent));
+}
+
+.syncpop {
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--border));
+  background: color-mix(in srgb, var(--headbg) var(--drop-tint), transparent);
+  backdrop-filter: blur(calc(var(--drop-blur) * 1.25)) saturate(190%);
+  -webkit-backdrop-filter: blur(calc(var(--drop-blur) * 1.25)) saturate(190%);
+  box-shadow:
+    0 20px 50px rgba(0, 0, 0, 0.45),
+    0 0 34px color-mix(in srgb, var(--accent) 22%, transparent);
+  animation: dropunfold 0.14s ease-out;
+  transform-origin: top center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .syncchip {
+    transition: none;
+  }
+  .syncpop {
+    animation: none;
+  }
+}
+
 .gselect-pop {
   position: fixed;
   z-index: 150;
@@ -611,9 +777,9 @@
   overscroll-behavior: contain;
   border-radius: 12px;
   border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--border));
-  background: color-mix(in srgb, var(--headbg) var(--drop-tint), transparent);
-  backdrop-filter: blur(calc(var(--drop-blur) * 1.25)) saturate(190%);
-  -webkit-backdrop-filter: blur(calc(var(--drop-blur) * 1.25)) saturate(190%);
+  background: color-mix(in srgb, var(--headbg) calc(var(--drop-tint) * 0.7), transparent);
+  backdrop-filter: blur(calc(var(--drop-blur) * 1.7)) saturate(210%);
+  -webkit-backdrop-filter: blur(calc(var(--drop-blur) * 1.7)) saturate(210%);
   font-size: 0.82rem;
   box-shadow:
     0 20px 50px rgba(0, 0, 0, 0.45),
@@ -628,6 +794,8 @@
 .gselect-opt {
   display: flex;
   align-items: center;
+  /* Label renders both straight into this row. */
+  gap: 0.5rem;
   width: 100%;
   text-align: left;
   border: none;
@@ -769,7 +937,7 @@
   box-shadow: none;
 }
 
-/* --- Dialog buttons ----------------------------------------------------
+/* --- Dialog buttons --------------------------------------------------- */
 .modal button {
   transition:
     box-shadow 0.16s ease,
@@ -983,4 +1151,22 @@
 .modal .warn-inline + .togglerow,
 .modal p + .togglerow {
   margin-top: 1.1rem;
+}
+
+.repopop {
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--border));
+  background: color-mix(in srgb, var(--headbg) var(--drop-tint), transparent);
+  backdrop-filter: blur(calc(var(--drop-blur) * 1.7)) saturate(210%);
+  -webkit-backdrop-filter: blur(calc(var(--drop-blur) * 1.7)) saturate(210%);
+  box-shadow:
+    0 20px 50px rgba(0, 0, 0, 0.45),
+    0 0 34px color-mix(in srgb, var(--accent) 22%, transparent);
+  animation: dropunfold 0.14s ease-out;
+  transform-origin: top center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .repopop {
+    animation: none;
+  }
 }

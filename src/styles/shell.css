@@ -7,24 +7,69 @@
   overflow: hidden;
 }
 
+.pagehead {
+  flex: none;
+  width: 100%;
+  margin: 0 0 0.9rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.8rem;
+  min-width: 0;
+}
+
+.pagehead h2 {
+  flex: none;
+  margin: 0;
+  font-size: 1.3rem;
+  line-height: 1.2;
+}
+
+.pagehead p {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.filespagehead {
+  max-width: none;
+  margin: 0;
+  padding: 0.7rem 1.5rem 0.4rem;
+}
+
+.filespagehead .panelbtn {
+  align-self: center;
+  flex: none;
+  margin-left: auto;
+  height: 30px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.filescolumn {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .content {
   flex: 1;
+  min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
   /* No top padding since it would sit above the sticky header and let rows show
      through in the gap */
-  padding: 0 1rem 1rem;
-}
-
-.content > .treetoolbar:first-child {
-  padding-top: 1rem;
+  padding: 0 1.5rem 1rem;
 }
 
 .branchpanel {
   width: 280px;
   flex-shrink: 0;
   border-left: 1px solid var(--border);
-  padding: 1rem;
+  padding: 0.7rem 1rem 1rem;
   overflow: auto;
   overscroll-behavior: contain;
 }
@@ -45,13 +90,15 @@
 
 .paneltabs {
   display: flex;
+  align-items: center;
   gap: 0.3rem;
   margin-bottom: 0.8rem;
 }
 
 .paneltabs button {
   flex: 1;
-  padding: 0.3rem 0.4rem;
+  height: 30px;
+  padding: 0 0.4rem;
   border-radius: 6px;
   border: 1px solid var(--border);
   background: transparent;

@@ -332,8 +332,10 @@ export function RailDrawing({
   const theirTip = Object.keys(tips).find((sha) => tips[sha] === theirs);
   const ghost =
     !!preview && converge.size === 0 && !laid.unrelated && !!ourTip && !!theirTip && ourTip !== theirTip;
-  const COL = 44;
-  const LANE = 30;
+  // Bigger constants zoom the drawing in. Scaling the SVG instead would
+  // blow the labels up with it.
+  const COL = 66;
+  const LANE = 40;
   const NOTE = lit ? 104 : 0; // room for the lit-commit card
   const stacked = Math.max(0, ...Object.values(minor).map((n) => n.length));
   const longest = Math.max(0, ...Object.values(minor).flat().map((n) => n.length));
@@ -341,10 +343,20 @@ export function RailDrawing({
   const minorAbove = rows.some((r) => r.lane === 0 && minor[r.commit.sha]);
   const minorBelow = rows.some((r) => r.lane !== 0 && minor[r.commit.sha]);
   // Enough headroom that the top lane's labels aren't jammed against the edge.
-  const TOP = 36 + NOTE + (minorAbove ? TILT : 0);
+  const TOP = 44 + NOTE + (minorAbove ? TILT : 0);
   const PAD = Math.max(24, Math.round(longest * 3.8) + 12);
   const RIGHT = 16;
-  const H = TOP + laneCount * LANE + 30 + NOTE + (minorBelow ? TILT : 0);
+  // laneCount * LANE left an empty lane's worth of nothing under the bottom
+  // rail. Measure to the last rail, then add only what is drawn below it.
+  const BOTTOM_CUSHION = 14;
+  const TICKBAND = 30;
+  const H =
+    TOP +
+    (laneCount - 1) * LANE +
+    BOTTOM_CUSHION +
+    TICKBAND +
+    NOTE +
+    (minorBelow ? TILT : 0);
   const yOf = (l: number) => TOP + l * LANE;
   // With the ghost merge drawn, the tip names move under their nodes and the
   // room on the right only has to fit the ghost and its label.

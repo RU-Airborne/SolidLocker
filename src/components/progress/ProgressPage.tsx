@@ -5,9 +5,11 @@ import {
   getBranchOverview,
   getCommitStats,
   getGraph,
+  getDependencyGraph,
+  getLocks,
 } from "../../api";
 import { FilePreview } from "../common/FilePreview";
-import { BranchGlyph } from "../common/HistoryDiagrams";
+import { BranchGlyph, BulbGlyph } from "../common/HistoryDiagrams";
 import {
   computeLaneSlots,
   crossPath,
@@ -18,13 +20,26 @@ import {
   routeSets,
   type RouteMap,
 } from "../history/HistoryPage";
-import type { BranchSummary } from "../../types";
+import { isAppError, type BranchSummary } from "../../types";
 import type { FileRowData } from "../dashboard/Dashboard";
 import { UserAvatar } from "../common/UserAvatar";
-import { BranchName } from "../common/BranchName";
+import { BranchName, useBranchColors } from "../common/BranchName";
 import { RailCard } from "../common/RailCard";
-import { formatPerson, resolveCommitAuthors, useIdentities } from "../../identity";
+import {
+  formatPerson,
+  resolveCommitAuthors,
+  useIdentities,
+  usePeople,
+} from "../../identity";
 import { formatDate, useNow } from "../../dates";
+import {
+  AssemblyMap,
+  BranchDivergence,
+  LockTimeline,
+  ShareCalendar,
+  type Divergence,
+  type HeldLock,
+} from "./charts";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WEEK_MS = 7 * DAY_MS;
@@ -37,51 +52,6 @@ const RANGES = {
 } as const;
 
 type RangeKey = keyof typeof RANGES;
-
-interface AreaStat {
-  name: string;
-  total: number;
-  changedThisWeek: number;
-  locked: number;
-  lockedByMe: number;
-  lastTouched: number;
-}
-
-/** Top-level folders */
-function areaStats(rows: FileRowData[], now: number): AreaStat[] {
-  const weekAgo = now - WEEK_MS;
-  const byArea = new Map<string, AreaStat>();
-  for (const row of rows) {
-    const name = row.file.dir.split("/")[0] || "Loose files";
-    const area =
-      byArea.get(name) ??
-      {
-        name,
-        total: 0,
-        changedThisWeek: 0,
-        locked: 0,
-        lockedByMe: 0,
-        lastTouched: 0,
-      };
-    area.total += 1;
-    if (row.file.modified > weekAgo) area.changedThisWeek += 1;
-    if (row.status.kind === "theirs") area.locked += 1;
-    if (row.status.kind === "mine") area.lockedByMe += 1;
-    area.lastTouched = Math.max(area.lastTouched, row.file.modified);
-    byArea.set(name, area);
-  }
-  return [...byArea.values()].sort((a, b) => b.lastTouched - a.lastTouched);
-}
-
-function quietFor(ms: number, now: number): string {
-  if (ms === 0) return "no shared changes yet";
-  const days = Math.floor((now - ms) / DAY_MS);
-  if (days <= 0) return "touched today";
-  if (days === 1) return "quiet for a day";
-  if (days < 30) return `quiet for ${days} days`;
-  const months = Math.floor(days / 30);
-  return `quiet for ${months} month${months === 1 ? "" : "s"}`;
-}
 
 // function truncName(s: string, n: number): string {
 //   return s.length > n ? `${s.slice(0, n - 1)}…` : s;
@@ -238,6 +208,7 @@ function BranchRailway({
   routes,
   slots,
   onOpenCommit,
+  onClearHighlight,
 }: {
   rows: ReturnType<typeof layoutGraph>["rows"];
   laneCount: number;
@@ -247,6 +218,8 @@ function BranchRailway({
   slots: ReturnType<typeof computeLaneSlots>["slots"];
   /** Jump to this commit on the Branches page. */
   onOpenCommit: (sha: string) => void;
+  /** Anything else you press in here puts the called-out branch away. */
+  onClearHighlight: () => void;
 }) {
   const COL = 40;
   // Lanes sit about as far apart as a connector has room to travel, so a
@@ -340,6 +313,31 @@ function BranchRailway({
     return all.size > 0 ? all : new Set([sel]);
   }, [sel, selRoutes, lineOf]);
   const line = selLine ?? hl;
+
+  // Scrolling the page to the railway is only half the job: the branch you
+  // asked for is usually off to one side of a diagram wider than its box.
+  // Bring its own stretch of line into view as well, centred where it fits.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !highlight || !hl || hl.size === 0) return;
+    let newest = Infinity;
+    let oldest = -Infinity;
+    rows.forEach((r, i) => {
+      if (!hl.has(r.commit.sha)) return;
+      newest = Math.min(newest, i);
+      oldest = Math.max(oldest, i);
+    });
+    if (!Number.isFinite(newest)) return;
+    // xOf runs right to left: index 0 is the newest commit, at the far right.
+    const right = W - PAD - RIGHT - newest * COL - COL / 2;
+    const left = W - PAD - RIGHT - oldest * COL - COL / 2;
+    const middle = (left + right) / 2;
+    const most = Math.max(0, el.scrollWidth - el.clientWidth);
+    el.scrollTo({
+      left: Math.min(most, Math.max(0, middle - el.clientWidth / 2)),
+      behavior: "smooth",
+    });
+  }, [highlight, hl, rows, W, PAD, RIGHT, COL]);
   // Picking out one line dims the strands beside it. Clicking a stop where
   // several lines meet picks out all of them, so none is singled out and
   // they all stay drawn as they are.
@@ -384,7 +382,10 @@ function BranchRailway({
         viewBox={`0 0 ${W} ${H}`}
         role="img"
         aria-label="Every branch and merge in the project, newest at the right"
-        onClick={() => setSel(null)}
+        onClick={() => {
+          setSel(null);
+          onClearHighlight();
+        }}
       >
         {/* timeline: a date tick wherever the day changes, oldest to newest */}
         {rows.map((row, i) => {
@@ -672,6 +673,7 @@ function BranchRailway({
                 className="rr-node"
                 onClick={(e) => {
                   e.stopPropagation();
+                  onClearHighlight();
                   setSel(sel === c.sha ? null : c.sha);
                 }}
                 role="button"
@@ -893,12 +895,10 @@ function BranchRailway({
 
 export function ProgressPage({
   rows,
-  onClose,
   onOpenBranches,
   onOpenCommit,
 }: {
   rows: FileRowData[];
-  onClose: () => void;
   onOpenBranches: () => void;
   /** Jump straight to one commit on the Branches page. */
   onOpenCommit: (sha: string) => void;
@@ -918,7 +918,8 @@ export function ProgressPage({
     queryFn: getBranchOverview,
     staleTime: 60_000,
   });
-  const branchList = branches.data ?? [];
+  // Memoised: a fresh [] each render would rebuild everything downstream.
+  const branchList = useMemo(() => branches.data ?? [], [branches.data]);
   const defaultName =
     branchList.find((b) => b.is_default)?.name ?? "the default branch";
   const graph = useQuery({
@@ -953,11 +954,186 @@ export function ProgressPage({
     return map;
   }, [graph.data, identities.data, laid.rows]);
   const now = useNow();
-  const [hoveredBranch, setHoveredBranch] = useState<string | null>(null);
+  const branchColorOf = useBranchColors();
+  const people = usePeople();
+
+  // Who is holding what, and what is finished but still sitting on somebody's
+  // machine. Both are "where is the work stuck", which the rest of this page
+  // does not answer: everything else here is a record of what already went by.
+  const locks = useQuery({
+    queryKey: ["locks"],
+    queryFn: getLocks,
+    staleTime: 30_000,
+  });
+  /* Fed the parked "Finished but not shared" panel; back when it is.
+  const pulls = useQuery({
+    queryKey: ["pulls"],
+    queryFn: listPulls,
+    staleTime: 60_000,
+    retry: false,
+  });
+  */
+
+  /** Every lock either side of the fence, oldest first. */
+  const held = useMemo<HeldLock[]>(() => {
+    const all = [
+      ...(locks.data?.ours ?? []).map((l) => ({ lock: l, mine: true })),
+      ...(locks.data?.theirs ?? []).map((l) => ({ lock: l, mine: false })),
+    ];
+    return all
+      .filter((h) => h.lock.locked_at)
+      .map((h) => ({
+        id: h.lock.id,
+        path: h.lock.path,
+        login: h.lock.owner?.name ?? null,
+        since: new Date(h.lock.locked_at!).getTime(),
+        mine: h.mine,
+      }))
+      .sort((a, b) => a.since - b.since)
+      .slice(0, 12);
+  }, [locks.data]);
+
+  /* Fed the "Finished but not shared" panel, which is commented out below.
+     Kept together with it so the two come back as one piece.
+
+  /** Branches with work on them and no request open to bring it home. *|
+  const unshared = useMemo(() => {
+    const open = new Set(
+      (pulls.data ?? []).filter((p) => p.state === "open").map((p) => p.head),
+    );
+    return branchList
+      .filter((b) => !b.is_default && b.ahead > 0 && !open.has(b.name))
+      .sort((a, b) => b.ahead - a.ahead);
+  }, [branchList, pulls.data]);
+
+  const waiting = useMemo(
+    () =>
+      (pulls.data ?? [])
+        .filter((p) => p.state === "open")
+        .sort(
+          (a, b) =>
+            new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+        ),
+    [pulls.data],
+  );
+  */
+
+  // A COM round trip, so it stays off page load and starts itself when the
+  // panel scrolls into view.
+  const [depsOn, setDepsOn] = useState(false);
+  const mapRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const el = mapRef.current;
+    if (!el || depsOn) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setDepsOn(true);
+          io.disconnect();
+        }
+      },
+      { rootMargin: "200px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [depsOn]);
+
+
+  const [depFocus, setDepFocus] = useState<string | null>(null);
+  const deps = useQuery({
+    queryKey: ["dependencyGraph"],
+    queryFn: getDependencyGraph,
+    enabled: depsOn,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+
+  // No automatic retry. Turning depsOn back off after a failure looked like a
+  // way to let the next visit try again, but the observer is still watching a
+  // panel that is still on screen: it fires straight back, the call fails
+  // again, and the panel flickers between "Asking SolidWorks" and the error
+  // for as long as you look at it. Leaving Insights unmounts this page, so
+  // coming back is already a fresh attempt; in the meantime there is a
+  // Try again to press.
+
+  /** The first shared change, so the grid can start where the project did. */
+  const firstShare = useMemo(() => {
+    let earliest: number | null = null;
+    for (const c of stats.data ?? []) {
+      const t = new Date(c.date).getTime();
+      if (!Number.isNaN(t) && (earliest === null || t < earliest)) earliest = t;
+    }
+    return earliest;
+  }, [stats.data]);
+
+  /** Shares per calendar day, for the season grid. */
+  const sharesByDay = useMemo(() => {
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const out = new Map<string, number>();
+    for (const c of stats.data ?? []) {
+      const d = new Date(c.date);
+      const key = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+      out.set(key, (out.get(key) ?? 0) + 1);
+    }
+    return out;
+  }, [stats.data]);
+
+  /* Fed the treemap, which is parked below.
+
+  const treeItems = useMemo<TreeItem[]>(
+    () =>
+      rows
+        .filter((r) => !r.file.deleted && r.file.size > 0)
+        .map((r) => ({
+          group: r.file.dir.split("/")[0] || "Loose files",
+          name: r.file.name,
+          size: r.file.size,
+          lock: r.status.kind,
+          modified: r.file.modified,
+        })),
+    [rows],
+  );
+  */
+
+  /** Ahead and behind per branch, with whoever was last on it. */
+  const divergence = useMemo<Divergence[]>(
+    () =>
+      branchList
+        .filter((b) => !b.is_default)
+        .map((b) => {
+          const who = tipPerson.get(b.name);
+          return {
+            name: b.name,
+            ahead: b.ahead,
+            behind: b.behind,
+            isDefault: b.is_default,
+            author: who?.name ?? b.author,
+            login: who?.login ?? null,
+            avatarUrl: who?.avatarUrl ?? null,
+          };
+        })
+        .sort((a, b) => b.ahead + b.behind - (a.ahead + a.behind)),
+    [branchList, tipPerson],
+  );
+
+  // Calling out a branch is now something you do on purpose, not something
+  // that happens because the pointer crossed a row on its way somewhere else.
+  // One at a time, and anything you press on the railway puts it away again.
+  const [litBranch, setLitBranch] = useState<string | null>(null);
+  const railwayRef = useRef<HTMLElement>(null);
+
+  function toggleLit(name: string) {
+    const next = litBranch === name ? null : name;
+    setLitBranch(next);
+    // The railway is above the list, and on a long page it is usually off
+    // the top of the window by the time you reach the branch you wanted.
+    if (next) {
+      railwayRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
   const [range, setRange] = useState<RangeKey>("month");
   const [peopleRange, setPeopleRange] = useState<RangeKey>("month");
 
-  const areas = useMemo(() => areaStats(rows, now), [rows, now]);
 
   // Shares per bucket for the chosen range, oldest first
   const buckets = useMemo(() => {
@@ -1042,22 +1218,16 @@ export function ProgressPage({
   ).length;
 
   return (
-    <main className="settingspage">
-      <div className="settingshead">
-        <button className="backbtn" onClick={onClose}>
-          ← Back
-        </button>
-        <div className="settingsbrand">
-          <div className="settingstitle">
-            <h2>Progress</h2>
-            <p className="muted small">
-              What the team has been up to.
-            </p>
-          </div>
-        </div>
+    <main className="settingspage progresspage">
+      <div className="pagehead">
+        <h2>Insights</h2>
+        <p className="muted small">
+          Who is holding what, how the project is shaped, and where the work
+          is piling up.
+        </p>
       </div>
 
-      <div className="settingsbody">
+      <div className="settingsbody cardgrid">
         <div className="statrow">
           <div className="stattile">
             <span className="statnum">{totalFiles}</span>
@@ -1077,10 +1247,19 @@ export function ProgressPage({
           </div>
         </div>
 
-        <section className="setupsection">
-          <div className="sectionhead">
-            <h3>Activity</h3>
-            <div className="typefilter">
+        <section className="setupsection wide">
+          <h3>Activity</h3>
+          {/* A caption each, over the chart it belongs to. One line covering
+              both left the reader working out which half was which, and the
+              half about the grid sat a chart away from the grid. */}
+          <div className="actstack">
+          <div className="actbars">
+            <p className="muted chartcap">
+              Each bar is one {RANGES[range].unit} of shared changes.
+            </p>
+            {/* Sat in the panel heading, where it looked as though it drove
+                both charts. It only ever changed the bars. */}
+            <div className="typefilter actrange">
               {(Object.keys(RANGES) as RangeKey[]).map((key) => (
                 <button
                   key={key}
@@ -1091,11 +1270,6 @@ export function ProgressPage({
                 </button>
               ))}
             </div>
-          </div>
-          <p className="muted">
-            Each bar is one {RANGES[range].unit} of shared changes, hover for
-            the numbers.
-          </p>
           {stats.isLoading ? (
             <p className="muted">Reading project history…</p>
           ) : (
@@ -1125,9 +1299,18 @@ export function ProgressPage({
               ))}
             </div>
           )}
+          </div>
+          <div className="actcal">
+            <p className="muted chartcap">
+              Each square represents a day. The busier the day, the brighter the square. 
+              Outlined squares are days before the project existed.
+            </p>
+            <ShareCalendar days={sharesByDay} since={firstShare} now={now} />
+          </div>
+          </div>
         </section>
 
-        <section className="setupsection">
+        <section className="setupsection wide" ref={railwayRef}>
           <div className="sectionhead">
             <h3>Branch Timeline</h3>
             <button
@@ -1154,23 +1337,27 @@ export function ProgressPage({
                 rows={laid.rows}
                 laneCount={laid.laneCount}
                 branches={branchList}
-                highlight={hoveredBranch}
+                highlight={litBranch}
                 routes={routes}
                 slots={laneLayout.slots}
                 onOpenCommit={onOpenCommit}
+                onClearHighlight={() => setLitBranch(null)}
               />
             )}
             <ul className="branchlist">
               {branchList.map((b) => (
                 <li
                   key={b.name}
-                  className="branchrow"
-                  onMouseEnter={() => setHoveredBranch(b.name)}
-                  onMouseLeave={() =>
-                    setHoveredBranch((prev) => (prev === b.name ? null : prev))
-                  }
+                  className={`branchrow${litBranch === b.name ? " lit" : ""}`}
                 >
                   <span className="branchname">
+                    <span
+                      className="branchmark"
+                      style={{ color: branchColorOf(b.name) }}
+                      aria-hidden="true"
+                    >
+                      <BranchGlyph size={13} />
+                    </span>
                     <BranchName name={b.name} />
                     {b.is_default && (
                       <span className="branchtag">default</span>
@@ -1209,10 +1396,214 @@ export function ProgressPage({
                       &middot; {formatDate(b.last_commit_at * 1000)}
                     </span>
                   </span>
+                  <button
+                    className={`branchlight${litBranch === b.name ? " on" : ""}`}
+                    onClick={() => toggleLit(b.name)}
+                    aria-pressed={litBranch === b.name}
+                    title={
+                      litBranch === b.name
+                        ? `Stop calling out ${b.name} on the railway`
+                        : `Call out ${b.name}'s line on the railway above`
+                    }
+                  >
+                    <BulbGlyph />
+                    <span>Highlight</span>
+                  </button>
                 </li>
               ))}
             </ul>
             </>
+          )}
+        </section>
+
+        {/* Where the work is stuck, rather than where it has been. */}
+        <section className="setupsection">
+          <h3>Who is holding what, and for how long</h3>
+          <p className="muted">
+            Each lock is shown as a bar from the time it was created up to now. A long
+            bar means the file has been locked for a while.
+          </p>
+          {locks.isLoading ? (
+            <p className="muted small">Reading the locks…</p>
+          ) : held.length === 0 ? (
+            <p className="muted">Nothing is locked right now.</p>
+          ) : (
+            <LockTimeline
+              locks={held}
+              now={now}
+              nameFor={(l) => people.nameFor(l)}
+              avatarFor={(l) => people.avatarFor(l)}
+            />
+          )}
+        </section>
+
+        <section className="setupsection">
+          <h3>How far the branches have drifted</h3>
+          <p className="muted">
+            Work on <BranchName name={defaultName} /> that the branch hasn't picked up 
+            yet appears on the left. Work that exists only on that branch appears on the 
+            right. Any conflicting files need to be resolved manually, so the more a branch 
+            differs from <BranchName name={defaultName} />, the more there is to sort out.
+          </p>
+          {divergence.length === 0 ? (
+            <p className="muted">No branches have been shared yet.</p>
+          ) : (
+            <BranchDivergence
+              branches={divergence}
+              defaultName={defaultName}
+              colorOf={branchColorOf}
+            />
+          )}
+        </section>
+
+        {/* Taken out of Progress for now; the data and the memos above are
+            still here, so putting it back is uncommenting this.
+
+        <section className="setupsection">
+          <h3>Finished but not shared</h3>
+          <p className="muted">
+            Work that is done and still sitting on somebody's machine.
+            Branches with changes on them and no request open to bring them
+            into <BranchName name={defaultName} />, and the requests already
+            waiting.
+          </p>
+          {unshared.length === 0 && waiting.length === 0 ? (
+            <p className="muted">
+              Nothing is waiting. Every branch with work on it has a request
+              open, or has already been merged.
+            </p>
+          ) : (
+            <ul className="contriblist">
+              {unshared.map((b) => {
+                const who = tipPerson.get(b.name);
+                return (
+                  <li key={b.name} className="churnrow">
+                    <span className="contribname">
+                      <span
+                        className="branchmark"
+                        style={{ color: branchColorOf(b.name) }}
+                        aria-hidden="true"
+                      >
+                        <BranchGlyph size={13} />
+                      </span>
+                      <BranchName name={b.name} />
+                    </span>
+                    <span className="heldwho">
+                      <UserAvatar
+                        url={who?.avatarUrl ?? null}
+                        name={who?.name ?? b.author}
+                        size={20}
+                      />
+                      <span className="heldwho-name muted small">
+                        {who
+                          ? formatPerson(who.name, who.login)
+                          : b.author}
+                      </span>
+                    </span>
+                    <span className="muted small heldage stale">
+                      {b.ahead} change{b.ahead === 1 ? "" : "s"} waiting
+                    </span>
+                  </li>
+                );
+              })}
+              {waiting.map((p) => {
+                const days = Math.floor(
+                  (now - new Date(p.created_at).getTime()) / DAY_MS,
+                );
+                return (
+                  <li key={`pr-${p.number}`} className="churnrow">
+                    <span className="contribname" title={p.title}>
+                      <span
+                        className="branchmark"
+                        style={{ color: branchColorOf(p.head) }}
+                        aria-hidden="true"
+                      >
+                        <BranchGlyph size={13} />
+                      </span>
+                      <BranchName name={p.head} />
+                    </span>
+                    <span className="heldwho">
+                      <UserAvatar
+                        url={people.avatarFor(p.author)}
+                        name={people.nameFor(p.author) ?? p.author}
+                        size={20}
+                      />
+                      <span className="heldwho-name muted small">
+                        {formatPerson(
+                          people.nameFor(p.author) ?? p.author,
+                          p.author,
+                        )}
+                      </span>
+                    </span>
+                    <span
+                      className={`muted small heldage${days >= 3 ? " stale" : ""}`}
+                    >
+                      {days <= 0 ? "opened today" : `${days} day${days === 1 ? "" : "s"}`}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+        */}
+
+
+        {/* Asks SolidWorks over COM for every document's references, which
+            takes seconds. Drawn when scrolled to, not on page load. */}
+        <section className="setupsection wide" ref={mapRef}>
+          <div className="sectionhead">
+            <h3>What is built from what</h3>
+            {depsOn && !deps.isLoading && (
+              <button
+                className="minibtn"
+                onClick={() => void deps.refetch()}
+                title="Ask SolidWorks again"
+              >
+                Redraw
+              </button>
+            )}
+          </div>
+          <p className="muted">
+            Which parts are used by which assemblies. Click a file to see which assemblies 
+            could be affected by a change to it. SolidWorks must be open to use this feature.
+          </p>
+          {/* A map already drawn is kept even when a later attempt fails:
+              SolidWorks being shut now says nothing about whether the picture
+              on screen was right when it was taken. */}
+          {deps.isError && (
+            <p className="errdetail deperr">
+              {isAppError(deps.error) ? deps.error.message : String(deps.error)}{" "}
+              <button className="linkish inline" onClick={() => void deps.refetch()}>
+                Try again
+              </button>
+            </p>
+          )}
+          {deps.isFetching && (
+            <p className="muted small">Asking SolidWorks…</p>
+          )}
+          {!depsOn && !deps.isFetching && (
+            <p className="muted small">Waiting to draw…</p>
+          )}
+          {(deps.data ?? []).length > 0 ? (
+            <AssemblyMap
+              edges={deps.data ?? []}
+              lockOf={(path) =>
+                rows.find(
+                  (r) => r.file.rel_path.toLowerCase() === path.toLowerCase(),
+                )?.status.kind ?? "unlocked"
+              }
+              focus={depFocus}
+              onPick={(p) => setDepFocus(p === "" ? null : p)}
+            />
+          ) : (
+            depsOn &&
+            !deps.isFetching &&
+            !deps.isError && (
+              <p className="muted">
+                Nothing in this project references anything else.
+              </p>
+            )
           )}
         </section>
 
@@ -1250,37 +1641,26 @@ export function ProgressPage({
           )}
         </section>
 
-        <section className="setupsection">
-          <h3>Areas of the plane</h3>
+        {/* Taken out. At a couple of hundred CAD files the treemap was a
+            mosaic of slivers narrower than their own labels, and thinning it
+            to the biggest few per folder still did not earn the room. It
+            replaced "Areas of the plane" and "Heaviest files"; ProjectTreemap
+            and the treeItems memo are still there if it is ever wanted.
+
+        <section className="setupsection wide">
+          <h3>The shape of the project</h3>
           <p className="muted">
-            Top level folders only.
+            Every file as a block, sized by how much disk it takes and grouped
+            by folder. Brighter means changed recently; a coloured edge means
+            somebody is holding it.
           </p>
-          <div className="arealist">
-            {areas.map((a) => (
-              <div key={a.name} className="areacard">
-                <div className="areahead">
-                  <strong>{a.name}</strong>
-                  <span className="muted small">
-                    {a.total} file{a.total === 1 ? "" : "s"} · {quietFor(a.lastTouched, now)}
-                  </span>
-                </div>
-                <div className="areabar">
-                  <div
-                    className="areafill"
-                    style={{
-                      width: `${Math.round((a.changedThisWeek / a.total) * 100)}%`,
-                    }}
-                  />
-                </div>
-                <div className="areameta muted small">
-                  {a.changedThisWeek} changed this week
-                  {a.lockedByMe > 0 && ` · ${a.lockedByMe} locked by you`}
-                  {a.locked > 0 && ` · ${a.locked} locked by teammates`}
-                </div>
-              </div>
-            ))}
-          </div>
+          {treeItems.length === 0 ? (
+            <p className="muted">No files yet.</p>
+          ) : (
+            <ProjectTreemap items={treeItems} now={now} />
+          )}
         </section>
+        */}
 
         <section className="setupsection">
           <div className="sectionhead">

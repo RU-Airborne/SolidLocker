@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useAppState } from "./queries";
@@ -5,10 +6,18 @@ import { Dashboard } from "./components/dashboard/Dashboard";
 import { SetupWizard } from "./components/setup/SetupWizard";
 import { isAppError } from "./types";
 import DialLogo from "./components/DialLogo";
+import { ThemeChoiceDialog } from "./components/dialogs/ThemeChoiceDialog";
+import { themeUnchosen } from "./theme";
 
 export default function App() {
   const queryClient = useQueryClient();
   const appState = useAppState();
+  // Before anything else on a fresh install, and only then.
+  const [askTheme, setAskTheme] = useState(themeUnchosen);
+
+  if (askTheme) {
+    return <ThemeChoiceDialog onDone={() => setAskTheme(false)} />;
+  }
 
   // No sound here. A first time member simply has not installed Git yet,
   // which is expected, not a failure.

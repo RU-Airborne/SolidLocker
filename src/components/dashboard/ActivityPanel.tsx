@@ -4,24 +4,12 @@ import { useMemo, useState } from "react";
 import { getActivity, type CommitInfo } from "../../api";
 // import { BranchGlyph, RestoreGlyph } from "../common/HistoryDiagrams";
 import { githubAvatarFromEmail, UserAvatar } from "../common/UserAvatar";
-import { formatDate } from "../../dates";
+import { formatAgo } from "../../dates";
 import {
   formatPerson,
   resolveCommitAuthors,
   useIdentities,
 } from "../../identity";
-
-function relativeTime(iso: string): string {
-  const ms = Date.now() - new Date(iso).getTime();
-  const min = Math.floor(ms / 60_000);
-  if (min < 1) return "just now";
-  if (min < 60) return `${min} minutes ago`;
-  const h = Math.floor(min / 60);
-  if (h < 24) return `${h} hours ago`;
-  const d = Math.floor(h / 24);
-  if (d < 30) return `${d} days ago`;
-  return formatDate(iso);
-}
 
 const STATUS_TITLE: Record<string, string> = {
   A: "Added",
@@ -132,7 +120,7 @@ function CommitRow({
             <span className="muted small commitauthor">{author}</span>
             <span className="muted small commitwhen">
               {"· "}
-              {relativeTime(commit.date)}
+              {formatAgo(commit.date)}
               {commit.files.length > 0 &&
                 ` · ${commit.files.length} file${commit.files.length === 1 ? "" : "s"}`}
             </span>

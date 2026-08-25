@@ -1,49 +1,11 @@
-import { useEffect, useState } from "react";
 import type { RepoStatus } from "../../api";
 import type { AppState } from "../../types";
 import { isSwTemp } from "../../types";
-import { githubAvatarUrl, UserAvatar } from "../common/UserAvatar";
-import { usePeople } from "../../identity";
 import { GlassSelect } from "../common/GlassSelect";
 import { useBranchColors } from "../common/BranchName";
-import DialLogo from "../DialLogo";
-import {
-  BranchGlyph,
-  HistogramGlyph,
-  PullRequestGlyph,
-  ShareGlyph,
-  SyncGlyph,
-  // TeamGlyph,
-} from "../common/HistoryDiagrams";
-
-function agoText(seconds: number): string {
-  if (seconds < 60) return `${seconds}s ago`;
-  const m = Math.floor(seconds / 60);
-  if (m < 60) return `${m}m ago`;
-  return `${Math.floor(m / 60)}h ago`;
-}
-
-function SyncedCaption({
-  lastFetchAt,
-  fetchIntervalS,
-}: {
-  lastFetchAt: number;
-  fetchIntervalS: number;
-}) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const t = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(t);
-  }, []);
-  const agoSec = Math.max(0, Math.round((now - lastFetchAt) / 1000));
-  const nextSec = Math.max(0, fetchIntervalS - agoSec);
-  return (
-    <>
-      In sync <span className="tick">✓</span> · {agoText(agoSec)} · next in{" "}
-      {nextSec}s
-    </>
-  );
-}
+import { SyncChip } from "./SyncChip";
+import { RepoMenu } from "./RepoMenu";
+import { ShareGlyph } from "../common/HistoryDiagrams";
 
 export function TopBar({
   appState,
@@ -52,53 +14,41 @@ export function TopBar({
   onSwitchBranch,
   switchingTo,
   onSwitchRepo,
+  onOpenRepo,
   status,
   lastFetchAt,
   offline,
   stale,
   onSyncNow,
   syncing,
+  checking,
   onSaveShare,
   onPushOnly,
   fetchIntervalS,
   updating,
   onDiscard,
-  onOpenSettings,
-  onOpenProgress,
-  onOpenHistory,
-  onOpenPulls,
-  // onOpenTeam,
-  defaultBranch,
-  locking,
 }: {
   appState: AppState;
   branches: string[] | undefined;
   currentBranch: string;
   onSwitchBranch: (name: string) => void;
-  /* A lock or unlock is in flight; the mark dials until it lands. */
-  locking: boolean;
   switchingTo: string | null;
   onSwitchRepo: () => void;
+  onOpenRepo: (path: string) => void;
   status: RepoStatus | undefined;
   lastFetchAt: number | null;
   offline: boolean;
   stale: boolean;
   onSyncNow: () => void;
   syncing: boolean;
+  checking: boolean;
   onSaveShare: () => void;
   onPushOnly: () => void;
   fetchIntervalS: number;
   updating: boolean;
   /** Open the discard-changes confirm. */
   onDiscard: () => void;
-  onOpenSettings: () => void;
-  onOpenProgress: () => void;
-  onOpenHistory: () => void;
-  onOpenPulls: () => void;
-  // onOpenTeam: () => void;
-  defaultBranch: string;
 }) {
-  const directory = usePeople();
   const branchColorOf = useBranchColors();
   // SolidWorks ~$ temp files never count as work worth saving.
   const trackedDirty = status?.dirty.filter((p) => !isSwTemp(p)).length ?? 0;
@@ -108,106 +58,57 @@ export function TopBar({
   const behind = status?.behind ?? 0;
   const ahead = status?.ahead ?? 0;
 
-  let syncCap: React.ReactNode;
-  let syncWarn = false;
-  if (offline) {
-    syncCap = (
-      <>
-        Out of sync <span className="cross">✗</span> · Can't reach GitHub
-      </>
-    );
-  } else if (stale) {
-    syncCap = (
-      <>
-        Out of sync <span className="cross">✗</span> · Lock info may be out of
-        date
-      </>
-    );
-  } else if (updating) syncCap = "Syncing with team…";
-  else if (behind > 0 && dirtyCount > 0) {
-    syncCap = `${behind} team change${behind === 1 ? "" : "s"} waiting. Save & Share first`;
-    syncWarn = true;
-  } else if (behind > 0) syncCap = "Syncing with team…";
-  else if (lastFetchAt !== null)
-    syncCap = (
-      <SyncedCaption lastFetchAt={lastFetchAt} fetchIntervalS={fetchIntervalS} />
-    );
-  else syncCap = "Checking with team…";
+  const behindBlocked = !offline && !stale && !updating && behind > 0 && dirtyCount > 0;
 
   return (
+    <>
     <header className="ghbar">
-      <span className="brand logoglow" title="SolidLocker">
-        <DialLogo className="brandlogo" spinning={locking} />
-      </span>
-
-      <button
-        className="seg"
-        onClick={onSwitchRepo}
-        title={`${appState.repo!.repo_path}\nClick to switch repository`}
-      >
-        <span className="cap">Current repository</span>
-        <span className="val">
-          <svg
-            className="segicon"
-            viewBox="0 0 16 16"
-            width="13"
-            height="13"
-            fill="currentColor"
-            aria-hidden="true"
-          >
-            <path d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2A1.75 1.75 0 0 0 5 1H1.75Z" />
-          </svg>
-          {appState.repo!.repo_slug.split("/")[1]}
-          <span className="segchevron">⇄</span>
-        </span>
-      </button>
-
-      <div className="seg">
-        <span className="cap">
-          {switchingTo ? `Switching to ${switchingTo}…` : "Current branch"}
-        </span>
-        <GlassSelect
-          className="branchselect"
-          value={currentBranch}
-          disabled={switchingTo !== null}
-          onChange={onSwitchBranch}
-          title="Switch branch (blocked while you have unsaved changes)"
-          ariaLabel="Current branch"
-          options={[
-            ...(branches?.includes(currentBranch)
-              ? []
-              : [
-                  {
-                    value: currentBranch,
-                    label: currentBranch,
-                    color: branchColorOf(currentBranch),
-                  },
-                ]),
-            ...(branches ?? []).map((b) => ({
-              value: b,
-              label: b,
-              color: branchColorOf(b),
-            })),
-            // not a branch, intercepted upstream to open the create dialog
-            { value: "__create__", label: "＋ New branch…" },
-          ]}
+      {/* Where you are, read left to right, instead of two boxed panels with
+          headings over them. The mark that used to sit here is at the top of
+          the rail now, where it is bigger and never scrolls away. */}
+      <nav className="crumbs" aria-label="Where you are">
+        <RepoMenu
+          slug={appState.repo!.repo_slug}
+          path={appState.repo!.repo_path}
+          onPick={onOpenRepo}
+          onBrowse={onSwitchRepo}
         />
-      </div>
 
-      <div className="seg seg-sync">
-        <span className={`cap${syncWarn ? " warn" : ""}`}>{syncCap}</span>
-        <button
-          className="minibtn syncbtn"
-          onClick={onSyncNow}
-          disabled={updating || syncing}
-          title={syncing ? "Syncing…" : "Check GitHub for team changes right now"}
-          aria-label="Sync now"
-        >
-          <span className={syncing ? "spinicon" : "stillicon"}>
-            <SyncGlyph />
-          </span>
-        </button>
-      </div>
+        <span className="crumbsep" aria-hidden="true">
+          ›
+        </span>
+
+        {switchingTo ? (
+          <span className="crumb switching">Switching to {switchingTo}…</span>
+        ) : (
+          <GlassSelect
+            className="branchselect"
+            value={currentBranch}
+            disabled={switchingTo !== null}
+            onChange={onSwitchBranch}
+            title="Switch branch (blocked while you have unsaved changes)"
+            ariaLabel="Current branch"
+            options={[
+              ...(branches?.includes(currentBranch)
+                ? []
+                : [
+                    {
+                      value: currentBranch,
+                      label: currentBranch,
+                      color: branchColorOf(currentBranch),
+                    },
+                  ]),
+              ...(branches ?? []).map((b) => ({
+                value: b,
+                label: b,
+                color: branchColorOf(b),
+              })),
+              // not a branch, intercepted upstream to open the create dialog
+              { value: "__create__", label: "＋ New branch…" },
+            ]}
+          />
+        )}
+      </nav>
 
       <span className="spacer" />
 
@@ -253,69 +154,39 @@ export function TopBar({
           </>
         )}
       </button>
-      <button
-        className="barbtn"
-        onClick={onOpenPulls}
-        title={`Branches waiting to be merged into ${defaultBranch}, and the ones already dealt with`}
-      >
-        <PullRequestGlyph size={14} />
-        Merge Requests
-      </button>
-      <button
-        className="barbtn"
-        onClick={onOpenHistory}
-        title="Explore every branch and change, look at old versions, branch off, and merge branches"
-      >
-        <BranchGlyph />
-        Branches
-      </button>
-      <button
-        className="barbtn"
-        onClick={onOpenProgress}
-        title="See what the team has been working on"
-      >
-        <HistogramGlyph />
-        Progress
-      </button>
-      {/*
-      <button
-        className="barbtn"
-        onClick={onOpenTeam}
-        title="Who's holding what, and what's waiting to merge"
-      >
-        <TeamGlyph />
-        Team
-      </button>
-      */}
-      <button
-        className="barbtn avatarbtn"
-        onClick={onOpenSettings}
-        title="Your account and project"
-        aria-label="Your account and project"
-      >
-        {appState.username ? (
-          <UserAvatar
-            url={githubAvatarUrl(appState.username)}
-            name={directory.nameFor(appState.username) ?? appState.username}
-            size={26}
-          />
-        ) : (
-          <svg
-            viewBox="0 0 24 24"
-            width="18"
-            height="18"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            aria-hidden="true"
-          >
-            <circle cx="12" cy="8" r="4" />
-            <path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5" />
-          </svg>
-        )}
-      </button>
+      {/* Merge Requests, Branches, Progress and your account moved to the
+          rail on the left; they are places to go, not things to do here. The
+          side pane's switch sits on the Files page itself, since that is the
+          only page with a side pane. */}
+
+      {/* Last thing on the bar, far corner: the place a Windows app puts the
+          state of its connection, and out of the way of the crumbs. */}
+      <SyncChip
+        offline={offline}
+        stale={stale}
+        updating={updating}
+        behind={behind}
+        dirtyCount={dirtyCount}
+        lastFetchAt={lastFetchAt}
+        fetchIntervalS={fetchIntervalS}
+        syncing={syncing}
+        checking={checking}
+        onSyncNow={onSyncNow}
+      />
       {switchingTo && <div className="topbar-progress" aria-hidden="true" />}
     </header>
+
+    {behindBlocked && (
+      <div className="notice warn">
+        <span>
+          {behind} team change{behind === 1 ? "" : "s"} cannot come down until
+          your own work goes up. Save &amp; Share first.
+        </span>
+        <button className="notice-ok" onClick={onSaveShare}>
+          Save &amp; Share
+        </button>
+      </div>
+    )}
+    </>
   );
 }

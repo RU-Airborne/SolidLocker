@@ -153,6 +153,13 @@ async fn check_for_update() -> AppResult<updates::UpdateCheck> {
     updates::check().await
 }
 
+/// Every reference between files in the project.
+#[tauri::command]
+async fn get_dependency_graph(app: AppHandle) -> AppResult<Vec<deps::DepEdge>> {
+    let root = current_repo(&app)?;
+    deps::dependency_graph(&root).await
+}
+
 #[tauri::command]
 async fn get_default_branch(app: AppHandle) -> AppResult<String> {
     let root = current_repo(&app)?;
@@ -1377,6 +1384,7 @@ fn report_window_failure(app: &tauri::AppHandle, detail: &str) {
             cancel_lock_run,
             get_used_by,
             get_default_branch,
+            get_dependency_graph,
             check_for_update,
             list_pulls,
             pull_detail,
