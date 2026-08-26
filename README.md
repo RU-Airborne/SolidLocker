@@ -15,8 +15,17 @@ SolidLocker works with the GitHub repo and accounts your team already uses. Ther
 
 Developed by [Scaven X](https://github.com/scavenx) at RU Airborne.
 
-![SolidLocker dashboard](docs/images/dashboard.png)  
-*The dashboard shows the lock status of every file and who currently has it locked.*
+<p align="center">
+  <img src="docs/images/dashboard.png" alt="SolidLocker file list">
+  <br>
+  <em>Every file in the project, who is holding which, and what you can pick up.</em>
+</p>
+
+<p align="center">
+  <img src="docs/images/thumbnail.png" alt="SolidLocker thumbnail view">
+  <br>
+  <em>The same project as thumbnails, using the preview SolidWorks saved of each document.</em>
+</p>
 
 ## The problem it solves
 
@@ -60,7 +69,7 @@ an earlier version are buttons too.
 ### Notes on Windows SmartScreen
 
   <p align="center">
-  <img src="docs/images/smartscreen.png" alt="Branch timeline railway on the Progress page" width="400">
+  <img src="docs/images/smartscreen.png" alt="Windows SmartScreen warning" width="600">
   <br>
   <em>Windows SmartScreen would block installation due to unrecognized publisher</em>
   </p>
@@ -75,117 +84,103 @@ installer or run it in dev mode on your own machine. See [Building from source](
 
 ## Feature Highlights
 
-- **Everyday words, not Git words**: Nobody on the team needs to know Git. You "Save & Share"
-  instead of commit and push, "Request to merge" instead of opening a
-  pull request. Every term is listed against its Git meaning in
+- **Git without the barrier of Git**: Nobody on the team needs to know Git. You
+  "Save & Share" instead of commit and push, "Request to merge" instead of
+  opening a pull request. Every term is listed against its Git meaning in
   [What the words mean](#what-the-words-mean).
 
-- **Safe by default**: Files stay read only until you lock them, so nothing unlocked gets changed by
-  accident. Every lock is an atomic lock on GitHub's server, so two people can never hold
-  the same file at once. Unlock won't let go until your newest version is pushed.
+- **Safe by default**: Files stay read-only until you lock them, so nothing gets
+  changed by accident. Locks are taken on GitHub's server, so two people can
+  never hold the same file.
 
-- **Lock with parts**: Lock a drawing or an assembly and SolidLocker locks every part it depends on
-  in the same click, so you grab the whole set at once. It figures out those parts by asking your
-  running copy of SolidWorks directly, so the list matches what the file actually uses. You can
-  also lock a whole folder at once from the file tree.
+- **Lock with parts**: Lock a drawing or an assembly and every part it uses is
+  locked with it. The list of parts comes from your running copy of SolidWorks,
+  so it matches what the file actually references. Whole folders lock in one
+  click too.
 
   <p align="center">
-  <img src="docs/images/lock_with_parts.png" alt="Lock with parts dialog" width="600">
+  <img src="docs/images/lock_with_parts.png" alt="Lock with parts dialog" width="800">
   <br>
   <em>Lock with parts: the references come straight from your running SolidWorks, and the whole set locks in one click.</em>
   </p>
 
-- **Branches page**: A railway map of every branch in the project, coloured so each branch is easy to
-  tell apart, with "You are here" on your current commit. Open any commit to see what changed, view
-  a file as it was back then, restore that version, or branch off from that point. Restoring,
-  branching off and merging all happen right there in the app.
+- **Branches page**: a railway map of every branch, coloured so they are easy to
+  tell apart. Open a commit to see what changed, look at a file as it was then, restore it, or branch off from that point.
 
   <p align="center">
-  <img src="docs/images/branches.png" alt="Branches page with a railway diagram" width="600">
+  <img src="docs/images/branches.png" alt="Branches page with a railway diagram" width="800">
   <br>
   <em>The Branches page: every branch on one railway, with branch off, restore and merge a click away</em>
   </p>
 
-- **Get an old version back, safely**: Pick any commit on the railway and you have two ways to
-  return to it. Restore puts that version of the files back in your working folder as a new save,
-  so nothing later is thrown away and the history stays intact. Branch off starts a new branch from
-  that point instead, so you can explore an earlier state without touching the branch you came
-  from. Either way, the version you are on now is never lost.
+- **Get an old version back, safely**: Restore puts an earlier version back as a
+  new save, so nothing later is thrown away. Branch off starts a new branch from
+  that point instead, leaving the branch you came from untouched. Either way the
+  version you are on now is never lost.
 
   <table align="center">
     <tr>
       <td align="center"><img src="docs/images/restore.png" alt="Restore this version dialog" width="420"><br><em>Restore: bring an earlier version back.</em></td>
-      <td align="center"><img src="docs/images/branch_off.png" alt="Branch off from here dialog" width="420"><br><em>Branch off: start a new branch from an eariler point.</em></td>
+      <td align="center"><img src="docs/images/branch_off.png" alt="Branch off from here dialog" width="420"><br><em>Branch off: start a new branch from an earlier point.</em></td>
     </tr>
   </table>
 
-- **Merge branches**: Bring one branch into another from the Branches page. SolidLocker shows what
-  would change first, with thumbnails, and tells you if the two branches touched the same CAD file.
-  Two ways in: **Merge into ... directly** does it on your computer right away, and **Request to
-  merge** opens a merge request for a team lead to approve. If files clash, the direct route opens
-  the sort box first, where each clash is listed with both versions side by side so you pick which one to
-  keep. A compact railway above it shows the two branches back to where they parted, with a dotted
-  line sketching where the merge would land. Only a branch protected on GitHub forces the request
-  route.
+- **Merge branches**: See what the other branch would bring before anything
+  changes and whether both branches touched the same CAD file.
+  Merge on your own machine, or send a request for a team lead to approve if branch protection rules are active. If files clash, the sort box opens first, with both versions side by side so you pick the one to keep.
 
   <p align="center">
-  <img src="docs/images/merge_request.png" alt="Merge branches dialog" width="600">
+  <img src="docs/images/merge_request.png" alt="Merge branches dialog" width="800">
   <br>
   <em>Merge: see what the other branch brings before anything changes.</em>
   </p>
 
-- **Merge requests, inside the app**: On GitHub or GitHub Desktop a SolidWorks clash is a binary diff with
-  nothing to read and no way to choose a side, so reviewing CAD there is a dead end. SolidLocker
-  handles the whole request itself: send one straight from the Merge dialog, with a title, a note
-  and, if files clash, your suggested picks. The team lead sees the changed files with thumbnails,
-  the conversation so far, and the same sort box. They can accept your picks with one click or pick
-  differently, ask for changes, approve and merge in one go, or close the request without merging.
-  Closed requests stay listed with what was kept, and offer to tidy the branch away once it is in.
+- **Approve merge requests right inside the app**: GitHub cannot show a diff of a SolidWorks
+  file. SolidLocker handles the whole
+  request itself. Send one from the Merge dialog with a title, a note and your
+  suggested picks. The team lead sees the changed files with thumbnails, the
+  conversation, and the same sort box, and can accept your picks, choose
+  differently, ask for changes, or approve and merge in one go.
 
   <p align="center">
-  <img src="docs/images/reviews.png" alt="Merge Requests page" width="600">
+  <img src="docs/images/reviews.png" alt="Merge Requests page" width="800">
   <br>
   <em>Merge Requests: open and closed requests, shown directly in the app.</em>
   </p>
 
   <p align="center">
-  <img src="docs/images/conflict_resolution.png" alt="Sort box with two versions of a file side by side" width="600">
+  <img src="docs/images/conflict_resolution.png" alt="Sort box with two versions of a file side by side" width="800">
   <br>
   <em>The sort box: both versions of a clashing file, with a picture, author and date, so you choose the one to keep.</em>
   </p>
 
-- **See who has what**: A "Who has what" panel lists every locked file and who holds it, with a jump
-  to file button. Locks that live on another branch, or that point at a file no longer present,
-  are flagged so nothing looks missing. An activity feed shows recent history. Waiting on a file
-  someone else holds? Tap "Notify when free" and SolidLocker pings you the moment it is unlocked.
+- **See who has what**: Every locked file and who holds it, with a button to jump
+  straight to it. Locks living on another branch are flagged rather than left
+  looking missing. Waiting on a file? "Notify when free" pings you the moment it
+  is unlocked.
 
-- **Keep track of progress**: A Progress page shows what the team has been up to across every
-  branch: what changed this week, a chart of shared changes per day, which parts are being reworked
-  the most, and who made the most changes recently. A branch timeline puts every branch and change
-  on one railway, and you can branch off, restore or merge straight from it.
-
-  <p align="center">
-  <img src="docs/images/progress.png" alt="Progress page" width="600">
+- **Insights**: What the team has been up to across every branch. What changed
+  this week, shared changes per day, the parts being reworked most, and who has
+  been busiest lately.
+<div align="center">
+  <img src="docs/images/insights.png" alt="Insights page" width="800">
   <br>
-  <em>The Progress page: what the team has worked on across every branch.</em>
-  </p>
 
-  <p align="center">
-  <img src="docs/images/progress_railway.png" alt="Branch timeline railway on the Progress page" width="600">
+
+  <img src="docs/images/insights2.png" alt="Insights page" width="800">
+
   <br>
-  <em>The branch timeline: every branch and change on one railway.</em>
-  </p>
 
-- **Branch switching**: Switch branches right from the toolbar. Untracked files never block a switch
-  or a pull. If a switch would trample local files you haven't committed, SolidLocker offers to set
-  them aside instead of discarding them.
 
-- **Works offline**: Lost your connection? You can still edit any file you locked before you went
-  offline. SolidLocker shows the last known locks and pauses locking and sharing until you are
-  back, then picks up on its own.
+  <em>The Insights page: what the team has worked on across every branch.</em>
+</div>
 
-- **Runs in the background**: Closing the window keeps SolidLocker in the system tray, so it still
-  protects your files and can tell you when a file you are waiting on comes free.
+- **Works offline**: Keep editing anything you locked before the connection went.
+  Locking and sharing pause until you are back, then pick up on their own.
+
+- **Runs in the background**: Closing the window keeps SolidLocker in the system
+  tray, still guarding your files and still able to tell you when the file you
+  are waiting on comes free.
 
 
 ### First run
@@ -231,7 +226,7 @@ SolidLocker uses everyday words in the app. If you know Git, this is what they m
 | View this version (read-only) | A temporary detached checkout of that commit; one click returns you. |
 | Restore this version | `git restore --source <commit> -- <file>`, then Save & Share when you are happy. |
 | Branches page | `git log --all --graph`, drawn as a railway. |
-| Progress page | `git log` with per-file and per-author statistics across all branches. |
+| Insights page | `git log` with per-file and per-author statistics across all branches. |
 | Merge into … directly | `git merge` of the other branch into the one you are on, then push. |
 | "Merge conflicts" / the sort box | A merge conflict on a binary file, resolved by keeping `--ours` or `--theirs` for each file. |
 | Undo (after a merge) | `git reset --hard ORIG_HEAD`, only while nothing has been shared yet. |
@@ -262,7 +257,7 @@ SolidLocker uses everyday words in the app. If you know Git, this is what they m
 
 ## Troubleshooting
 
-- **Q: It keeps asking me to Save & Share, but I didn’t change anything.**  
+- **Q: It keeps asking me to Save & Share, but I didn't change anything.**  
 
   **A:** This is usually caused by leftover SolidWorks temporary files (`~$...`) that were accidentally committed to the repository. SolidLocker ignores these files, but they still need to be removed from the repo. Ask whoever manages the repository to clean them up.
 
