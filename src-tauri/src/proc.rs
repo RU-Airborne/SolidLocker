@@ -86,6 +86,8 @@ fn resolve_git() -> Option<String> {
 }
 
 fn git_candidates() -> Vec<PathBuf> {
+    // Only the Windows arm below has anywhere to look.
+    #[cfg_attr(not(windows), allow(unused_mut))]
     let mut out = Vec::new();
     #[cfg(windows)]
     {

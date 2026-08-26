@@ -375,6 +375,13 @@ $bmp.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
     Some(format!("data:image/png;base64,{b64}"))
 }
 
+/// SolidWorks is Windows-only, so anywhere else the answer is simply that it
+/// is not installed.
+#[cfg(not(windows))]
+pub fn solidworks_install_dir() -> Option<std::path::PathBuf> {
+    None
+}
+
 /// Where SolidWorks lives, or None when it isn't installed.
 #[cfg(windows)]
 pub fn solidworks_install_dir() -> Option<std::path::PathBuf> {

@@ -1,9 +1,9 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import App from "./App";
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { getPlatform } from "./mobile/api";
 import { logFrontend } from "./api";
-import "./styles.css";
+import "./styles/tokens.css";
 import { applySavedTheme } from "./theme";
 applySavedTheme();
 
@@ -28,10 +28,31 @@ const queryClient = new QueryClient({
   },
 });
 
+const App = React.lazy(() => import("./App"));
+const MobileApp = React.lazy(() =>
+  import("./mobile/MobileApp").then((m) => ({ default: m.MobileApp })),
+);
+
+function Root() {
+  const platform = useQuery({
+    queryKey: ["platform"],
+    queryFn: getPlatform,
+    staleTime: Infinity,
+    gcTime: Infinity,
+  });
+
+  if (platform.isLoading) return null;
+  return (
+    <React.Suspense fallback={null}>
+      {platform.data?.mobile ? <MobileApp /> : <App />}
+    </React.Suspense>
+  );
+}
+
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <App />
+      <Root />
     </QueryClientProvider>
   </React.StrictMode>,
 );

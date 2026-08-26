@@ -123,16 +123,26 @@ foreach ($line in [IO.File]::ReadAllLines($env:SOLIDLOCKER_LIST)) {
 "#;
 
 fn embedded_png(abs: &Path) -> Option<Vec<u8>> {
+    preview_stream(cfb::open(abs).ok()?)
+}
+
+pub fn embedded_png_in(bytes: &[u8]) -> Option<Vec<u8>> {
+    preview_stream(cfb::CompoundFile::open(std::io::Cursor::new(bytes)).ok()?)
+}
+
+fn preview_stream<F: std::io::Read + std::io::Seek>(
+    mut comp: cfb::CompoundFile<F>,
+) -> Option<Vec<u8>> {
     use std::io::Read;
-    let mut comp = cfb::open(abs).ok()?;
     let stream_path = comp
         .walk()
-        .find(|e| {
-            e.is_stream() && e.name().eq_ignore_ascii_case("previewpng")
-        })
+        .find(|e| e.is_stream() && e.name().eq_ignore_ascii_case("previewpng"))
         .map(|e| e.path().to_path_buf())?;
     let mut bytes = Vec::new();
-    comp.open_stream(&stream_path).ok()?.read_to_end(&mut bytes).ok()?;
+    comp.open_stream(&stream_path)
+        .ok()?
+        .read_to_end(&mut bytes)
+        .ok()?;
     if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
         Some(bytes)
     } else {

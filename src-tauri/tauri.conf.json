@@ -26,7 +26,9 @@
   "bundle": {
     "active": true,
     "publisher": "Scaven X",
-    "targets": ["nsis"],
+    "targets": [
+      "nsis"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -39,6 +41,13 @@
         "installerIcon": "icons/installer.ico",
         "sidebarImage": "icons/installer-sidebar.bmp"
       }
+    },
+    "iOS": {
+      "developmentTeam": "",
+      "minimumSystemVersion": "13.0"
+    },
+    "android": {
+      "minSdkVersion": 26
     }
   }
 }
