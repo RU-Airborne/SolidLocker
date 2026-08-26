@@ -8,6 +8,7 @@ import { routeColor, routeSets } from "../components/history/HistoryPage";
 import type { GraphCommit as DesktopCommit } from "../api";
 import { useGraph } from "./queries";
 import { useBackable } from "./back";
+import { useSheetDismiss } from "./swipe";
 
 export { UserAvatar };
 export { FileTypeIcon } from "../components/common/FileTypeIcon";
@@ -188,6 +189,7 @@ export function Sheet({
   footer?: React.ReactNode;
 }) {
   const panel = useRef<HTMLDivElement>(null);
+  const body = useRef<HTMLDivElement>(null);
   // Back closes the sheet before it closes the app.
   useBackable(true, onClose);
 
@@ -200,6 +202,10 @@ export function Sheet({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  // The grip has always said this could be dragged away. Until now nothing
+  // was listening, so the close button was the only way out.
+  useSheetDismiss(panel, body, onClose);
+
   return (
     <div className="m-sheet-back" onClick={onClose}>
       <div
@@ -210,14 +216,22 @@ export function Sheet({
         aria-modal="true"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="m-sheet-grip" aria-hidden="true" />
+        {/* Draggable, and tappable for anyone not using touch: it is the only
+            control left now the close button has gone. */}
+        <button
+          type="button"
+          className="m-sheet-grip"
+          aria-label="Close"
+          onClick={onClose}
+        >
+          <span aria-hidden="true" />
+        </button>
         <header className="m-sheet-head">
           <h2>{title}</h2>
-          <button className="m-sheet-close" onClick={onClose} aria-label="Close">
-            ×
-          </button>
         </header>
-        <div className="m-sheet-body">{children}</div>
+        <div className="m-sheet-body" ref={body}>
+          {children}
+        </div>
         {footer && <div className="m-sheet-foot">{footer}</div>}
       </div>
     </div>

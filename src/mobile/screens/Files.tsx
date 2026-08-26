@@ -11,7 +11,7 @@ import {
   Spinner,
   Trouble,
 } from "../components";
-import { FileSheet } from "./FileSheet";
+import { FileDetail } from "./FileSheet";
 import { useBackableDepth } from "../back";
 
 type Filter = "all" | "cad" | "held";
@@ -150,15 +150,33 @@ export function Files({
             </button>
         ))}
 
-        {here.map((file) => (
-          <Row
-            key={file.rel_path}
-            file={file}
-            status={statusOf(file.rel_path)}
-            showPath={searching}
-            onOpen={() => setOpen(file.rel_path)}
-          />
-        ))}
+        {here.map((file) => {
+          const showing = open === file.rel_path;
+          return (
+            <div
+              key={file.rel_path}
+              className={`m-expander${showing ? " open" : ""}`}
+            >
+              <Row
+                file={file}
+                status={statusOf(file.rel_path)}
+                showPath={searching}
+                expanded={showing}
+                onOpen={() => setOpen(showing ? null : file.rel_path)}
+              />
+              {showing && (
+                <div className="m-rowdetail">
+                  <FileDetail
+                    path={file.rel_path}
+                    file={file}
+                    status={statusOf(file.rel_path)}
+                    canPush={canPush}
+                  />
+                </div>
+              )}
+            </div>
+          );
+        })}
 
         {files.data && folders.length === 0 && here.length === 0 && (
           <Empty
@@ -172,15 +190,6 @@ export function Files({
         )}
       </div>
 
-      {open && (
-        <FileSheet
-          path={open}
-          file={files.data?.files.find((f) => f.rel_path === open) ?? null}
-          status={statusOf(open)}
-          canPush={canPush}
-          onClose={() => setOpen(null)}
-        />
-      )}
     </div>
   );
 }
@@ -189,15 +198,17 @@ function Row({
   file,
   status,
   showPath,
+  expanded,
   onOpen,
 }: {
   file: api.CloudFile;
   status: LockStatus;
   showPath: boolean;
+  expanded: boolean;
   onOpen: () => void;
 }) {
   return (
-    <button className="m-row m-file" onClick={onOpen}>
+    <button className="m-row m-file" onClick={onOpen} aria-expanded={expanded}>
       <span className={`m-filetype${file.is_cad ? " cad" : ""}`}>
         <FileTypeIcon path={file.rel_path} size={18} />
       </span>

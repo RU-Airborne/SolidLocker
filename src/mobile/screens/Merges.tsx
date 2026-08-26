@@ -1,8 +1,10 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 import * as api from "../api";
+import { useBackable } from "../back";
+import { useEdgeBack } from "../swipe";
 import { usePull, usePulls } from "../queries";
 import {
   BranchName,
@@ -11,7 +13,6 @@ import {
   FileTypeIcon,
   Flash,
   Segmented,
-  Sheet,
   Spinner,
   Trouble,
   useFlash,
@@ -185,10 +186,10 @@ function PullSheet({
   }
 
   return (
-    <Sheet
-      title={detail ? `#${number}` : "Loading..."}
+    <PullPage
+      number={number}
       onClose={onClose}
-      footer={
+      foot={
         detail && detail.state === "open" && canPush ? (
           <div className="m-review">
             <textarea
@@ -358,7 +359,46 @@ function PullSheet({
           onConfirm={doMerge}
         />
       )}
-    </Sheet>
+    </PullPage>
+  );
+}
+
+/**
+ * A merge request, as a page that arrives from the right.
+ *
+ * It is a place rather than a peek: there is a lot to read, and half of it is
+ * other people's words, so it gets the whole screen and a way back rather
+ * than a panel over the list it came from. Back is the usual iOS pair, the
+ * button in the corner or a pull in from the left edge.
+ */
+function PullPage({
+  number,
+  onClose,
+  foot,
+  children,
+}: {
+  number: number;
+  onClose: () => void;
+  foot: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const page = useRef<HTMLDivElement>(null);
+  useBackable(true, onClose);
+  useEdgeBack(page, true, onClose);
+
+  return (
+    <div className="m-pagewrap" role="dialog" aria-modal="true">
+      <div className="m-page m-pullpage" ref={page}>
+        <header className="m-head">
+          <button className="m-backbtn" onClick={onClose}>
+            ‹ Merges
+          </button>
+          <h1>#{number}</h1>
+        </header>
+        <div className="m-scroll">{children}</div>
+        {foot && <div className="m-sheet-foot">{foot}</div>}
+      </div>
+    </div>
   );
 }
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
@@ -14,8 +14,10 @@ import {
   UserAvatar,
 } from "../components";
 import { formatDateTime } from "../../dates";
+import { formatPerson } from "../../identity";
 import { useTheme, type Theme } from "../../theme";
 import { useBackable } from "../back";
+import { useEdgeBack } from "../swipe";
 import {
   askToNotify,
   readAlerts,
@@ -38,14 +40,31 @@ export function More({
   useBackable(true, onClose);
   useBackable(page !== "menu", () => setPage("menu"));
 
+  // Pulling in from the left edge goes back the same way the button does:
+  // out to the menu from a page, and off the screen from the menu itself.
+  const panel = useRef<HTMLDivElement>(null);
+  const goBack = useCallback(
+    () => (page === "menu" ? onClose() : setPage("menu")),
+    [page, onClose],
+  );
+  useEdgeBack(panel, true, goBack);
+
   return (
     <div className="m-moresheet-back" onClick={onClose}>
       <div
+        ref={panel}
         className={`m-moresheet${page === "menu" ? "" : " deep"}`}
         role="dialog"
         aria-modal="true"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Keyed on the page so each one is a new element, which is what lets
+            it play its slide: pages arrive from the right, and going back to
+            the menu comes in from the left. */}
+        <div
+          key={page}
+          className={`m-subpage ${page === "menu" ? "m-fromleft" : "m-fromright"}`}
+        >
         {page !== "menu" ? (
           <>
             <header className="m-head">
@@ -81,7 +100,11 @@ export function More({
             size={44}
           />
           <span className="m-row-main">
-            <span className="m-row-title">{state.me?.name ?? state.me?.login}</span>
+            <span className="m-row-title">
+              {state.me
+                ? formatPerson(state.me.name ?? state.me.login, state.me.login)
+                : ""}
+            </span>
             <span className="muted small">
               {state.slug}
               {repo && !repo.can_push && " · read only"}
@@ -101,6 +124,7 @@ export function More({
       </div>
           </>
         )}
+        </div>
       </div>
     </div>
   );
@@ -158,7 +182,7 @@ function Activity() {
             <span className="m-row-main">
               <span className="m-row-title">{commit.message}</span>
               <span className="muted small">
-                {commit.author_login || commit.author_name} ·{" "}
+                {formatPerson(commit.author_name, commit.author_login)} ·{" "}
                 {formatDateTime(commit.date)}
               </span>
             </span>

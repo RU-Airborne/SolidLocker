@@ -1,7 +1,12 @@
 import { useMemo, useState } from "react";
 
 import * as api from "../api";
-import { useLockIndex, useLocks, useRelease } from "../queries";
+import {
+  useLockIndex,
+  useLocks,
+  useRelease,
+  type LockStatus,
+} from "../queries";
 import {
   Confirm,
   Empty,
@@ -14,7 +19,7 @@ import {
   UserAvatar,
 } from "../components";
 import { formatAgo } from "../../dates";
-import { FileSheet } from "./FileSheet";
+import { FileDetail } from "./FileSheet";
 import { BranchSheet } from "./Branches";
 import { BranchName } from "../components";
 
@@ -136,7 +141,14 @@ export function Locks({
               )}
             </div>
             {mine.map((lock) => (
-              <LockRow key={lock.id} lock={lock} onOpen={() => setOpen(lock.path)} />
+              <HeldRow
+                key={lock.id}
+                lock={lock}
+                showing={open === lock.path}
+                onOpen={() => setOpen(open === lock.path ? null : lock.path)}
+                status={statusOf(lock.path)}
+                canPush={canPush}
+              />
             ))}
           </>
         )}
@@ -154,7 +166,14 @@ export function Locks({
               </h2>
             </div>
             {held.map((lock) => (
-              <LockRow key={lock.id} lock={lock} onOpen={() => setOpen(lock.path)} />
+              <HeldRow
+                key={lock.id}
+                lock={lock}
+                showing={open === lock.path}
+                onOpen={() => setOpen(open === lock.path ? null : lock.path)}
+                status={statusOf(lock.path)}
+                canPush={canPush}
+              />
             ))}
           </div>
         ))}
@@ -166,16 +185,6 @@ export function Locks({
           </p>
         )}
       </div>
-
-      {open && (
-        <FileSheet
-          path={open}
-          file={null}
-          status={statusOf(open)}
-          canPush={canPush}
-          onClose={() => setOpen(null)}
-        />
-      )}
 
       {pickingBranch && (
         <BranchSheet
@@ -204,11 +213,49 @@ export function Locks({
   );
 }
 
-function LockRow({ lock, onOpen }: { lock: api.Lock; onOpen: () => void }) {
+function HeldRow({
+  lock,
+  showing,
+  onOpen,
+  status,
+  canPush,
+}: {
+  lock: api.Lock;
+  showing: boolean;
+  onOpen: () => void;
+  status: LockStatus;
+  canPush: boolean;
+}) {
+  return (
+    <div className={`m-expander${showing ? " open" : ""}`}>
+      <LockRow lock={lock} onOpen={onOpen} expanded={showing} />
+      {showing && (
+        <div className="m-rowdetail">
+          <FileDetail
+            path={lock.path}
+            file={null}
+            status={status}
+            canPush={canPush}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LockRow({
+  lock,
+  onOpen,
+  expanded,
+}: {
+  lock: api.Lock;
+  onOpen: () => void;
+  expanded: boolean;
+}) {
   const name = lock.path.split("/").pop() ?? lock.path;
   const dir = lock.path.slice(0, lock.path.length - name.length - 1);
   return (
-    <button className="m-row m-file" onClick={onOpen}>
+    <button className="m-row m-file" onClick={onOpen} aria-expanded={expanded}>
       <span className="m-filetype cad">
         <FileTypeIcon path={lock.path} size={18} />
       </span>
