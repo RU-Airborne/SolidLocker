@@ -3,7 +3,7 @@ use std::path::Path;
 
 use serde::Serialize;
 
-use crate::cloud::Api;
+use crate::ghapi::Api;
 use crate::error::{AppError, AppResult};
 use crate::messages;
 use crate::proc::run_git;

@@ -1,10 +1,8 @@
-//! Git LFS file locking over plain HTTPS.
+//! Git LFS file locking over HTTPS.
 //!
-//! This is the whole reason a phone build is worth building. Locking was
-//! never a local operation: `git lfs lock` is a POST to the LFS server and
-//! nothing more. The desktop app goes through the git-lfs binary because it
-//! also has to flip the file read-only on disk afterwards; with no working
-//! tree there is nothing to flip, so the network call is the entire job.
+//! `git lfs lock` is a POST and nothing more. The desktop goes through the
+//! binary because it also flips the file read-only on disk. With no working
+//! tree there is nothing to flip, so the network call is the whole job.
 //!
 //! Spec: https://github.com/git-lfs/git-lfs/blob/main/docs/api/locking.md
 
@@ -26,8 +24,7 @@ fn base(api: &Api) -> String {
     format!("https://github.com/{}.git/info/lfs", api.slug)
 }
 
-/// LFS authenticates with Basic, not Bearer: the token rides in the password
-/// field exactly as git-credential would have handed it over.
+/// LFS authenticates with Basic, not Bearer.
 fn basic(api: &Api) -> String {
     let login = if api.login.is_empty() {
         "x-access-token"
@@ -56,9 +53,8 @@ async fn read(resp: reqwest::Response) -> AppResult<serde_json::Value> {
     Err(lock_error(status, &body))
 }
 
-/// The LFS server words its refusals differently from the REST API, and the
-/// difference matters: "somebody else holds this" is an ordinary thing to
-/// happen, not a fault.
+/// The LFS server words refusals differently from the REST API, and the
+/// difference matters: a held file is ordinary, not a fault.
 fn lock_error(status: reqwest::StatusCode, body: &str) -> AppError {
     let said = serde_json::from_str::<serde_json::Value>(body)
         .ok()
@@ -106,11 +102,10 @@ struct VerifyShape {
     next_cursor: Option<String>,
 }
 
-/// Every lock on the project, split into yours and everyone else's.
+/// Every lock, split into yours and everyone else's.
 ///
-/// `verify` is the good answer because the server does the splitting, and it
-/// knows who you are better than we do. It needs push access though, so a
-/// read-only member falls back to the plain list and sorts it by owner name.
+/// `verify` lets the server do the splitting, but it needs push access, so a
+/// read-only member falls back to the plain list sorted by owner name.
 pub async fn all(api: &Api, branch: &str) -> AppResult<LocksResult> {
     match verified(api, branch).await {
         Ok(result) => Ok(result),
@@ -217,8 +212,7 @@ fn bucket(locks: Vec<Lock>, me: &str) -> (Vec<Lock>, Vec<Lock>) {
     (ours, theirs)
 }
 
-/// Take one lock. A 409 carries the lock that beat us to it, which is far
-/// more useful to show than "could not lock".
+/// A 409 carries the lock that beat us to it, which is worth showing.
 pub async fn take(api: &Api, path: &str, branch: &str) -> AppResult<Lock> {
     let resp = api
         .http
@@ -258,8 +252,7 @@ pub async fn take(api: &Api, path: &str, branch: &str) -> AppResult<Lock> {
     Err(lock_error(status, &body))
 }
 
-/// Give a lock back. `force` is how a lead takes one off a teammate who has
-/// gone home holding it, and needs push access of its own.
+/// `force` takes a lock off somebody else and needs push access.
 pub async fn give_back(api: &Api, id: &str, force: bool, branch: &str) -> AppResult<()> {
     let resp = api
         .http
@@ -274,8 +267,7 @@ pub async fn give_back(api: &Api, id: &str, force: bool, branch: &str) -> AppRes
     read(resp).await.map(|_| ())
 }
 
-/// The lock sitting on one path, if any. Used to turn a tapped file into an
-/// id that can be unlocked.
+/// Turns a path into the lock id needed to unlock it.
 pub async fn on_path(api: &Api, path: &str, branch: &str) -> AppResult<Option<Lock>> {
     let url = format!(
         "{}/locks?path={}&refspec={}",
@@ -296,9 +288,8 @@ pub async fn on_path(api: &Api, path: &str, branch: &str) -> AppResult<Option<Lo
     Ok(page.locks.into_iter().next())
 }
 
-/// For a name that goes into the path of a URL rather than a query value.
-/// A branch is allowed to have slashes in it ("wing/rib-revision") and those
-/// slashes are part of the path GitHub expects, not something to escape.
+/// For a name in a URL path. Branch names may contain slashes, and those are
+/// part of the path GitHub expects rather than something to escape.
 pub fn encode_ref(s: &str) -> String {
     urlencode(s).replace("%2F", "/")
 }
@@ -316,8 +307,7 @@ pub fn urlencode(s: &str) -> String {
     out
 }
 
-/// Owner names on a lock are GitHub logins, so a lock can be attributed to a
-/// person even before their first commit lands.
+/// Lock owners are GitHub logins.
 pub fn owner_of(lock: &Lock) -> Option<&str> {
     lock.owner.as_ref().map(|o: &LockOwner| o.name.as_str())
 }

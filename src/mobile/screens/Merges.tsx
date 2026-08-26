@@ -28,7 +28,13 @@ type Which = "open" | "done";
  * "not yet" before someone merges it, is exactly the sort of thing that
  * should not have to wait until you are back at your desk.
  */
-export function Merges({ canPush }: { canPush: boolean }) {
+export function Merges({
+  canPush,
+  corner,
+}: {
+  canPush: boolean;
+  corner: React.ReactNode;
+}) {
   const pulls = usePulls(true);
   const [which, setWhich] = useState<Which>("open");
   const [open, setOpen] = useState<number | null>(null);
@@ -47,6 +53,7 @@ export function Merges({ canPush }: { canPush: boolean }) {
     <div className="m-screen">
       <header className="m-head">
         <h1>Merge requests</h1>
+        {corner}
       </header>
 
       <div className="m-head-tools">
@@ -61,7 +68,7 @@ export function Merges({ canPush }: { canPush: boolean }) {
       </div>
 
       <div className="m-scroll">
-        {pulls.isLoading && <Spinner label="Reading merge requests…" />}
+        {pulls.isLoading && <Spinner label="Reading merge requests..." />}
         {pulls.isError && (
           <Trouble error={pulls.error} onRetry={() => pulls.refetch()} />
         )}
@@ -121,6 +128,19 @@ function PullSheet({
 
   const detail = pull.data;
 
+  /**
+   * GitHub cannot merge this cleanly, which on a CAD project means two people
+   * saved over the same model.
+   *
+   * Resolving that means opening both versions in SolidWorks and deciding
+   * which geometry survives, which is a desk job. Approving it from a phone
+   * would be approving something nobody can see, so the verdict buttons come
+   * off and only a comment is left: saying "I will look at this on Monday" is
+   * useful, saying "looks good" about a conflict is not.
+   */
+  const conflicted =
+    detail?.mergeable === false || detail?.mergeable_state === "dirty";
+
   function refresh() {
     queryClient.invalidateQueries({ queryKey: ["cloud", "pull", number] });
     queryClient.invalidateQueries({ queryKey: ["cloud", "pulls"] });
@@ -166,7 +186,7 @@ function PullSheet({
 
   return (
     <Sheet
-      title={detail ? `#${number}` : "Loading…"}
+      title={detail ? `#${number}` : "Loading..."}
       onClose={onClose}
       footer={
         detail && detail.state === "open" && canPush ? (
@@ -174,43 +194,55 @@ function PullSheet({
             <textarea
               value={words}
               onChange={(e) => setWords(e.target.value)}
-              placeholder="Say something about it (needed unless you are approving)"
+              placeholder={
+                conflicted
+                  ? "Say something about it"
+                  : "Say something about it (needed unless you are approving)"
+              }
               rows={2}
             />
-            <div className="m-review-buttons">
+            {conflicted ? (
               <button
-                className="m-btn"
+                className="m-btn m-btn-wide"
                 onClick={() => send("COMMENT")}
                 disabled={busy !== null || words.trim().length === 0}
               >
-                Comment
+                {busy === "COMMENT" ? "Posting..." : "Comment"}
               </button>
-              <button
-                className="m-btn m-btn-warn"
-                onClick={() => send("REQUEST_CHANGES")}
-                disabled={busy !== null || words.trim().length === 0}
-              >
-                Not yet
-              </button>
-              <button
-                className="m-btn m-btn-go"
-                onClick={() => send("APPROVE")}
-                disabled={busy !== null}
-              >
-                {busy === "APPROVE" ? "…" : "Approve"}
-              </button>
-            </div>
-            <button
-              className="m-btn m-btn-wide"
-              onClick={() => setMerging(true)}
-              disabled={busy !== null || detail.mergeable === false}
-            >
-              {busy === "merge"
-                ? "Merging…"
-                : detail.mergeable === false
-                  ? "GitHub says this cannot merge cleanly"
-                  : "Merge it"}
-            </button>
+            ) : (
+              <>
+                <div className="m-review-buttons">
+                  <button
+                    className="m-btn"
+                    onClick={() => send("COMMENT")}
+                    disabled={busy !== null || words.trim().length === 0}
+                  >
+                    Comment
+                  </button>
+                  <button
+                    className="m-btn m-btn-warn"
+                    onClick={() => send("REQUEST_CHANGES")}
+                    disabled={busy !== null || words.trim().length === 0}
+                  >
+                    Not yet
+                  </button>
+                  <button
+                    className="m-btn m-btn-go"
+                    onClick={() => send("APPROVE")}
+                    disabled={busy !== null}
+                  >
+                    {busy === "APPROVE" ? "..." : "Approve"}
+                  </button>
+                </div>
+                <button
+                  className="m-btn m-btn-wide"
+                  onClick={() => setMerging(true)}
+                  disabled={busy !== null}
+                >
+                  {busy === "merge" ? "Merging..." : "Merge it"}
+                </button>
+              </>
+            )}
           </div>
         ) : undefined
       }
@@ -227,6 +259,15 @@ function PullSheet({
             {" · opened "}
             {formatAgo(detail.created_at)} by {detail.author}
           </p>
+
+          {conflicted && detail.state === "open" && (
+            <p className="m-notice">
+              This one clashes with {detail.base}: someone saved over the same
+              files. Sorting that out means opening both versions in
+              SolidWorks, so it is a job for a machine, not a phone. You can
+              leave a comment here.
+            </p>
+          )}
 
           {detail.state !== "open" && (
             <p className="m-notice">

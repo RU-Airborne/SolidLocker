@@ -1,10 +1,9 @@
 //! The commands the phone app calls.
 //!
-//! Deliberately a separate surface from the desktop commands rather than a
-//! shim underneath them. A desktop command like `claim_files` means "take the
-//! lock, then make the file writable on disk, then tell SolidWorks"; only the
-//! first third of that exists here. Pretending otherwise by reusing the name
-//! would leave the app quietly not doing two of the three things.
+//! A separate surface from the desktop commands rather than a shim under
+//! them. `claim_files` on the desktop means take the lock, make the file
+//! writable, then tell SolidWorks. Only the first of those exists here, so
+//! reusing the name would promise two things the phone cannot do.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -36,8 +35,7 @@ pub struct CloudState {
     pub me: Option<Me>,
     pub slug: Option<String>,
     pub branch: Option<String>,
-    /// Whether a device sign in can even be started. False means the build
-    /// carries no GitHub client ID and nobody has typed one in yet.
+    /// False when no GitHub client ID is baked in or saved.
     pub can_device_sign_in: bool,
     pub platform: String,
 }
@@ -66,8 +64,7 @@ fn api(app: &AppHandle) -> AppResult<Api> {
     Api::new(slug, token(app)?, login)
 }
 
-/// The branch everything is read against. Not a checkout: nothing is on this
-/// device, it is only which line of the project the screens are showing.
+/// Which line of the project the screens read. Not a checkout.
 fn branch(app: &AppHandle) -> AppResult<String> {
     Ok(settings::get_string(app, KEY_BRANCH)?
         .filter(|b| !b.is_empty())
@@ -92,9 +89,7 @@ pub async fn cloud_state(app: AppHandle) -> AppResult<CloudState> {
     let token = settings::get_string(&app, KEY_TOKEN)?.filter(|t| !t.is_empty());
     let mut login = settings::get_string(&app, KEY_LOGIN)?.filter(|l| !l.is_empty());
 
-    // A sign in that got its token but never learned whose it was. Finish it
-    // quietly rather than making somebody sign in twice for one bad moment of
-    // signal. Costs nothing once the login is known.
+    // A sign in that got its token but never learned whose it was.
     if login.is_none() {
         if let Some(token) = &token {
             if let Ok(me) = auth::whoami(token).await {
@@ -110,8 +105,7 @@ pub async fn cloud_state(app: AppHandle) -> AppResult<CloudState> {
     }
 
     Ok(CloudState {
-        // Both halves, or the app would let someone in with no identity to
-        // stamp on a lock.
+        // Both halves, or a lock would be taken with no name on it.
         signed_in: token.is_some() && login.is_some(),
         me: login.map(|login| Me {
             name: settings::get_string(&app, KEY_NAME).ok().flatten(),
@@ -144,8 +138,7 @@ pub async fn cloud_device_poll(app: AppHandle, device_code: String) -> AppResult
     Ok(answer)
 }
 
-/// The way in for anyone who has not registered an OAuth app yet: a
-/// fine-grained token, pasted once. Same token, same scopes, less ceremony.
+/// For anyone without a registered OAuth app: a token, pasted once.
 #[tauri::command]
 pub async fn cloud_sign_in_token(app: AppHandle, token: String) -> AppResult<Me> {
     let token = token.trim().to_string();
@@ -156,11 +149,9 @@ pub async fn cloud_sign_in_token(app: AppHandle, token: String) -> AppResult<Me>
 }
 
 async fn remember_sign_in(app: &AppHandle, token: &str) -> AppResult<Me> {
-    // The token is written down before we ask who it belongs to. A device code
-    // can be exchanged exactly once, so if the identity lookup failed on a
-    // weak signal and the token had not been kept, that sign in would be gone
-    // for good and the member would have to start the whole dance again.
-    // Saved first, `cloud_state` can finish the job on the next call.
+    // Saved before we ask who it belongs to. A device code is exchangeable
+    // once, so losing the token to a failed lookup would end the sign in for
+    // good. Saved first, `cloud_state` can finish the job later.
     settings::set_string(app, KEY_TOKEN, token)?;
     let me = auth::whoami(token).await?;
     settings::set_string(app, KEY_LOGIN, &me.login)?;
@@ -265,9 +256,8 @@ pub struct FailedClaim {
 pub struct CloudClaimResult {
     pub claimed: Vec<String>,
     pub failed: Vec<FailedClaim>,
-    /// A part of the set was lost to a teammate mid-claim, so the locks this
-    /// claim had already taken were given straight back. Half an assembly is
-    /// worse than none of it: it blocks the person who got the other half.
+    /// Part of the set was lost mid-claim, so the rest was given back. Half
+    /// an assembly is worse than none: it blocks whoever got the other half.
     pub rolled_back: bool,
 }
 
@@ -374,8 +364,7 @@ pub async fn cloud_release(app: AppHandle, paths: Vec<String>) -> AppResult<Vec<
     Ok(out)
 }
 
-/// Take a lock off somebody else. Needs write access, and is the one action
-/// here that can lose a teammate's work, so the app asks twice before it.
+/// Needs write access. The one action here that can lose somebody's work.
 #[tauri::command]
 pub async fn cloud_force_unlock(app: AppHandle, path: String) -> AppResult<()> {
     let api = api(&app)?;
@@ -430,15 +419,24 @@ pub async fn cloud_commit(app: AppHandle, sha: String) -> AppResult<gh::CommitDe
     gh::commit(&api(&app)?, &sha).await
 }
 
+/// Insights counts the whole project, so it reaches wider than the map.
+const STATS_BRANCHES: usize = 15;
+const STATS_PER_BRANCH: usize = 150;
+
 #[tauri::command]
 pub async fn cloud_commit_stats(app: AppHandle) -> AppResult<Vec<gh::CommitStat>> {
-    gh::commit_stats(&api(&app)?, &branch(&app)?, 300).await
+    gh::commit_stats(
+        &api(&app)?,
+        &branch(&app)?,
+        STATS_BRANCHES,
+        STATS_PER_BRANCH,
+    )
+    .await
 }
 
 // ---- The graph ----
 
-/// Caps chosen so the map stays readable and the wait stays short: it is one
-/// request per branch, and a railway with forty lines is not a railway.
+/// One request per branch, and forty lines is not a readable railway.
 const GRAPH_BRANCHES: usize = 10;
 const GRAPH_PER_BRANCH: usize = 80;
 
@@ -466,8 +464,7 @@ pub async fn cloud_team(app: AppHandle) -> AppResult<Vec<gh::TeamMember>> {
     let branch = branch(&app)?;
     let mut team = gh::contributors(&api).await?;
 
-    // Who is holding what is the thing worth knowing about a teammate here,
-    // so the two lists are joined before they reach the screen.
+    // What each person is holding is the point, so the lists are joined.
     if let Ok(held) = locks::all(&api, &branch).await {
         let mut count: HashMap<String, u64> = HashMap::new();
         for lock in held.ours.iter().chain(held.theirs.iter()) {
@@ -616,8 +613,7 @@ pub struct Platform {
     pub mobile: bool,
 }
 
-/// The frontend is one bundle for both builds, so it has to ask which one it
-/// is in before deciding whether to show a desktop dashboard or a phone.
+/// One bundle serves both builds, so the frontend can ask what it is on.
 #[tauri::command]
 pub fn get_platform() -> Platform {
     let os = std::env::consts::OS.to_string();

@@ -7,14 +7,12 @@ import {
   BranchName,
   Empty,
   Search,
-  Segmented,
   Sheet,
   Spinner,
   Trouble,
   UserAvatar,
 } from "../components";
 import { formatChanged } from "../../dates";
-import { Railway } from "./Railway";
 
 /**
  * Every branch, and which one the rest of the app is reading.
@@ -40,7 +38,6 @@ export function BranchSheet({
   const queryClient = useQueryClient();
   const branches = useBranches(true);
   const [needle, setNeedle] = useState("");
-  const [view, setView] = useState<"list" | "map">("list");
 
   const q = needle.trim().toLowerCase();
   const shown = (branches.data ?? []).filter((b) => b.name.toLowerCase().includes(q));
@@ -69,23 +66,11 @@ export function BranchSheet({
       onClose={onClose}
     >
       <div className="m-head-tools m-flush">
-        <Segmented
-          value={view}
-          onChange={setView}
-          options={[
-            { value: "list" as const, label: "Branches" },
-            { value: "map" as const, label: "Railway" },
-          ]}
-        />
-        {view === "list" && (
-          <Search value={needle} onChange={setNeedle} placeholder="Search branches" />
-        )}
+        <Search value={needle} onChange={setNeedle} placeholder="Search branches" />
       </div>
 
-      {view === "map" && <Railway defaultBranch={defaultBranch} />}
-
-      <div hidden={view === "map"}>
-        {branches.isLoading && <Spinner label="Reading the branches…" />}
+      <div>
+        {branches.isLoading && <Spinner label="Reading the branches..." />}
         {branches.isError && (
           <Trouble error={branches.error} onRetry={() => branches.refetch()} />
         )}

@@ -1,0 +1,379 @@
+/* Rail styles for the phone: copies of the .rr-* rules in settings.css and
+   the .gg-* rules in history.css. Copied rather than moved so the desktop
+   cascade is untouched. Loaded only from mobile.css. */
+
+.branchrail line,
+.branchrail path,
+.branchrail polyline {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.railscroll {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  overscroll-behavior-y: auto;
+  margin: 0.5rem 0 0.9rem;
+  padding-bottom: 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.rr-node {
+  cursor: pointer;
+}
+.rr-node:hover circle {
+  filter: brightness(1.25);
+}
+.branchrail {
+  display: block;
+}
+.rr-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+.rr-date {
+  font-size: 10.5px;
+  fill: var(--muted);
+}
+.rr-dim {
+  opacity: 0.22;
+  transition: opacity 0.12s ease;
+}
+.rr-hot .rr-label {
+  font-weight: 700;
+}
+.rr-here {
+  font-size: 11px;
+  font-weight: 700;
+  fill: var(--accent);
+}
+.rr-herebox {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+}
+.rr-herebox.left {
+  justify-content: flex-start;
+}
+.clashrail .railstage {
+  margin: 0 auto;
+}
+.rr-node.still {
+  cursor: default;
+}
+.cfrailcard .railscroll {
+  margin-bottom: 0;
+}
+.rr-minor {
+  font-size: 9px;
+  font-weight: 500;
+  opacity: 0.75;
+}
+.rr-minor.rr-dim {
+  opacity: 0.22;
+}
+.railstage {
+  position: relative;
+}
+.rr-card {
+  position: absolute;
+  width: max-content;
+  max-width: 300px;
+  padding: 0.3rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--headbg) 38%, transparent);
+  backdrop-filter: blur(10px) saturate(130%);
+  -webkit-backdrop-filter: blur(10px) saturate(130%);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+  pointer-events: none;
+  z-index: 1;
+}
+.rr-cardsubject {
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.rr-cardwho {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.35rem;
+  margin-top: 0.15rem;
+  min-width: 0;
+}
+.rr-cardwho span {
+  overflow-wrap: anywhere;
+}
+.rr-cardwho .avatar-img {
+  margin-top: 1px;
+}
+.rr-cardwhen {
+  margin-top: 0.1rem;
+  padding-left: calc(16px + 0.35rem);
+}
+.rr-cardwho .avatar-img {
+  flex: none;
+  border-radius: 50%;
+}
+.rr-card .rr-cardbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.4rem;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.78rem;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.rr-card .rr-cardbtn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent),
+    0 0 10px color-mix(in srgb, var(--accent) 35%, transparent),
+    0 6px 20px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.rr-card.rr-clickable {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.8rem;
+}
+.rr-cardmain {
+  min-width: 0;
+}
+.rr-cardfiles {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+  flex: none;
+  margin-top: 0.15rem;
+}
+.rr-cardcount {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.rr-cardcount .st {
+  flex: none;
+}
+.rr-cardcount {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.gg-row.hl {
+  background: color-mix(in srgb, var(--lane, var(--accent)) 12%, transparent);
+  border-radius: 7px;
+}
+.gg-row + .gg-row {
+  border-top: 1px solid color-mix(in srgb, var(--border) 45%, transparent);
+}
+.gg-row {
+  margin: 0 -0.45rem;
+  padding: 0 0.45rem;
+  transition: background-color 0.18s ease;
+}
+.gg-row {
+    transition: none;
+  }
+.gg-line {
+  border-radius: 7px;
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: center;
+  column-gap: 0.7rem;
+  width: 100%;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  padding: 0;
+  cursor: pointer;
+}
+.gg-row:not(.open):hover {
+  background: color-mix(in srgb, var(--lane, var(--accent)) 7%, transparent);
+  border-radius: 7px;
+}
+.gg-row.open {
+  background: color-mix(in srgb, var(--lane, var(--accent)) 9%, transparent);
+  border-radius: 7px;
+}
+.gg-rails {
+  display: block;
+  flex: none;
+  overflow: visible;
+}
+.gg-railcol {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+.gg-fillrails {
+  display: block;
+  flex: 1;
+  min-height: 0;
+}
+.gg-refs {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+.gg-refs:empty {
+  display: none;
+}
+.gg-chip {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 0.5rem;
+  font-size: 0.72rem;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.gg-chip.here {
+  color: inherit;
+  font-weight: 600;
+}
+.gg-subject {
+  grid-column: 3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.gg-meta {
+  grid-column: 4;
+  justify-self: end;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  white-space: nowrap;
+}
+.gg-when {
+  font-variant-numeric: tabular-nums;
+}
+.gg-open {
+  display: flex;
+  align-items: stretch;
+  animation: ggopen 0.2s ease-out;
+}
+.gg-open {
+    animation: none;
+  }
+.gg-detailrails {
+  flex: none;
+  display: block;
+  height: auto;
+  align-self: stretch;
+}
+.gg-detail {
+  flex: 1;
+  min-width: 0;
+  padding: 0.3rem 0.6rem 0.7rem 0.9rem;
+}
+.gg-row.open .gg-subject {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+}
+.gg-row.open .gg-meta {
+  grid-column: 3;
+  grid-row: 2;
+  justify-self: end;
+  margin-top: 0.15rem;
+}
+.gg-row.open .gg-railcol {
+  grid-row: 1 / span 2;
+}
+.gg-body {
+  margin: 0 0 0.4rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+}
+.gg-detail p {
+  margin: 0.2rem 0;
+}
+.gg-files {
+  list-style: none;
+  margin: 0.3rem 0;
+  padding: 0;
+}
+.gg-files li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.12rem 0;
+}
+.gg-filepath {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.gg-row.here {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border-radius: 7px;
+}
+.gg-row.here.open {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.gg-youarehere {
+  background: color-mix(in srgb, var(--accent) 86%, transparent);
+  backdrop-filter: blur(22px) saturate(150%);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  border: 1px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  color: white;
+  border-radius: 999px;
+  padding: 0.05rem 0.6rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.gg-halo {
+  animation: ggpulse 1.6s ease-in-out infinite;
+  opacity: 0.25;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.gg-detailrails g {
+  transition: opacity 0.25s ease;
+}
+.gg-quiet {
+  opacity: 0.22;
+}
+.gg-spurnote {
+  margin: 0.35rem 0 0.5rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--muted) 8%, transparent);
+  line-height: 1.45;
+}
+.gg-legendspur {
+  display: inline-block;
+  width: 1.1rem;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--muted);
+  vertical-align: middle;
+}
+.gg-line:focus-visible {
+  outline-offset: 0.45rem;
+  border-radius: 7px;
+}
+.gg-line:focus:not(:focus-visible) {
+  outline: none;
+}

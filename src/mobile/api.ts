@@ -245,6 +245,7 @@ export interface GraphCommit {
   author_name: string;
   author_login: string;
   author_avatar: string;
+  author_email: string;
   date: string;
   /** Seconds since the epoch. */
   at: number;

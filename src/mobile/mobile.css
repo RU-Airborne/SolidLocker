@@ -1,4 +1,5 @@
 @import "../styles/dial.css";
+@import "./railway.css";
 
 /* The phone app.
    Nothing in here touches a desktop class name: every rule is under .m-*, so
@@ -8,9 +9,17 @@
   --m-gap: 12px;
   --m-radius: 12px;
   --m-tap: 44px;
-  /* The brand accent sits at 2.5:1 on the dark surface, under the 3:1 a chart
-     fill needs to be seen. Charts get a lighter step of the same hue there;
-     everything else keeps the brand red. */
+  /* The chart shades, checked for lightness, chroma and contrast against the
+     surface in both themes.
+     Three shades of the brand red rather than three hues. They are panel
+     identity, not an encoding: every panel is a single measure with its
+     numbers written on it, so what has to hold is contrast against the
+     surface, which all three clear at 3:1 in both themes. */
+  --chart-1: #8f2427;
+  --chart-2: #b53439;
+  --chart-3: #d4595e;
+  /* The brand red still sits at 2.48:1 on the dark surface, so where a chart
+     does use the accent it uses a lighter step of it. */
   --chart-accent: #a92e31;
 
   height: 100vh;
@@ -28,11 +37,17 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .m-app {
+    --chart-1: #c04044;
+    --chart-2: #cd5458;
+    --chart-3: #d96a6e;
     --chart-accent: #c9484c;
   }
 }
 
 :root[data-theme="dark"] .m-app {
+  --chart-1: #c04044;
+  --chart-2: #cd5458;
+  --chart-3: #d96a6e;
   --chart-accent: #c9484c;
 }
 
@@ -181,20 +196,52 @@
   flex: none;
 }
 
-.m-filetype {
-  flex: none;
-  width: 30px;
-  height: 30px;
-  display: grid;
-  place-items: center;
-  border-radius: 8px;
-  color: var(--muted);
-  background: color-mix(in srgb, var(--border) 22%, transparent);
+/* The same coloured chips the desktop uses, at a size a thumb can aim at.
+   The colours belong to the icon, not to the box around it, so a part reads
+   as a part in both apps. Copied from controls.css rather than moved, so the
+   desktop cascade is untouched. */
+.ftype {
+  box-sizing: border-box;
+  border-radius: 6px;
+  background: var(--muted);
+  color: #ffffff;
+  flex-shrink: 0;
 }
 
-.m-filetype.cad {
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
+.ftype-prt {
+  background: #00b3b3;
+}
+
+.ftype-asm {
+  background: #d29922;
+}
+
+.ftype-drw {
+  background: #57ab5a;
+}
+
+.m-filetype {
+  flex: none;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+
+.m-filetype .ftype {
+  width: 28px;
+  height: 28px;
+  padding: 5px;
+  margin: 0;
+  vertical-align: 0;
+}
+
+/* The folder glyph is not a file type, so it keeps the quiet treatment. */
+.m-folder .m-filetype > svg {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  padding: 4px;
+  background: color-mix(in srgb, var(--border) 22%, transparent);
 }
 
 .m-tag {
@@ -429,64 +476,12 @@
   font-weight: 600;
 }
 
-/* ---- Tiles ---- */
 
-.m-tiles {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
-  gap: 10px;
-  align-content: start;
-  padding-top: 10px;
-}
 
-.m-tile {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 8px;
-  border-radius: var(--m-radius);
-  border: 1px solid color-mix(in srgb, var(--border) 35%, transparent);
-  background: none;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-}
 
-.m-tile.ismine {
-  border-color: color-mix(in srgb, var(--success) 60%, transparent);
-}
 
-.m-tile-art {
-  width: 100%;
-  aspect-ratio: 1;
-  display: grid;
-  place-items: center;
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--border) 18%, transparent);
-  color: var(--muted);
-  overflow: hidden;
-}
 
-.m-tile-art img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
 
-.m-tile-name {
-  font-size: 0.76rem;
-  text-align: center;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 100%;
-}
-
-.m-tile-folder {
-  justify-content: center;
-  aspect-ratio: 1;
-}
 
 /* ---- Buttons ---- */
 
@@ -668,7 +663,8 @@
 .m-sheet-title {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
+  min-width: 0;
 }
 
 .m-sheet-close {
@@ -1162,11 +1158,12 @@
   /* Rounded at the data end only; the baseline stays square so the column
      reads as measured from zero. */
   border-radius: 4px 4px 0 0;
-  background: color-mix(in srgb, var(--chart-accent) 55%, transparent);
+  background: color-mix(in srgb, var(--panel-hue, var(--chart-1)) 60%, transparent);
+  transition: background 0.15s ease;
 }
 
 .m-week.touched .m-week-bar {
-  background: var(--chart-accent);
+  background: var(--panel-hue, var(--chart-1));
 }
 
 .m-weeks-note {
@@ -1214,7 +1211,7 @@
   display: block;
   height: 100%;
   border-radius: 0 4px 4px 0;
-  background: var(--chart-accent);
+  background: var(--panel-hue, var(--chart-1));
 }
 
 /* ---- The railway ----
@@ -1338,17 +1335,137 @@
   margin: 8px 0 0;
 }
 
+/* "Yours" is said in the label beside the bar, so the bar does not have to
+   change hue to say it. Green against scarlet reads as a traffic light and
+   means neither of those things here. */
 .m-rank-bar.mine {
-  background: var(--success);
+  background: var(--chart-1);
+}
+
+.m-filetype.m-inline .ftype {
+  width: 19px;
+  height: 19px;
+  padding: 3px;
+  border-radius: 5px;
 }
 
 .m-filetype.m-inline {
-  width: 18px;
-  height: 18px;
-  border-radius: 4px;
   display: inline-grid;
-  vertical-align: -4px;
-  margin-right: 5px;
+  vertical-align: -5px;
+  margin-right: 6px;
+}
+
+/* ---- Insights panels ----
+   Each measure gets its own card so the page reads as a set of answers rather
+   than one long column of bars, and so there is real air between them. */
+
+.m-insights {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 12px 0 8px;
+}
+
+.m-panel {
+  padding: 16px 14px 14px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--border) 30%, transparent);
+  background: color-mix(in srgb, var(--border) 7%, transparent);
+}
+
+.m-panel > h3 {
+  margin: 0 0 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* A short bar of the panel's own colour beside its name, so the colour in the
+   chart is accounted for without a legend box. */
+.m-panel > h3::before {
+  content: "";
+  width: 3px;
+  height: 13px;
+  border-radius: 999px;
+  background: var(--panel-hue, var(--chart-1));
+  flex: none;
+}
+
+.m-panel .m-subhead {
+  margin: 0 0 14px;
+}
+
+.m-panel .m-rank {
+  gap: 14px;
+}
+
+.m-insights .m-statrow {
+  gap: 10px;
+}
+
+.m-cal-day {
+  border-radius: 3px;
+}
+
+/* ---- Sliding between tabs ---- */
+
+.m-body.m-fromright {
+  animation: m-slide-right 0.2s cubic-bezier(0.22, 0.7, 0.3, 1);
+}
+
+.m-body.m-fromleft {
+  animation: m-slide-left 0.2s cubic-bezier(0.22, 0.7, 0.3, 1);
+}
+
+@keyframes m-slide-right {
+  from {
+    transform: translateX(14px);
+    opacity: 0;
+  }
+}
+
+@keyframes m-slide-left {
+  from {
+    transform: translateX(-14px);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .m-body.m-fromright,
+  .m-body.m-fromleft {
+    animation: none;
+  }
+}
+
+/* ---- The railway tab ---- */
+
+.m-railhint {
+  margin: 10px 0 4px;
+}
+
+/* The map is wider than the phone; it scrolls sideways inside its own box
+   rather than making the page scroll. */
+.m-railtab {
+  padding-bottom: 24px;
+}
+
+/* Six tabs on a phone, so each one gets less room. */
+.m-tabs {
+  padding-left: 2px;
+  padding-right: 2px;
+}
+
+.m-tab {
+  padding: 6px 1px;
+}
+
+.m-tab-label {
+  font-size: 0.6rem;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ---- Odds and ends ---- */
@@ -1451,4 +1568,359 @@
   place-items: center;
   background: color-mix(in srgb, var(--border) 40%, transparent);
   font-weight: 700;
+}
+
+
+
+
+
+
+/* The rails are drawn to a fixed pitch, so the row cannot grow with its
+   text or the lines stop meeting between rows. */
+
+/* One line per change. The rail is drawn to a fixed pitch, so the row cannot
+   grow with its text; a single line at this size sits in it comfortably and
+   fits half again as many changes on screen as two lines would. */
+
+
+/* A branch name where its line ends, in that line's own colour. */
+
+.m-branchdrawer {
+  max-height: 42dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-radius: var(--m-radius);
+  border: 1px solid color-mix(in srgb, var(--border) 30%, transparent);
+  padding: 0 10px;
+}
+
+.m-chevron.m-turned {
+  transform: rotate(90deg);
+  display: inline-block;
+}
+
+/* ---- The account button that replaced the More tab ---- */
+
+.m-mebtn {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border: none;
+  background: none;
+  padding: 0;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+/* ---- Branch pills ---- */
+
+.m-pills {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding: 8px var(--m-gap) 10px;
+  scrollbar-width: none;
+}
+
+.m-pills::-webkit-scrollbar {
+  display: none;
+}
+
+.m-pill {
+  flex: none;
+  min-height: 32px;
+  padding: 0 13px;
+  border-radius: 999px;
+  border: 1.5px solid color-mix(in srgb, var(--border) 60%, transparent);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  max-width: 46vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.m-pill.on {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+
+/* ---- More, as a sheet off the avatar ---- */
+
+.m-moresheet-back {
+  position: fixed;
+  inset: 0;
+  background: rgb(0 0 0 / 0.45);
+  display: flex;
+  align-items: flex-end;
+  z-index: 45;
+  animation: m-fade 0.16s ease;
+}
+
+.m-moresheet {
+  width: 100%;
+  /* Enough for the menu and no more: pressing your own face should not take
+     the whole screen away from what you were looking at. */
+  height: 40dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--menubg);
+  border-radius: 18px 18px 0 0;
+  animation: m-rise 0.22s cubic-bezier(0.22, 0.7, 0.3, 1);
+  transition: height 0.22s cubic-bezier(0.22, 0.7, 0.3, 1);
+  overflow: hidden;
+}
+
+/* Settings, Team and Activity are lists worth reading, so going into one
+   lets the sheet grow. */
+.m-moresheet.deep {
+  height: 88dvh;
+}
+
+.m-moresheet .m-head {
+  padding-top: 14px;
+}
+
+.m-moresheet .m-scroll {
+  padding-bottom: calc(env(safe-area-inset-bottom) + 16px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .m-moresheet-back,
+  .m-moresheet {
+    animation: none;
+    transition: none;
+  }
+}
+
+/* Folder to folder, the same slide the tabs use. */
+.m-browse.m-fromright {
+  animation: m-slide-right 0.17s cubic-bezier(0.22, 0.7, 0.3, 1);
+}
+
+.m-browse.m-fromleft {
+  animation: m-slide-left 0.17s cubic-bezier(0.22, 0.7, 0.3, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .m-browse.m-fromright,
+  .m-browse.m-fromleft {
+    animation: none;
+  }
+}
+
+/* ---- Toggles ---- */
+
+.m-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: var(--m-tap);
+  padding: 6px 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.m-toggle-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.92rem;
+}
+
+.m-toggle-track {
+  flex: none;
+  width: 46px;
+  height: 28px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border) 55%, transparent);
+  padding: 3px;
+  display: flex;
+  transition: background 0.16s ease;
+}
+
+.m-toggle-track.on {
+  background: var(--accent);
+}
+
+.m-toggle-knob {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: #fff;
+  transition: transform 0.16s cubic-bezier(0.22, 0.7, 0.3, 1);
+}
+
+.m-toggle-track.on .m-toggle-knob {
+  transform: translateX(18px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .m-toggle-track,
+  .m-toggle-knob {
+    transition: none;
+  }
+}
+
+/* The button in the file sheet that puts a file on the watchlist. */
+.m-watch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: var(--m-tap);
+  margin-top: 10px;
+  padding: 0 12px;
+  border-radius: var(--m-radius);
+  border: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 0.88rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.m-watch.on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.m-panel-note {
+  margin: 10px 0 0;
+}
+
+
+
+
+/* Magnified as one piece, so every stroke and radius grows together and the
+   geometry stays what it was. */
+
+
+/* Forty-four pixels of target over a stop drawn at five. */
+
+
+/* Names sit at their own size whatever the zoom: a label is for reading, not
+   for measuring. */
+
+
+/* ---- The railway list ----
+   The desktop Branches page, at a size a thumb and an arm's length can deal
+   with: the same rails, drawn taller, with the type stepped up to match and a
+   line between each change so the eye has something to run down. */
+
+.m-graph {
+  padding-left: 0;
+  padding-right: 0;
+  scroll-behavior: smooth;
+}
+
+/* The rail needs air on its left, or the first lane reads as a border stuck
+   to the edge of the screen. */
+.m-graph .gg-rails {
+  margin-left: 10px;
+}
+
+.m-grow {
+  padding: 0 var(--m-gap) 0 0;
+  transition: background-color 0.18s ease;
+}
+
+.m-grow + .m-grow {
+  border-top: 1px solid color-mix(in srgb, var(--border) 38%, transparent);
+}
+
+.m-grow:active {
+  background: color-mix(in srgb, var(--lane, var(--accent)) 14%, transparent);
+}
+
+/* A change on the branch being followed takes a wash of that line's colour,
+   so the followed history reads as one run rather than a set of bright dots
+   in a grey list. */
+.m-grow:not(.quiet) {
+  background: none;
+}
+
+/* The rails quiet themselves when a line is followed, so the row only has to
+   fade the words beside them. Both dimming at once left the rest of the
+   history nearly invisible. */
+.m-grow.quiet .m-grow-main,
+.m-grow.quiet .m-grow-refs {
+  opacity: 0.4;
+}
+
+.m-grow-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.m-grow-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.m-grow-subject {
+  font-size: 0.95rem;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.m-grow-meta {
+  font-size: 0.78rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.m-grow-refs {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: flex-end;
+  max-width: 38%;
+}
+
+.m-reftag {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .m-grow {
+    transition: none;
+  }
 }

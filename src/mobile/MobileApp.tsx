@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 
 import * as api from "./api";
 import { useCloudState, useLocks, useRepo } from "./queries";
-import { Spinner, Trouble } from "./components";
+import { Spinner, Trouble, UserAvatar } from "./components";
+import { useLockAlerts } from "./alerts";
 import { SignIn } from "./screens/SignIn";
 import { PickProject } from "./screens/PickProject";
 import { Files } from "./screens/Files";
@@ -13,7 +14,7 @@ import { Insights } from "./screens/Insights";
 import { More } from "./screens/More";
 import "./mobile.css";
 
-const TABS = ["locks", "files", "branches", "insights", "merges", "more"] as const;
+const TABS = ["locks", "files", "branches", "insights", "merges"] as const;
 type Tab = (typeof TABS)[number];
 
 /**
@@ -28,6 +29,8 @@ type Tab = (typeof TABS)[number];
 export function MobileApp() {
   const state = useCloudState();
   const [tab, setTab] = useState<Tab>("locks");
+  // More is not a tab any more; it opens over whatever you were looking at.
+  const [showMore, setShowMore] = useState(false);
   // Which way the last move went, so a screen arrives from the side the tab
   // it replaced sits on. Going left to right should look like going left to
   // right.
@@ -37,12 +40,6 @@ export function MobileApp() {
     setWentForward(TABS.indexOf(next) >= TABS.indexOf(tab));
     setTab(next);
   };
-  const [previewMode, setPreviewMode] = useState<api.PreviewMode>("wifi");
-
-  useEffect(() => {
-    void api.getPreviewMode().then(setPreviewMode).catch(() => {});
-  }, []);
-
   // Pinch and double-tap zoom belong in a browser, not in an app: a stray
   // two-finger touch while scrolling a file list leaves the whole interface
   // askew with no obvious way back. Set here rather than in index.html so the
@@ -58,13 +55,15 @@ export function MobileApp() {
   const signedIn = state.data?.signed_in ?? false;
   const hasRepo = Boolean(state.data?.slug);
   const repo = useRepo(signedIn && hasRepo);
-  // Kept warm here so the tab badge is right whichever screen is showing.
+  // Kept warm here so the tab badge is right whichever screen is showing,
+  // and so one poll feeds both the badge and the alerts.
   const locks = useLocks(signedIn && hasRepo);
+  useLockAlerts(locks.data, state.data?.me?.login ?? null);
 
   if (state.isLoading) {
     return (
       <div className="m-app m-centre">
-        <Spinner label="Starting up…" />
+        <Spinner label="Starting up..." />
       </div>
     );
   }
@@ -101,10 +100,20 @@ export function MobileApp() {
   const canPush = repo.data?.can_push ?? false;
   const branch = state.data?.branch ?? repo.data?.default_branch ?? "main";
 
-  async function chooseMode(mode: api.PreviewMode) {
-    setPreviewMode(mode);
-    await api.setPreviewMode(mode);
-  }
+
+  const me = (
+    <button
+      className="m-mebtn"
+      onClick={() => setShowMore(true)}
+      aria-label="Your account, and the rest of the app"
+    >
+      <UserAvatar
+        url={state.data?.me?.avatar_url ?? null}
+        name={state.data?.me?.name ?? state.data?.me?.login ?? "?"}
+        size={34}
+      />
+    </button>
+  );
 
   return (
     <div className="m-app">
@@ -113,34 +122,35 @@ export function MobileApp() {
       <main className={`m-body ${wentForward ? "m-fromright" : "m-fromleft"}`} key={tab}>
         {tab === "locks" && (
           <Locks
-            previewMode={previewMode}
             canPush={canPush}
             branch={branch}
             defaultBranch={repo.data?.default_branch ?? "main"}
+            corner={me}
           />
         )}
-        {tab === "files" && <Files previewMode={previewMode} canPush={canPush} />}
-        {tab === "branches" && <BranchesTab />}
+        {tab === "files" && <Files canPush={canPush} corner={me} />}
+        {tab === "branches" && <BranchesTab corner={me} />}
         {tab === "insights" && (
           <div className="m-screen">
             <header className="m-head">
               <h1>Insights</h1>
+              {me}
             </header>
             <div className="m-scroll">
               <Insights />
             </div>
           </div>
         )}
-        {tab === "merges" && <Merges canPush={canPush} />}
-        {tab === "more" && (
-          <More
-            state={state.data!}
-            repo={repo.data}
-            previewMode={previewMode}
-            onPreviewMode={chooseMode}
-          />
-        )}
+        {tab === "merges" && <Merges canPush={canPush} corner={me} />}
       </main>
+
+      {showMore && (
+        <More
+          state={state.data!}
+          repo={repo.data}
+          onClose={() => setShowMore(false)}
+        />
+      )}
 
       <nav className="m-tabs" aria-label="Go to">
         <TabButton
@@ -178,13 +188,6 @@ export function MobileApp() {
           onGo={goTo}
           label="Merges"
           icon={<MergeGlyph />}
-        />
-        <TabButton
-          tab="more"
-          current={tab}
-          onGo={goTo}
-          label="More"
-          icon={<MoreGlyph />}
         />
       </nav>
     </div>
@@ -283,12 +286,3 @@ function MergeGlyph() {
   );
 }
 
-function MoreGlyph() {
-  return (
-    <svg viewBox="0 0 24 24" width="22" height="22" {...stroke}>
-      <circle cx="5.5" cy="12" r="1.4" fill="currentColor" />
-      <circle cx="12" cy="12" r="1.4" fill="currentColor" />
-      <circle cx="18.5" cy="12" r="1.4" fill="currentColor" />
-    </svg>
-  );
-}

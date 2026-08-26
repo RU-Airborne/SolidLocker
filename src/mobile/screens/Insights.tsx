@@ -53,7 +53,7 @@ export function Insights() {
     return buckets;
   }, [stats.data, now]);
 
-  if (stats.isLoading) return <Spinner label="Adding it up…" />;
+  if (stats.isLoading) return <Spinner label="Adding it up..." />;
   if (stats.isError) {
     return <Trouble error={stats.error} onRetry={() => stats.refetch()} />;
   }
@@ -74,36 +74,66 @@ export function Insights() {
         />
       </div>
 
-      <h3 className="m-subhead">Activity</h3>
-      <Calendar rows={stats.data ?? []} now={now} />
+      <Panel title="Activity" hue="var(--chart-1)">
+        <Calendar rows={stats.data ?? []} now={now} />
+        <p className="muted small m-panel-note">
+          Every branch, not just the one you are reading.
+        </p>
+      </Panel>
 
-      <h3 className="m-subhead">Changes per week</h3>
-      <WeekBars weeks={weeks} />
+      <Panel title="Changes per week" hue="var(--chart-1)">
+        <WeekBars weeks={weeks} />
+      </Panel>
 
-      <h3 className="m-subhead">Who has been working</h3>
-      <ul className="m-rank">
-        {people.map((person) => (
-          <li key={person.name}>
-            <span className="m-rank-label">
-              <span className="m-rank-name">{person.name}</span>
-              <span className="m-rank-count">{person.commits}</span>
-            </span>
-            <span className="m-rank-track">
-              <span
-                className="m-rank-bar"
-                style={{ width: `${Math.max(2, (person.commits / busiest) * 100)}%` }}
-              />
-            </span>
-          </li>
-        ))}
-      </ul>
+      <Panel title="Who has been working" hue="var(--chart-2)">
+        <ul className="m-rank">
+          {people.map((person) => (
+            <li key={person.name}>
+              <span className="m-rank-label">
+                <span className="m-rank-name">{person.name}</span>
+                <span className="m-rank-count">{person.commits}</span>
+              </span>
+              <span className="m-rank-track">
+                <span
+                  className="m-rank-bar"
+                  style={{ width: `${Math.max(2, (person.commits / busiest) * 100)}%` }}
+                />
+              </span>
+            </li>
+          ))}
+        </ul>
+      </Panel>
 
-      <h3 className="m-subhead">Who is holding what, and for how long</h3>
-      <HeldFor now={now} />
+      <Panel title="Who is holding what, and for how long" hue="var(--chart-3)">
+        <HeldFor now={now} />
+      </Panel>
 
-      <h3 className="m-subhead">Most reworked files</h3>
-      <Reworked />
+      <Panel title="Most reworked files" hue="var(--chart-1)">
+        <Reworked />
+      </Panel>
     </div>
+  );
+}
+
+/**
+ * One measure, one card, one colour. The colour is not decoration: it is what
+ * lets the eye keep two panels apart while scrolling, which a page of
+ * identical red bars does not.
+ */
+function Panel({
+  title,
+  hue,
+  children,
+}: {
+  title: string;
+  hue: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="m-panel" style={{ ["--panel-hue" as string]: hue }}>
+      <h3 className="m-subhead">{title}</h3>
+      {children}
+    </section>
   );
 }
 
@@ -149,7 +179,7 @@ function Calendar({ rows, now }: { rows: api.CommitStat[]; now: number }) {
   const step = (n: number) => {
     if (n === 0) return "color-mix(in srgb, var(--border) 20%, transparent)";
     const share = Math.ceil((n / most) * 4);
-    return `color-mix(in srgb, var(--chart-accent) ${[26, 48, 72, 100][share - 1]}%, transparent)`;
+    return `color-mix(in srgb, var(--panel-hue, var(--chart-1)) ${[26, 48, 72, 100][share - 1]}%, transparent)`;
   };
 
   const showing = touched === null ? null : days[touched];
@@ -276,7 +306,7 @@ function heldFor(hours: number): string {
 function Reworked() {
   const reworked = useReworked(true);
 
-  if (reworked.isLoading) return <Spinner label="Reading what keeps changing…" />;
+  if (reworked.isLoading) return <Spinner label="Reading what keeps changing..." />;
   if (reworked.isError) {
     return <Trouble error={reworked.error} onRetry={() => reworked.refetch()} />;
   }

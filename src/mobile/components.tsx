@@ -1,41 +1,55 @@
 /** Small parts the phone screens share. */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { isAppError } from "../types";
-import { laneColor, LANE_COUNT } from "../lanes";
 import { UserAvatar } from "../components/common/UserAvatar";
+import { routeColor, routeSets } from "../components/history/HistoryPage";
+import type { GraphCommit as DesktopCommit } from "../api";
+import { useGraph } from "./queries";
+import { useBackable } from "./back";
 
 export { UserAvatar };
 export { FileTypeIcon } from "../components/common/FileTypeIcon";
 
 /**
- * A branch always reads in its own colour, the same rule the desktop app
- * follows. It cannot be the same colour though: on the desktop the hue comes
- * from where the branch sits on the graph, and there is no graph here. A hash
- * gives every branch a stable colour of its own, which is what the colour is
- * for.
+ * Branch name -> the colour its line is drawn in on the railway.
+ *
+ * This has to come from the graph, the same as it does on the desktop. A
+ * branch's colour is decided by where its line falls when the history is
+ * walked, so it cannot be worked out from the name: an earlier attempt here
+ * hashed the name instead, which gave every branch a stable colour that
+ * happened to be a different one from its own rail.
  */
-function laneOf(name: string): number {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = (hash * 31 + name.charCodeAt(i)) | 0;
-  }
-  return Math.abs(hash) % LANE_COUNT;
+export function useBranchColors(): (name: string) => string | undefined {
+  const graph = useGraph(true);
+  return useMemo(() => {
+    const commits: DesktopCommit[] = (graph.data ?? []).map((c) => ({
+      sha: c.sha,
+      parents: c.parents,
+      author_name: c.author_login || c.author_name,
+      author_email: c.author_email,
+      date: c.date,
+      subject: c.subject,
+      refs: c.refs,
+      body: "",
+      is_head: false,
+    }));
+    const routes = routeSets(commits);
+    return (name: string) =>
+      routes.repOf.has(name) ? routeColor(routes, name) : undefined;
+  }, [graph.data]);
 }
 
-export function BranchName({
-  name,
-  isDefault = false,
-}: {
-  name: string;
-  isDefault?: boolean;
-}) {
+/**
+ * A branch name in running text, in its own colour. Until the graph is in,
+ * or for a branch with no line of its own, it simply inherits: a wrong colour
+ * is worse than no colour.
+ */
+export function BranchName({ name }: { name: string; isDefault?: boolean }) {
+  const colorOf = useBranchColors();
   return (
-    <strong
-      className="branchword"
-      style={{ color: isDefault ? laneColor(0) : laneColor(laneOf(name)) }}
-    >
+    <strong className="branchword" style={{ color: colorOf(name) }}>
       {name}
     </strong>
   );
@@ -174,6 +188,8 @@ export function Sheet({
   footer?: React.ReactNode;
 }) {
   const panel = useRef<HTMLDivElement>(null);
+  // Back closes the sheet before it closes the app.
+  useBackable(true, onClose);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

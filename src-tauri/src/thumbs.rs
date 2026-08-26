@@ -126,6 +126,7 @@ fn embedded_png(abs: &Path) -> Option<Vec<u8>> {
     preview_stream(cfb::open(abs).ok()?)
 }
 
+#[cfg(mobile)]
 pub fn embedded_png_in(bytes: &[u8]) -> Option<Vec<u8>> {
     preview_stream(cfb::CompoundFile::open(std::io::Cursor::new(bytes)).ok()?)
 }

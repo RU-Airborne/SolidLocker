@@ -106,7 +106,7 @@ export function SignIn({ canDeviceSignIn }: { canDeviceSignIn: boolean }) {
               onRetry={() => setStage({ kind: "idle" })}
             />
           )}
-          {stage.kind === "starting" && <Spinner label="Asking GitHub…" />}
+          {stage.kind === "starting" && <Spinner label="Asking GitHub..." />}
 
           {canDeviceSignIn && !byToken && stage.kind !== "starting" && (
             <button className="m-btn m-btn-go m-btn-wide" onClick={begin}>
@@ -188,7 +188,7 @@ function Waiting({
         label={
           lostSignal
             ? "No signal at the moment. Still waiting, and it will pick up on its own."
-            : "Waiting for you to finish on GitHub…"
+            : "Waiting for you to finish on GitHub..."
         }
       />
       <button className="m-linkbtn" onClick={onGiveUp}>
@@ -223,7 +223,7 @@ function TokenForm({ onDone }: { onDone: () => void }) {
         id="token"
         value={token}
         onChange={(e) => setToken(e.target.value)}
-        placeholder="github_pat_…"
+        placeholder="github_pat_..."
         type="password"
         autoCapitalize="none"
         autoCorrect="off"
@@ -239,7 +239,7 @@ function TokenForm({ onDone }: { onDone: () => void }) {
         onClick={submit}
         disabled={busy || token.trim().length === 0}
       >
-        {busy ? "Checking…" : "Sign in"}
+        {busy ? "Checking..." : "Sign in"}
       </button>
     </div>
   );
@@ -256,7 +256,7 @@ function ClientIdForm({ onSaved }: { onSaved: () => void }) {
         id="clientid"
         value={id}
         onChange={(e) => setId(e.target.value)}
-        placeholder="Ov23li… or Iv1.…"
+        placeholder="Ov23li... or Iv1...."
         autoCapitalize="none"
         autoCorrect="off"
         spellCheck={false}
@@ -278,7 +278,7 @@ function ClientIdForm({ onSaved }: { onSaved: () => void }) {
           }
         }}
       >
-        {busy ? "Saving…" : "Save it"}
+        {busy ? "Saving..." : "Save it"}
       </button>
     </div>
   );

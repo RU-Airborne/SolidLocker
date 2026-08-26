@@ -19,6 +19,7 @@ import {
   UserAvatar,
 } from "../components";
 import { formatAgo, formatDateTime } from "../../dates";
+import { isWatched, setWatched } from "../alerts";
 
 /**
  * One file, everything the network knows about it, and the two buttons that
@@ -31,14 +32,12 @@ export function FileSheet({
   file,
   status,
   canPush,
-  previewMode,
   onClose,
 }: {
   path: string;
   file: api.CloudFile | null;
   status: LockStatus;
   canPush: boolean;
-  previewMode: api.PreviewMode;
   onClose: () => void;
 }) {
   const claim = useClaim();
@@ -46,6 +45,7 @@ export function FileSheet({
   const force = useForceUnlock();
   const [asking, setAsking] = useState(false);
   const [trouble, setTrouble] = useState<unknown>(null);
+  const [watching, setWatching] = useState(() => isWatched(path));
 
   const name = path.split("/").pop() ?? path;
   const dir = path.slice(0, path.length - name.length - 1);
@@ -53,7 +53,7 @@ export function FileSheet({
   const preview = useQuery({
     queryKey: ["cloud", "preview", path],
     queryFn: () => api.getPreview(path),
-    enabled: previewMode !== "never" && (file?.is_cad ?? false),
+    enabled: file?.is_cad ?? false,
     staleTime: Infinity,
     retry: false,
   });
@@ -113,7 +113,6 @@ export function FileSheet({
           <img src={preview.data} alt={`Preview of ${name}`} />
         </div>
       )}
-      {preview.isFetching && <Spinner label="Fetching the preview…" />}
 
       <dl className="m-facts">
         <dt>Folder</dt>
@@ -159,6 +158,20 @@ export function FileSheet({
           </>
         )}
       </dl>
+
+      {status.kind === "theirs" && (
+        <button
+          className={`m-watch${watching ? " on" : ""}`}
+          onClick={() => {
+            setWatched(path, !watching);
+            setWatching(!watching);
+          }}
+        >
+          {watching
+            ? "You will be told when this comes free"
+            : "Tell me when this is free"}
+        </button>
+      )}
 
       {trouble != null && <Trouble error={trouble} />}
 
@@ -242,7 +255,7 @@ function Actions({
   if (status.kind === "mine") {
     return (
       <button className="m-btn m-btn-wide" onClick={onGiveBack} disabled={working}>
-        {working ? "Giving it back…" : "Give the lock back"}
+        {working ? "Giving it back..." : "Give the lock back"}
       </button>
     );
   }
@@ -255,7 +268,7 @@ function Actions({
   }
   return (
     <button className="m-btn m-btn-go m-btn-wide" onClick={onTake} disabled={working}>
-      {working ? "Taking it…" : "Take the lock"}
+      {working ? "Taking it..." : "Take the lock"}
     </button>
   );
 }

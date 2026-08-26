@@ -5,7 +5,6 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import * as api from "../api";
 import { useActivity, useTeam } from "../queries";
 import {
-  bytes,
   Confirm,
   Empty,
   FileTypeIcon,
@@ -16,51 +15,63 @@ import {
 } from "../components";
 import { formatDateTime } from "../../dates";
 import { useTheme, type Theme } from "../../theme";
+import { useBackable } from "../back";
+import {
+  askToNotify,
+  readAlerts,
+  writeAlerts,
+  type AlertSettings,
+} from "../alerts";
 
 type Page = "menu" | "activity" | "team" | "settings";
 
 export function More({
   state,
   repo,
-  previewMode,
-  onPreviewMode,
+  onClose,
 }: {
   state: api.CloudState;
   repo: api.CloudRepo | undefined;
-  previewMode: api.PreviewMode;
-  onPreviewMode: (mode: api.PreviewMode) => void;
+  onClose: () => void;
 }) {
   const [page, setPage] = useState<Page>("menu");
-
-  if (page !== "menu") {
-    return (
-      <div className="m-screen">
-        <header className="m-head">
-          <button className="m-backbtn" onClick={() => setPage("menu")}>
-            ‹ More
-          </button>
-          <h1>{titleOf(page)}</h1>
-        </header>
-        <div className="m-scroll">
-          {page === "activity" && <Activity />}
-          {page === "team" && <Team />}
-          {page === "settings" && (
-            <Settings
-              state={state}
-              repo={repo}
-              previewMode={previewMode}
-              onPreviewMode={onPreviewMode}
-            />
-          )}
-        </div>
-      </div>
-    );
-  }
+  useBackable(true, onClose);
+  useBackable(page !== "menu", () => setPage("menu"));
 
   return (
-    <div className="m-screen">
+    <div className="m-moresheet-back" onClick={onClose}>
+      <div
+        className={`m-moresheet${page === "menu" ? "" : " deep"}`}
+        role="dialog"
+        aria-modal="true"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {page !== "menu" ? (
+          <>
+            <header className="m-head">
+              <button className="m-backbtn" onClick={() => setPage("menu")}>
+                ‹ More
+              </button>
+              <h1>{titleOf(page)}</h1>
+              <button className="m-linkbtn" onClick={onClose}>
+                Done
+              </button>
+            </header>
+            <div className="m-scroll">
+              {page === "activity" && <Activity />}
+              {page === "team" && <Team />}
+              {page === "settings" && (
+                <Settings state={state} repo={repo} />
+              )}
+            </div>
+          </>
+        ) : (
+          <>
       <header className="m-head">
         <h1>More</h1>
+        <button className="m-linkbtn" onClick={onClose}>
+          Done
+        </button>
       </header>
       <div className="m-scroll">
         <div className="m-whoami">
@@ -87,6 +98,9 @@ export function More({
             <span className="m-chevron">›</span>
           </button>
         ))}
+      </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -120,7 +134,7 @@ function Activity() {
   const activity = useActivity(true);
   const [open, setOpen] = useState<string | null>(null);
 
-  if (activity.isLoading) return <Spinner label="Reading the history…" />;
+  if (activity.isLoading) return <Spinner label="Reading the history..." />;
   if (activity.isError) {
     return <Trouble error={activity.error} onRetry={() => activity.refetch()} />;
   }
@@ -181,7 +195,7 @@ function CommitFiles({ sha }: { sha: string }) {
 
 function Team() {
   const team = useTeam(true);
-  if (team.isLoading) return <Spinner label="Reading the team…" />;
+  if (team.isLoading) return <Spinner label="Reading the team..." />;
   if (team.isError) return <Trouble error={team.error} onRetry={() => team.refetch()} />;
   if ((team.data ?? []).length === 0) return <Empty title="Nobody yet" />;
 
@@ -208,27 +222,55 @@ function Team() {
   );
 }
 
+function Toggle({
+  label,
+  on,
+  onChange,
+}: {
+  label: string;
+  on: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <button
+      className="m-toggle"
+      role="switch"
+      aria-checked={on}
+      onClick={() => onChange(!on)}
+    >
+      <span className="m-toggle-label">{label}</span>
+      <span className={`m-toggle-track${on ? " on" : ""}`} aria-hidden="true">
+        <span className="m-toggle-knob" />
+      </span>
+    </button>
+  );
+}
+
 function Settings({
   state,
   repo,
-  previewMode,
-  onPreviewMode,
 }: {
   state: api.CloudState;
   repo: api.CloudRepo | undefined;
-  previewMode: api.PreviewMode;
-  onPreviewMode: (mode: api.PreviewMode) => void;
 }) {
   const queryClient = useQueryClient();
   const [theme, setTheme] = useTheme();
   const [clientId, setClientId] = useState("");
-  const [cacheBytes, setCacheBytes] = useState(0);
   const [askingOut, setAskingOut] = useState(false);
+  const [alerts, setAlerts] = useState<AlertSettings>(readAlerts);
 
   useEffect(() => {
     void api.getClientId().then(setClientId).catch(() => {});
-    void api.previewCacheBytes().then(setCacheBytes).catch(() => {});
   }, []);
+
+  async function changeAlerts(next: AlertSettings) {
+    // Nothing to ask for until somebody actually wants to be told something.
+    if ((next.free || next.reminder || next.taken) && !(await askToNotify())) {
+      return;
+    }
+    setAlerts(next);
+    writeAlerts(next);
+  }
 
   return (
     <div className="m-settings">
@@ -255,40 +297,42 @@ function Settings({
         </button>
       </section>
 
+
       <section>
-        <h3 className="m-subhead">Previews</h3>
-        <p className="muted small">
-          A CAD preview means downloading the whole file once. It is kept
-          afterwards, so it is paid for once per revision.
-        </p>
-        <Segmented
-          value={previewMode}
-          onChange={onPreviewMode}
-          options={[
-            { value: "wifi", label: "On wifi" },
-            { value: "always", label: "Always" },
-            { value: "never", label: "Never" },
-          ]}
+        <h3 className="m-subhead">Tell me when</h3>
+        <Toggle
+          label="A file I am waiting on comes free"
+          on={alerts.free}
+          onChange={(free) => changeAlerts({ ...alerts, free })}
         />
-        {state.platform === "ios" && previewMode === "wifi" && (
-          <p className="muted small">
-            iOS does not tell an app what kind of connection it is on, so
-            SolidLocker cannot actually check. Treat this as your own rule.
-          </p>
+        <Toggle
+          label="Someone takes a lock off me"
+          on={alerts.taken}
+          onChange={(taken) => changeAlerts({ ...alerts, taken })}
+        />
+        <Toggle
+          label="I have been holding something too long"
+          on={alerts.reminder}
+          onChange={(reminder) => changeAlerts({ ...alerts, reminder })}
+        />
+        {alerts.reminder && (
+          <Segmented
+            value={String(alerts.after)}
+            onChange={(after) => changeAlerts({ ...alerts, after: Number(after) })}
+            options={[
+              { value: "8", label: "8h" },
+              { value: "24", label: "A day" },
+              { value: "72", label: "3 days" },
+            ]}
+          />
         )}
-        <p className="m-setting-line muted small">
-          Kept on this device: {cacheBytes > 0 ? bytes(cacheBytes) : "nothing yet"}
+        <p className="muted small">
+          These arrive while SolidLocker is open. A phone puts an app to sleep
+          within a minute or two of you leaving it, so an alert about
+          something that happened overnight turns up when you next open this,
+          not at three in the morning. Waking the phone itself would need a
+          server pushing to it.
         </p>
-        <button
-          className="m-btn"
-          onClick={async () => {
-            await api.clearPreviews();
-            setCacheBytes(0);
-            queryClient.invalidateQueries({ queryKey: ["cloud", "previews"] });
-          }}
-        >
-          Throw the previews away
-        </button>
       </section>
 
       <section>

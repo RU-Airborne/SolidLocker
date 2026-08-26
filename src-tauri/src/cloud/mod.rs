@@ -1,15 +1,9 @@
 //! Everything SolidLocker can do without a git binary.
 //!
-//! The desktop app drives a real working tree: it shells out to git and
-//! git-lfs, writes files, flips read-only bits and talks to SolidWorks. A
-//! phone can do none of that. iOS forbids spawning a process outright, so
-//! there is no git to drive and no clone to drive it against.
-//!
-//! What survives is the part that was always a network call. Git LFS file
-//! locking is a plain HTTPS API, and so is everything about branches,
-//! commits and merge requests. That is enough for the thing people actually
-//! want away from their desk: see who is holding which part, and take or
-//! give back a lock before somebody drives in for nothing.
+//! iOS forbids spawning a process, so there is no git to drive and no clone
+//! to drive it against. What survives is the part that was always a network
+//! call: Git LFS locking, branches, commits and merge requests are all plain
+//! HTTPS.
 
 pub mod auth;
 pub mod commands;
@@ -17,47 +11,11 @@ pub mod gh;
 pub mod locks;
 pub mod objects;
 
-use std::time::Duration;
-
 use crate::error::{AppError, AppResult};
-
-const USER_AGENT: &str = "SolidLocker";
-const TIMEOUT: Duration = Duration::from_secs(30);
-
-/// One repository, one token, one HTTP client. Every cloud call needs all
-/// three, so they travel together rather than being looked up again per call.
-#[derive(Clone)]
-pub struct Api {
-    pub http: reqwest::Client,
-    /// "owner/repo"
-    pub slug: String,
-    pub token: String,
-    /// The GitHub login the token belongs to. Git LFS authenticates with
-    /// Basic auth, which wants a username beside the token.
-    pub login: String,
-}
+pub use crate::ghapi::{net, Api};
 
 impl Api {
-    pub fn new(
-        slug: impl Into<String>,
-        token: impl Into<String>,
-        login: impl Into<String>,
-    ) -> AppResult<Self> {
-        let http = reqwest::Client::builder()
-            .user_agent(USER_AGENT)
-            .timeout(TIMEOUT)
-            .build()
-            .map_err(|e| AppError::new("NET", e.to_string()))?;
-        Ok(Self {
-            http,
-            slug: slug.into(),
-            token: token.into(),
-            login: login.into(),
-        })
-    }
-
-    /// A token with no repository behind it yet, for the sign-in and
-    /// project-picking screens.
+    /// For the sign-in and project-picking screens, before a project exists.
     pub fn tokenless_repo(token: impl Into<String>) -> AppResult<Self> {
         Self::new(String::new(), token, String::new())
     }
@@ -84,8 +42,7 @@ impl Api {
         self.signed(self.http.post(url))
     }
 
-    /// Read a JSON body, turning GitHub error shapes into something a member
-    /// can act on rather than a bare status code.
+    /// Turns GitHub error shapes into something a member can act on.
     pub async fn read_json(resp: reqwest::Response) -> AppResult<serde_json::Value> {
         let status = resp.status();
         if status.is_success() {
@@ -103,9 +60,8 @@ impl Api {
     }
 }
 
-/// A failed request, said in words. The interesting part of a GitHub error is
-/// usually in the errors list, not in the message, which is often just the
-/// status name repeated back.
+/// The useful part of a GitHub error is usually in the errors list, not the
+/// message, which is often just the status name repeated back.
 pub fn github_error(status: reqwest::StatusCode, body: &str) -> AppError {
     let parsed = serde_json::from_str::<serde_json::Value>(body).ok();
     let message = parsed
@@ -161,20 +117,7 @@ pub fn github_error(status: reqwest::StatusCode, body: &str) -> AppError {
     }
 }
 
-/// Reqwest failed before any status came back, which on a phone almost always
-/// means the signal did.
-pub fn net(e: reqwest::Error) -> AppError {
-    if e.is_timeout() {
-        return AppError::offline("GitHub did not answer in time. The connection may be weak.");
-    }
-    if e.is_connect() || e.is_request() {
-        return AppError::offline("Could not reach GitHub. Check the connection and try again.");
-    }
-    AppError::new("NET", e.to_string())
-}
-
-/// Follows the Link header until GitHub runs out of pages, so a project with
-/// three hundred branches is not silently cut off at the first hundred.
+/// Follows the Link header so a long list is not cut off at the first page.
 pub async fn paged(api: &Api, first: &str, cap: usize) -> AppResult<Vec<serde_json::Value>> {
     let mut out = Vec::new();
     let mut url = first.to_string();

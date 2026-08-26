@@ -58,7 +58,7 @@ export function PickProject({ onSignOut }: { onSignOut: () => void }) {
       {error != null && <Trouble error={error} onRetry={() => setError(null)} />}
 
       <div className="m-scroll">
-        {repos.isLoading && <Spinner label="Reading your projects…" />}
+        {repos.isLoading && <Spinner label="Reading your projects..." />}
         {repos.isError && (
           <Trouble error={repos.error} onRetry={() => repos.refetch()} />
         )}

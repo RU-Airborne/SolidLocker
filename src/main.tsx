@@ -1,7 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
-import { getPlatform } from "./mobile/api";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { logFrontend } from "./api";
 import "./styles/tokens.css";
 import { applySavedTheme } from "./theme";
@@ -33,18 +32,12 @@ const MobileApp = React.lazy(() =>
   import("./mobile/MobileApp").then((m) => ({ default: m.MobileApp })),
 );
 
-function Root() {
-  const platform = useQuery({
-    queryKey: ["platform"],
-    queryFn: getPlatform,
-    staleTime: Infinity,
-    gcTime: Infinity,
-  });
+const onPhone = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
-  if (platform.isLoading) return null;
+function Root() {
   return (
     <React.Suspense fallback={null}>
-      {platform.data?.mobile ? <MobileApp /> : <App />}
+      {onPhone ? <MobileApp /> : <App />}
     </React.Suspense>
   );
 }

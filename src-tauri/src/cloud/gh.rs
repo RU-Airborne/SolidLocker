@@ -646,10 +646,20 @@ pub struct CommitStat {
     pub file_count: u64,
 }
 
-/// The shape the Insights charts want: one row per commit, across every
-/// branch the default branch can see.
-pub async fn commit_stats(api: &Api, branch: &str, limit: usize) -> AppResult<Vec<CommitStat>> {
-    let log = commits(api, branch, None, limit).await?;
+/// The shape the Insights charts want: one row per commit, across the whole
+/// project rather than one branch of it.
+///
+/// "How much happened this week" is a question about the project. Answering
+/// it from the branch you happen to be reading would show a quiet week on a
+/// branch nobody has touched while three other people were busy, which is the
+/// opposite of what the chart is for.
+pub async fn commit_stats(
+    api: &Api,
+    branch: &str,
+    branch_cap: usize,
+    per_branch: usize,
+) -> AppResult<Vec<CommitStat>> {
+    let (log, _, _) = across_branches(api, branch, branch_cap, per_branch).await?;
     Ok(log
         .into_iter()
         .map(|c| CommitStat {
@@ -677,6 +687,7 @@ pub struct GraphCommit {
     pub author_name: String,
     pub author_login: String,
     pub author_avatar: String,
+    pub author_email: String,
     pub date: String,
     /// Seconds since the epoch, so the phone can sort without parsing.
     pub at: i64,
@@ -699,37 +710,8 @@ pub async fn graph(
     branch_cap: usize,
     per_branch: usize,
 ) -> AppResult<Vec<GraphCommit>> {
-    let repo = repo(api).await?;
-    let mut wanted = branches(api, &repo.default_branch).await?;
-
-    // The default branch and the one being read are always drawn; after that,
-    // most recently moved wins.
-    wanted.sort_by_key(|b| !(b.is_default || b.name == head_branch));
-    wanted.truncate(branch_cap);
-
-    let mut set = tokio::task::JoinSet::new();
-    for branch in &wanted {
-        let api = api.clone();
-        let name = branch.name.clone();
-        set.spawn(async move {
-            let log = commits_raw(&api, &name, per_branch).await;
-            (name, log)
-        });
-    }
-
-    let mut ordered: Vec<GraphCommit> = Vec::new();
-    let mut seen: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
-
-    while let Some(joined) = set.join_next().await {
-        let Ok((_, Ok(log))) = joined else { continue };
-        for commit in log {
-            if seen.contains_key(&commit.sha) {
-                continue;
-            }
-            seen.insert(commit.sha.clone(), ordered.len());
-            ordered.push(commit);
-        }
-    }
+    let (mut ordered, seen, wanted) =
+        across_branches(api, head_branch, branch_cap, per_branch).await?;
 
     // Tips carry the branch names; everything else is just history.
     for branch in &wanted {
@@ -744,6 +726,53 @@ pub async fn graph(
 
     ordered.sort_by(|a, b| b.at.cmp(&a.at));
     Ok(ordered)
+}
+
+/// Every commit on every branch worth asking about, each one once.
+///
+/// One request per branch, and the same commit turns up in most of them: a
+/// change on the default branch is in the history of everything cut from it.
+/// Deduplicating by sha is the whole point, and it is why counting "how much
+/// happened this week" cannot just add up per-branch logs.
+async fn across_branches(
+    api: &Api,
+    head_branch: &str,
+    branch_cap: usize,
+    per_branch: usize,
+) -> AppResult<(
+    Vec<GraphCommit>,
+    HashMap<String, usize>,
+    Vec<CloudBranch>,
+)> {
+    let repo = repo(api).await?;
+    let mut wanted = branches(api, &repo.default_branch).await?;
+
+    // The default branch and the one being read always count; after that,
+    // most recently moved wins.
+    wanted.sort_by_key(|b| !(b.is_default || b.name == head_branch));
+    wanted.truncate(branch_cap);
+
+    let mut set = tokio::task::JoinSet::new();
+    for branch in &wanted {
+        let api = api.clone();
+        let name = branch.name.clone();
+        set.spawn(async move { commits_raw(&api, &name, per_branch).await });
+    }
+
+    let mut ordered: Vec<GraphCommit> = Vec::new();
+    let mut seen: HashMap<String, usize> = HashMap::new();
+
+    while let Some(joined) = set.join_next().await {
+        let Ok(Ok(log)) = joined else { continue };
+        for commit in log {
+            if seen.contains_key(&commit.sha) {
+                continue;
+            }
+            seen.insert(commit.sha.clone(), ordered.len());
+            ordered.push(commit);
+        }
+    }
+    Ok((ordered, seen, wanted))
 }
 
 async fn commits_raw(api: &Api, branch: &str, limit: usize) -> AppResult<Vec<GraphCommit>> {
@@ -775,6 +804,7 @@ async fn commits_raw(api: &Api, branch: &str, limit: usize) -> AppResult<Vec<Gra
                 author_name: base.author_name,
                 author_login: base.author_login,
                 author_avatar: base.author_avatar,
+                author_email: base.author_email,
                 date: base.date,
             }
         })

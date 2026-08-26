@@ -150,8 +150,10 @@ export function layoutGraph(commits: GraphCommit[]): {
   return { rows, laneCount };
 }
 
-const ROW_H = 34;
-const COL_W = 16;
+/** Exported so the phone app can lay its rows out on the same pitch the
+    rails are drawn to. */
+export const ROW_H = 34;
+export const COL_W = 16;
 
 /* Subway-map trunks: every branch is its tip's first parent chain,
    drawn as its own strand. Where several routes share a stretch of history
@@ -674,7 +676,7 @@ function FillRails({ lanes, totalW }: { lanes: FillLane[]; totalW: number }) {
   );
 }
 
-function RowRails({
+export function RowRails({
   row,
   open,
   lit,
@@ -684,6 +686,7 @@ function RowRails({
   totalW,
   focusRoute,
   litRoutes,
+  rowHeight,
 }: {
   row: LaidRow;
   open?: boolean;
@@ -695,6 +698,11 @@ function RowRails({
   slots: LaneSlots;
   laneX: number[];
   totalW: number;
+  /** How tall this row's stretch of rail is. Defaults to the pitch the
+      desktop lays its rows out on; the phone draws the same rails taller so
+      a readable font has somewhere to sit. Scaling the drawing instead left
+      seams between rows wherever a boundary fell on a fractional pixel. */
+  rowHeight?: number;
   /** The branch whose own strand stays lit on shared trunks. */
   focusRoute?: string | null;
   /** Which branches the highlight is actually about. `lit` is commits, and a
@@ -704,7 +712,8 @@ function RowRails({
   litRoutes?: Set<string> | null;
 }) {
   const w = totalW + 4;
-  const mid = ROW_H / 2;
+  const tall = rowHeight ?? ROW_H;
+  const mid = tall / 2;
   const x = (i: number) => laneX[i] ?? i * COL_W + COL_W / 2;
   const xl = x(row.lane);
   const c = row.commit;
@@ -883,8 +892,8 @@ function RowRails({
     <svg
       className="gg-rails"
       width={w}
-      height={ROW_H}
-      viewBox={`0 0 ${w} ${ROW_H}`}
+      height={tall}
+      viewBox={`0 0 ${w} ${tall}`}
       aria-hidden="true"
     >
       {row.passes.map((j, k) => (
@@ -896,7 +905,7 @@ function RowRails({
               x1={sx}
               y1={0}
               x2={sx}
-              y2={ROW_H}
+              y2={tall}
               stroke={scol ?? NO_ROUTE}
               strokeWidth={RAIL_W}
               strokeDasharray={sd}
@@ -955,7 +964,7 @@ function RowRails({
               x1={sx}
               y1={mid}
               x2={sx}
-              y2={ROW_H}
+              y2={tall}
               stroke={scol ?? NO_ROUTE}
               strokeWidth={RAIL_W}
               strokeDasharray={sd}
@@ -973,7 +982,7 @@ function RowRails({
           <path
             key={`f${m}`}
             className={cls(forkOn(k))}
-            d={crossing(ncx, mid, xm, ROW_H)}
+            d={crossing(ncx, mid, xm, tall)}
             fill="none"
             stroke={prs.length ? routeColor(routes, prs[0]) : NO_ROUTE}
             strokeWidth={RAIL_W}

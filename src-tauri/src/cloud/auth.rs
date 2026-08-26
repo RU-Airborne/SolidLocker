@@ -1,15 +1,11 @@
 //! Signing in from a phone.
 //!
-//! The desktop app never asks for a token: it borrows whatever Git Credential
-//! Manager already holds, because git is doing the talking anyway. There is
-//! no credential manager on a phone and no git to borrow from, so the app has
-//! to earn a token of its own.
+//! The desktop borrows whatever Git Credential Manager holds, because git is
+//! doing the talking. A phone has neither, so it earns a token of its own.
 //!
-//! The device flow is the one that fits a phone: the app shows a short code,
-//! the member types it into github.com (on the phone, or on the machine they
-//! are stood next to), and GitHub hands the token back. No password is ever
-//! typed into SolidLocker, and no browser redirect has to find its way back
-//! into the app.
+//! The device flow suits a phone: the app shows a short code, the member
+//! types it on github.com, and GitHub hands the token back. No password is
+//! typed into SolidLocker and no redirect has to find its way back.
 
 use std::time::Duration;
 
@@ -19,25 +15,21 @@ use crate::error::{AppError, AppResult};
 
 use super::{net, Api};
 
-/// A registered OAuth App is the one thing the device flow cannot do without.
-/// Client IDs are public by design, so this can be baked in at build time
-/// (`SOLIDLOCKER_GH_CLIENT_ID=Iv1.xxxx cargo tauri ios build`) or typed into
-/// Settings once on the device.
+/// Client IDs are public by design, so this is baked in at build time with
+/// SOLIDLOCKER_GH_CLIENT_ID, or typed into Settings on the device.
 pub const BUILT_IN_CLIENT_ID: Option<&str> = option_env!("SOLIDLOCKER_GH_CLIENT_ID");
 
-/// `repo` covers private projects, Git LFS locking (which needs push access)
-/// and merge-request review. The two reads are what turns a login into a name
-/// and a face.
+/// `repo` covers private projects, LFS locking and merge-request review.
 const SCOPES: &str = "repo read:org read:user";
 
 #[derive(Debug, Serialize)]
 pub struct DeviceStart {
-    /// The short code the member types on github.com, e.g. "WDJB-MJHT".
+    /// The short code the member types on github.com.
     pub user_code: String,
     pub verification_uri: String,
     /// Kept by the frontend and handed back to every poll.
     pub device_code: String,
-    /// Seconds. GitHub asks for five; polling faster earns a slow_down.
+    /// Seconds. GitHub asks for five, and polling faster earns a slow_down.
     pub interval: u64,
     pub expires_in: u64,
 }
@@ -174,8 +166,7 @@ pub async fn poll(client_id: &str, device_code: &str) -> AppResult<DevicePoll> {
     }
 }
 
-/// Who a token belongs to. Doubles as the check that a pasted token is real
-/// and still has the scopes we need.
+/// Who a token belongs to, and the check that a pasted one is real.
 #[derive(Debug, Serialize, Clone)]
 pub struct Me {
     pub login: String,

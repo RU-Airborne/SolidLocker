@@ -1,14 +1,7 @@
 import { useMemo, useState } from "react";
 
 import * as api from "../api";
-import {
-  useCanPrefetch,
-  useFiles,
-  useLockIndex,
-  useLocks,
-  usePreviews,
-  type LockStatus,
-} from "../queries";
+import { useFiles, useLockIndex, useLocks, type LockStatus } from "../queries";
 import {
   bytes,
   Empty,
@@ -19,26 +12,33 @@ import {
   Trouble,
 } from "../components";
 import { FileSheet } from "./FileSheet";
+import { useBackableDepth } from "../back";
 
 type Filter = "all" | "cad" | "held";
-type Shape = "list" | "tiles";
 
 /** Everything in the project, walked a folder at a time. */
 export function Files({
-  previewMode,
   canPush,
+  corner,
 }: {
-  previewMode: api.PreviewMode;
   canPush: boolean;
+  corner: React.ReactNode;
 }) {
   const files = useFiles(true);
   const locks = useLocks(true);
   const statusOf = useLockIndex(locks.data);
 
   const [dir, setDir] = useState("");
+  // Which way the last move went, so going into a folder slides in from the
+  // right and coming back out slides in from the left.
+  const [wentIn, setWentIn] = useState(true);
+
+  const enter = (next: string) => {
+    setWentIn(next.split("/").length > dir.split("/").length || dir === "");
+    setDir(next);
+  };
   const [needle, setNeedle] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
-  const [shape, setShape] = useState<Shape>("list");
   const [open, setOpen] = useState<string | null>(null);
 
   const searching = needle.trim().length > 0;
@@ -70,26 +70,20 @@ export function Files({
     return { folders: [...subfolders].sort(), here: inThisFolder };
   }, [matching, dir, searching]);
 
-  const canPrefetch = useCanPrefetch(previewMode);
-  const previewable = useMemo(
-    () => (shape === "tiles" ? here.filter((f) => f.is_cad).map((f) => f.rel_path).slice(0, 60) : []),
-    [here, shape],
-  );
-  const previews = usePreviews(previewable, canPrefetch);
-
   const crumbs = dir ? dir.split("/") : [];
+  // Back walks up one folder at a time before it leaves the screen.
+  useBackableDepth(crumbs.length, () =>
+    setDir((now) => {
+      setWentIn(false);
+      return now.split("/").slice(0, -1).join("/");
+    }),
+  );
 
   return (
     <div className="m-screen">
       <header className="m-head">
         <h1>Files</h1>
-        <button
-          className="m-iconbtn"
-          onClick={() => setShape(shape === "list" ? "tiles" : "list")}
-          aria-label={shape === "list" ? "Show previews" : "Show a list"}
-        >
-          {shape === "list" ? <TilesGlyph /> : <ListGlyph />}
-        </button>
+        {corner}
       </header>
 
       <div className="m-head-tools">
@@ -111,14 +105,14 @@ export function Files({
 
       {!searching && (
         <nav className="m-crumbs" aria-label="Folder">
-          <button className={dir ? "" : "here"} onClick={() => setDir("")}>
+          <button className={dir ? "" : "here"} onClick={() => enter("")}>
             Project
           </button>
           {crumbs.map((part, i) => (
             <button
               key={i}
               className={i === crumbs.length - 1 ? "here" : ""}
-              onClick={() => setDir(crumbs.slice(0, i + 1).join("/"))}
+              onClick={() => enter(crumbs.slice(0, i + 1).join("/"))}
             >
               {part}
             </button>
@@ -133,18 +127,20 @@ export function Files({
         </p>
       )}
 
-      <div className={shape === "tiles" ? "m-scroll m-tiles" : "m-scroll"}>
-        {files.isLoading && <Spinner label="Reading the project…" />}
+      <div
+        className={`m-scroll m-browse ${wentIn ? "m-fromright" : "m-fromleft"}`}
+        key={dir}
+      >
+        {files.isLoading && <Spinner label="Reading the project..." />}
         {files.isError && (
           <Trouble error={files.error} onRetry={() => files.refetch()} />
         )}
 
-        {shape === "list" &&
-          folders.map((folder) => (
+        {folders.map((folder) => (
             <button
               key={folder}
               className="m-row m-folder"
-              onClick={() => setDir(dir ? `${dir}/${folder}` : folder)}
+              onClick={() => enter(dir ? `${dir}/${folder}` : folder)}
             >
               <FolderGlyph />
               <span className="m-row-main">
@@ -152,39 +148,17 @@ export function Files({
               </span>
               <ChevronGlyph />
             </button>
-          ))}
+        ))}
 
-        {shape === "tiles" &&
-          folders.map((folder) => (
-            <button
-              key={folder}
-              className="m-tile m-tile-folder"
-              onClick={() => setDir(dir ? `${dir}/${folder}` : folder)}
-            >
-              <FolderGlyph />
-              <span className="m-tile-name">{folder}</span>
-            </button>
-          ))}
-
-        {here.map((file) =>
-          shape === "tiles" ? (
-            <Tile
-              key={file.rel_path}
-              file={file}
-              status={statusOf(file.rel_path)}
-              preview={previews.data?.[file.rel_path]}
-              onOpen={() => setOpen(file.rel_path)}
-            />
-          ) : (
-            <Row
-              key={file.rel_path}
-              file={file}
-              status={statusOf(file.rel_path)}
-              showPath={searching}
-              onOpen={() => setOpen(file.rel_path)}
-            />
-          ),
-        )}
+        {here.map((file) => (
+          <Row
+            key={file.rel_path}
+            file={file}
+            status={statusOf(file.rel_path)}
+            showPath={searching}
+            onOpen={() => setOpen(file.rel_path)}
+          />
+        ))}
 
         {files.data && folders.length === 0 && here.length === 0 && (
           <Empty
@@ -204,7 +178,6 @@ export function Files({
           file={files.data?.files.find((f) => f.rel_path === open) ?? null}
           status={statusOf(open)}
           canPush={canPush}
-          previewMode={previewMode}
           onClose={() => setOpen(null)}
         />
       )}
@@ -239,34 +212,6 @@ function Row({
   );
 }
 
-function Tile({
-  file,
-  status,
-  preview,
-  onOpen,
-}: {
-  file: api.CloudFile;
-  status: LockStatus;
-  preview: string | undefined;
-  onOpen: () => void;
-}) {
-  return (
-    <button
-      className={`m-tile${status.kind === "mine" ? " ismine" : ""}`}
-      onClick={onOpen}
-    >
-      <span className="m-tile-art">
-        {preview ? (
-          <img src={preview} alt="" />
-        ) : (
-          <FileTypeIcon path={file.rel_path} size={34} />
-        )}
-      </span>
-      <span className="m-tile-name">{file.name}</span>
-      <LockMark status={status} />
-    </button>
-  );
-}
 
 /** Who is holding it, in the smallest space that can carry the answer. */
 export function LockMark({ status }: { status: LockStatus }) {
@@ -308,21 +253,4 @@ function ChevronGlyph() {
   );
 }
 
-function TilesGlyph() {
-  return (
-    <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden="true">
-      <rect x="3" y="3" width="7.5" height="7.5" rx="1.5" />
-      <rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5" />
-      <rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5" />
-      <rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5" />
-    </svg>
-  );
-}
 
-function ListGlyph() {
-  return (
-    <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" aria-hidden="true">
-      <path d="M4 7h16M4 12h16M4 17h16" />
-    </svg>
-  );
-}

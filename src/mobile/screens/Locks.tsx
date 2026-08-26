@@ -26,15 +26,15 @@ import { BranchName } from "../components";
  * happening, only the question, so it gets the front page.
  */
 export function Locks({
-  previewMode,
   canPush,
   branch,
   defaultBranch,
+  corner,
 }: {
-  previewMode: api.PreviewMode;
   canPush: boolean;
   branch: string;
   defaultBranch: string;
+  corner: React.ReactNode;
 }) {
   const locks = useLocks(true);
   const statusOf = useLockIndex(locks.data);
@@ -89,6 +89,7 @@ export function Locks({
         >
           <RefreshGlyph spinning={locks.isFetching} />
         </button>
+        {corner}
       </header>
 
       <div className="m-head-tools">
@@ -106,7 +107,7 @@ export function Locks({
       <Flash message={flash} />
 
       <div className="m-scroll">
-        {locks.isLoading && <Spinner label="Asking who is holding what…" />}
+        {locks.isLoading && <Spinner label="Asking who is holding what..." />}
         {locks.isError && (
           <Trouble error={locks.error} onRetry={() => locks.refetch()} />
         )}
@@ -172,7 +173,6 @@ export function Locks({
           file={null}
           status={statusOf(open)}
           canPush={canPush}
-          previewMode={previewMode}
           onClose={() => setOpen(null)}
         />
       )}

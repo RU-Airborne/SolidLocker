@@ -4,16 +4,13 @@
 //! Windows already knows how to draw it. A phone holds nothing, so a preview
 //! costs a real download of a real CAD file over whatever signal is going.
 //!
-//! Two things keep that honest. Where SolidWorks stored a PNG inside the file
-//! itself, no rendering is needed once the bytes are here, and that PNG is
-//! cached on disk against the object id, which never changes for a given
-//! revision of a file. A preview is therefore paid for once, ever.
+//! Only files saved as OLE compound files carry a preview that can be read
+//! without SolidWorks. SolidWorks 2015 and later use their own container with
+//! no findable image, so for those there is no preview at all, and the check
+//! costs eight bytes rather than a whole download.
 //!
-//! The catch, and it is a big one: only files saved as OLE compound files
-//! carry a preview that can be read this way. SolidWorks 2015 and later use
-//! their own container with no image in it that anything but SolidWorks can
-//! find. For those files there is no preview on a phone, and the honest thing
-//! is to find that out from eight bytes rather than from a whole download.
+//! What is found is cached against the object id, which never changes for a
+//! given revision, so a preview is paid for once.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -27,12 +24,10 @@ use super::{net, Api};
 
 const LFS_JSON: &str = "application/vnd.git-lfs+json";
 
-/// Anything past this is an assembly nobody wants to pull down a phone line
-/// for the sake of a 200 pixel picture.
+/// Past this it is not worth a phone line for a 200 pixel picture.
 pub const DEFAULT_MAX_BYTES: u64 = 25 * 1024 * 1024;
 
-/// How many previews to fetch at once. Three keeps a folder filling in
-/// steadily without holding the whole connection.
+/// Enough to fill a folder steadily without holding the whole connection.
 const AT_ONCE: usize = 3;
 
 #[derive(Debug, Clone)]
@@ -41,8 +36,7 @@ pub struct Pointer {
     pub size: u64,
 }
 
-/// A Git LFS pointer is three short lines of text. Anything else is the file
-/// itself, which means it was never in LFS and there is nothing to fetch.
+/// A pointer is three short lines. Anything else is the file itself.
 pub fn parse_pointer(text: &str) -> Option<Pointer> {
     if !text.starts_with("version https://git-lfs") {
         return None;
@@ -66,9 +60,8 @@ fn cache_file(cache_dir: &Path, oid: &str) -> PathBuf {
     cache_dir.join("previews").join(format!("{oid}.png"))
 }
 
-/// A file SolidWorks saved without a preview is remembered against its path,
-/// not its object id: the id costs a network call to learn, and not making
-/// that call again is the whole point of remembering.
+/// Remembered against the path, not the object id: learning the id costs a
+/// request, and avoiding that request is the point.
 fn blank_file(cache_dir: &Path, path: &str) -> PathBuf {
     let key: String = path
         .chars()
@@ -84,8 +77,7 @@ fn as_data_url(png: &[u8]) -> String {
     )
 }
 
-/// Ask the LFS server where an object lives. GitHub answers with a signed URL
-/// that carries its own credentials, so the download itself is unauthenticated.
+/// GitHub answers with a signed URL, so the download needs no auth of ours.
 async fn download_url(
     api: &Api,
     pointer: &Pointer,
@@ -161,8 +153,7 @@ async fn download_url(
     Ok((href, headers))
 }
 
-/// The OLE compound file signature. Everything SolidWorks saved before 2015
-/// starts with it; nothing it saves now does.
+/// The OLE compound file signature.
 fn looks_like_compound_file(head: &[u8]) -> bool {
     head.starts_with(&[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1])
 }
@@ -212,9 +203,7 @@ fn basic(api: &Api) -> String {
     )
 }
 
-/// The preview for one file, as a data URL, or None when there is nothing to
-/// show: not an LFS file, too big to be worth it, or a file SolidWorks saved
-/// without a preview.
+/// None when there is nothing to show: not in LFS, too big, or no preview.
 pub async fn preview(
     api: &Api,
     cache_dir: &Path,
@@ -248,14 +237,7 @@ pub async fn preview(
 
     let (href, headers) = download_url(api, &pointer, branch).await?;
 
-    // Look at the first eight bytes before pulling the whole model down.
-    //
-    // The preview we can read lives in an OLE compound file, which starts
-    // with a fixed signature. SolidWorks 2015 and later save in their own
-    // container instead, and there is no image in one of those that can be
-    // found without SolidWorks itself. Asking for eight bytes settles it;
-    // guessing wrong costs a twenty megabyte download over somebody's mobile
-    // data for a picture that was never going to arrive.
+    // Eight bytes settle whether there is a preview to be had at all.
     let (status, head) = fetch(api, &href, &headers, Some("bytes=0-7")).await?;
     let whole_file_came_back = status == reqwest::StatusCode::OK;
 
@@ -267,8 +249,7 @@ pub async fn preview(
         return Ok(None);
     }
 
-    // A server that ignored the range handed over everything already; there is
-    // nothing to gain by asking twice.
+    // A server that ignored the range already sent everything.
     let bytes = if whole_file_came_back {
         head
     } else {
@@ -293,8 +274,7 @@ pub async fn preview(
     }
 }
 
-/// Previews for a screenful of files, a few at a time. Anything already on
-/// disk answers without touching the network at all.
+/// A screenful at a time. Anything cached answers without the network.
 pub async fn previews(
     api: &Api,
     cache_dir: &Path,
@@ -338,8 +318,7 @@ fn known_blank(cache_dir: &Path, path: &str) -> bool {
     blank_file(cache_dir, path).exists()
 }
 
-/// Bytes on disk, so Settings can show what the previews are costing and
-/// offer to throw them away.
+/// Bytes on disk.
 pub fn cache_size(cache_dir: &Path) -> u64 {
     let dir = cache_dir.join("previews");
     let Ok(entries) = std::fs::read_dir(dir) else {
