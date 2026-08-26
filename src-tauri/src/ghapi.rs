@@ -45,7 +45,7 @@ impl Api {
     }
 }
 
-#[cfg(mobile)]
+#[cfg(any(mobile, test))]
 pub fn net(e: reqwest::Error) -> AppError {
     if e.is_timeout() {
         return AppError::offline("GitHub did not answer in time. The connection may be weak.");
