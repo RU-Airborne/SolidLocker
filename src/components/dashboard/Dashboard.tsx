@@ -33,6 +33,7 @@ import {
   useConflicts,
   useOutsideRefs,
   useFiles,
+  useFolderWatch,
   useGetLatest,
   useLocks,
   useRelease,
@@ -111,6 +112,8 @@ import { ActivityPanel } from "./ActivityPanel";
 import { TopBar } from "./TopBar";
 import { NavRail, type RailView } from "./NavRail";
 import { FileTree, type SortMode } from "./FileTree";
+import { rowDomId } from "./rowid";
+import { FileTiles } from "./FileTiles";
 import { useSwInstalled } from "./FileRow";
 import { LocksPanel } from "./LocksPanel";
 
@@ -153,6 +156,8 @@ export interface RowActions {
 
 export function Dashboard({ appState }: { appState: AppState }) {
   const files = useFiles(true);
+  // Windows tells us the moment a file is added or deleted in the folder.
+  useFolderWatch(true);
   const locks = useLocks(true);
   const claim = useClaim();
   const release = useRelease();
@@ -175,6 +180,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
   // that changed underneath them.
   const [switchingTo, setSwitchingTo] = useState<string | null>(null);
   const [stuckFiles, setStuckFiles] = useState<string[] | null>(null);
+  const [fixingStuck, setFixingStuck] = useState(false);
   // Closing to the tray destroys the window, so a switch can outlive the UI
   // that started it. A rebuilt window has no memory of one and must ask.
   const backendSwitching = useQuery({
@@ -377,6 +383,19 @@ export function Dashboard({ appState }: { appState: AppState }) {
   const [highlightedPath, setHighlightedPath] = useState<string | null>(null);
   const [panelTab, setPanelTab] = useState<"locks" | "activity">("locks");
   const [panelOpen, setPanelOpen] = useFlag("panelOpen", true);
+  const [panelLeaving, setPanelLeaving] = useState(false);
+  const panelShown = panelOpen || panelLeaving;
+
+  function togglePanel() {
+    if (panelOpen) {
+      setPanelLeaving(true);
+      setPanelOpen(false);
+      window.setTimeout(() => setPanelLeaving(false), 210);
+    } else {
+      setPanelLeaving(false);
+      setPanelOpen(true);
+    }
+  }
   const [forceTarget, setForceTarget] = useState<Lock | null>(null);
   const [offBranchFile, setOffBranchFile] = useState<{
     path: string;
@@ -388,13 +407,47 @@ export function Dashboard({ appState }: { appState: AppState }) {
   const highlightTimer = useRef<number | undefined>(undefined);
 
   function focusFile(path: string) {
-    setHighlightedPath(path.toLowerCase());
     window.clearTimeout(highlightTimer.current);
-    highlightTimer.current = window.setTimeout(
-      () => setHighlightedPath(null),
-      2600,
-    );
+    setHighlightedPath(path.toLowerCase());
   }
+
+  /**
+   * After a branch switch the switch has to finish, the list has to be read
+   * again, and in thumbnails the folder has to open. Wait for the row to 
+   * exist and start the countdown.
+   */
+  useEffect(() => {
+    if (!highlightedPath) return;
+    let tries = 0;
+    let clearAt = 0;
+
+    const look = () => {
+      const el = document.getElementById(rowDomId(highlightedPath));
+      if (!el) return false;
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      clearAt = window.setTimeout(() => setHighlightedPath(null), 2600);
+      return true;
+    };
+
+    if (look()) {
+      return () => window.clearTimeout(clearAt);
+    }
+    // About twelve seconds of looking, then give up rather than leave a row
+    // lit forever.
+    const hunt = window.setInterval(() => {
+      tries += 1;
+      if (look()) {
+        window.clearInterval(hunt);
+      } else if (tries > 40) {
+        window.clearInterval(hunt);
+        setHighlightedPath(null);
+      }
+    }, 300);
+    return () => {
+      window.clearInterval(hunt);
+      window.clearTimeout(clearAt);
+    };
+  }, [highlightedPath]);
   const lastSyncAt = useRef(0);
 
   // After every fresh (server-verified) lock refresh, align read-only bits:
@@ -469,14 +522,25 @@ export function Dashboard({ appState }: { appState: AppState }) {
   // Search, file-type, and "only my claims" filtering.
   const [searchQuery, setSearchQuery] = useState("");
   const [showOnlyMine, setShowOnlyMine] = useState(false);
-  const [typeFilter, setTypeFilter] = useState<"all" | "sldasm" | "sldprt" | "slddrw">(
-    "all",
-  );
+  const [typeFilter, setTypeFilter] = useState<
+    "all" | "sldasm" | "sldprt" | "slddrw" | "other"
+  >("all");
 
   // Tree sort order, remembered across restarts.
   const [sortMode, handleSortChange] = usePersisted<SortMode>(
     "sortMode",
     (raw) => (raw === "size" || raw === "modified" ? raw : "name"),
+    (mode) => mode,
+  );
+
+  // Which folder the thumbnails are showing. Up here so a filter that matches
+  // nothing cannot throw it away, and so the list knows where to open.
+  const [tileFolder, setTileFolder] = useState("");
+
+  // List or thumbnails, remembered too.
+  const [viewMode, setViewMode] = usePersisted<"list" | "tiles">(
+    "fileView",
+    (raw) => (raw === "tiles" ? "tiles" : "list"),
     (mode) => mode,
   );
 
@@ -584,6 +648,21 @@ export function Dashboard({ appState }: { appState: AppState }) {
     [files.data],
   );
 
+  const hasOtherFiles = useMemo(
+    () => (files.data ?? []).some((f) => !f.lockable),
+    [files.data],
+  );
+
+  const lockablePaths = useMemo(
+    () =>
+      new Set(
+        (files.data ?? [])
+          .filter((f) => f.lockable)
+          .map((f) => f.rel_path.toLowerCase()),
+      ),
+    [files.data],
+  );
+
 
   const rows: FileRowData[] = useMemo(() => {
     const dirty = new Set(repoStatus.data?.dirty ?? []);
@@ -605,8 +684,11 @@ export function Dashboard({ appState }: { appState: AppState }) {
     const q = searchQuery.trim().toLowerCase();
     return rows.filter((r) => {
       if (showOnlyMine && r.status.kind !== "mine") return false;
+      // "Other" is everything the locking rules do not cover.
+      if (typeFilter === "other" && r.file.lockable) return false;
       if (
         typeFilter !== "all" &&
+        typeFilter !== "other" &&
         !r.file.rel_path.toLowerCase().endsWith(`.${typeFilter}`)
       )
         return false;
@@ -660,6 +742,13 @@ export function Dashboard({ appState }: { appState: AppState }) {
   useEffect(() => {
     if (showOnlyMine && myClaimsHere === 0) setShowOnlyMine(false);
   }, [showOnlyMine, myClaimsHere]);
+
+  // Same for "Other" once the last such file leaves the project. A filter you
+  // can no longer see must not keep filtering.
+  useEffect(() => {
+    if (typeFilter === "other" && !hasOtherFiles) setTypeFilter("all");
+  }, [typeFilter, hasOtherFiles]);
+
 
   const sizeByPath = useMemo(() => {
     const m = new Map<string, number>();
@@ -853,9 +942,12 @@ export function Dashboard({ appState }: { appState: AppState }) {
     highlightedPath,
     open: (path) => {
       // Opening a file you have not locked is the classic way to lose work.
+      // Only for files that can be locked. There is no lock to take on a PDF,
+      // so warning somebody off it is noise.
       const status = lockStatusByPath.get(path.toLowerCase());
       const isFile = /\.[a-z0-9]+$/i.test(path);
-      if (isFile && status?.kind !== "mine") {
+      const guarded = lockablePaths.has(path.toLowerCase());
+      if (guarded && isFile && status?.kind !== "mine") {
         setOpenWarning({
           path,
           lockedByOther:
@@ -1014,15 +1106,53 @@ export function Dashboard({ appState }: { appState: AppState }) {
     staleTime: 5 * 60_000,
   });
   function handleFixStuck() {
-    if (!stuckFiles) return;
+    if (!stuckFiles || fixingStuck) return;
+    setFixingStuck(true);
     restoreFiles(stuckFiles)
       .then(() => {
         setStuckFiles(null);
         setNotice(copy.stuckFixed);
         queryClient.invalidateQueries();
       })
-      .catch((e) => warn(isAppError(e) ? e.message : String(e)));
+      .catch((e) => warn(isAppError(e) ? e.message : String(e)))
+      .finally(() => setFixingStuck(false));
   }
+
+  // Read when the timer fires, not pinned to the render that started it.
+  const liveState = useRef<{ open: string[]; untracked: string[] }>({
+    open: [],
+    untracked: [],
+  });
+  liveState.current = {
+    open: openDocs.data ?? [],
+    untracked: repoStatus.data?.untracked ?? [],
+  };
+
+  useEffect(() => {
+    if (!stuckFiles || stuckFiles.length === 0) return;
+    if (switching || fixingStuck) return;
+    const t = window.setInterval(() => {
+      const held = new Set(liveState.current.open.map((p) => p.toLowerCase()));
+      const leftovers = new Set(liveState.current.untracked);
+      const free = stuckFiles.filter(
+        (p) => leftovers.has(p) && !held.has(p.toLowerCase()),
+      );
+      if (free.length === 0) return;
+      const done = new Set(free);
+      restoreFiles(free)
+        .then(() => {
+          const left = stuckFiles.filter((p) => !done.has(p));
+          setStuckFiles(left.length > 0 ? left : null);
+          if (left.length === 0) setNotice(copy.stuckFixed);
+          queryClient.invalidateQueries();
+        })
+        .catch(() => {
+          // Still held. The next round tries again.
+        });
+    }, 20_000);
+    return () => window.clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stuckFiles, switching, fixingStuck]);
 
   async function handleSwitchBranch(name: string) {
     if (name === "__create__") {
@@ -1167,7 +1297,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
   }
 
   return (
-    <div className="app">
+    <div className={`app${offline ? " offlinetone" : ""}`}>
       <NavRail
         view={view}
         onGo={goTo}
@@ -1196,6 +1326,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
         onDiscard={() => !previewing && setDiscardOpen(true)}
         fetchIntervalS={sync.intervalS}
         updating={updating || pushing}
+        leftovers={stuckFiles ?? []}
       />
       {/* Stays put, and comes back every time the app opens, until the member
           dismisses this particular version. The next release says hello again. */}
@@ -1245,7 +1376,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
         <div className="notice warn">
           <span>{copy.stuckFiles(stuckFiles)}</span>
           <button className="notice-ok" onClick={handleFixStuck}>
-            Fix now
+            {fixingStuck ? "Fixing…" : "Fix now"}
           </button>
         </div>
       )}
@@ -1323,7 +1454,8 @@ export function Dashboard({ appState }: { appState: AppState }) {
           y={rowMenu.y}
           onClose={() => setRowMenu(null)}
           items={[
-            ...(rowMenu.row.status.kind === "unlocked"
+            // Nothing to lock or unlock on a file the rules do not cover.
+            ...(rowMenu.row.file.lockable && rowMenu.row.status.kind === "unlocked"
               ? [
                   {
                     label: "Lock",
@@ -1332,7 +1464,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
                   ...(/\.(sldasm|slddrw)$/i.test(rowMenu.row.file.rel_path)
                     ? [
                         {
-                          label: "Lock with parts",
+                          label: "Lock references",
                           onClick: () =>
                             setClaimDialogPath(rowMenu.row.file.rel_path),
                         },
@@ -1340,7 +1472,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
                     : []),
                 ]
               : []),
-            ...(rowMenu.row.status.kind === "mine"
+            ...(rowMenu.row.file.lockable && rowMenu.row.status.kind === "mine"
               ? [
                   {
                     label: "Unlock",
@@ -1349,7 +1481,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
                   ...(/\.(sldasm|slddrw)$/i.test(rowMenu.row.file.rel_path)
                     ? [
                         {
-                          label: "Unlock with parts",
+                          label: "Unlock references",
                           onClick: () =>
                             setReleaseDialogPath(rowMenu.row.file.rel_path),
                         },
@@ -1357,7 +1489,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
                     : []),
                 ]
               : []),
-            ...(rowMenu.row.status.kind === "theirs"
+            ...(rowMenu.row.file.lockable && rowMenu.row.status.kind === "theirs"
               ? [
                   {
                     label: watched.has(
@@ -1370,7 +1502,11 @@ export function Dashboard({ appState }: { appState: AppState }) {
                 ]
               : []),
             {
-              label: "Open in SolidWorks",
+              // SolidWorks has nothing to do with a PDF, but everything opens
+              // with something.
+              label: rowMenu.row.file.lockable
+                ? "Open in SolidWorks"
+                : "Open",
               onClick: () => actions.open(rowMenu.row.file.rel_path),
             },
             {
@@ -1465,12 +1601,9 @@ export function Dashboard({ appState }: { appState: AppState }) {
             depending on which page you were on. */}
         <div className="pagehead filespagehead">
           <h2>Files</h2>
-          <p className="muted small">
-            Lock a file before opening it. Once locked, only you can edit the file until you release the lock.
-          </p>
           <button
             className={`barbtn panelbtn${panelOpen ? " on" : ""}`}
-            onClick={() => setPanelOpen(!panelOpen)}
+            onClick={togglePanel}
             title={
               panelOpen
                 ? "Hide who has what and the team's activity"
@@ -1519,45 +1652,93 @@ export function Dashboard({ appState }: { appState: AppState }) {
                 ["sldasm", "Assemblies"],
                 ["sldprt", "Parts"],
                 ["slddrw", "Drawings"],
+                ...(hasOtherFiles ? [["other", "Other"] as const] : []),
               ] as const
             ).map(([value, label]) => (
               <button
                 key={value}
-                className={typeFilter === value ? "active" : ""}
-                onClick={() => setTypeFilter(value)}
+                className={typeFilter === value && !showOnlyMine ? "active" : ""}
+                onClick={() => {
+                  setTypeFilter(value);
+                  setShowOnlyMine(false);
+                }}
               >
                 {label}
               </button>
             ))}
+            {/* One of the filters, in with the filters. On its own it was an
+                accent chip that looked switched on whether it was or not. */}
+            {myClaimsHere > 0 && (
+              <button
+                className={showOnlyMine ? "active" : ""}
+                onClick={() => {
+                  setShowOnlyMine(true);
+                  setTypeFilter("all");
+                }}
+                title="Show only the files you are holding on this branch"
+              >
+                Locked by you ({myClaimsHere})
+              </button>
+            )}
           </div>
-          {myClaimCount > 0 && (
-            <>
-              <button
-                className={`minechip${showOnlyMine ? " active" : ""}`}
-                onClick={() => setShowOnlyMine((v) => !v)}
-                disabled={myClaimsHere === 0}
-                title={
-                  myClaimsHere === 0
-                    ? `Everything you hold is on other branches, "Locked files" shows where`
-                    : myClaimsElsewhere > 0
-                      ? `Show only the files you have locked on this branch. ${myClaimsElsewhere} more ${myClaimsElsewhere === 1 ? "is" : "are"} on other branches, "Locked files" shows where`
-                      : "Show only the files you have locked"
-                }
-              >
-                {myClaimsHere === 0
-                  ? `Files you hold (${myClaimCount} on other branches)`
-                  : `Files you hold (${myClaimsHere}${myClaimsElsewhere > 0 ? ` +${myClaimsElsewhere} elsewhere` : ""})`}
-              </button>
-              <button
-                className="minechip unlockall"
-                onClick={() => setReleaseAllOpen(true)}
-                disabled={switching}
-                title="Unlock everything you are finished with"
-              >
-                Unlock all…
-              </button>
-            </>
+          {/* Out of the way until you are looking at what you hold. */}
+          {showOnlyMine && (
+            <button
+              className="unlockallbtn"
+              onClick={() => setReleaseAllOpen(true)}
+              disabled={switching}
+              title="Give back everything you have finished with"
+            >
+              Unlock all…
+            </button>
           )}
+          {/* Two bare icons at the end of a toolbar are a puzzle, not a
+              switch. */}
+          <div className="viewswitch" role="group" aria-label="How to show the files">
+            <button
+              className={viewMode === "list" ? "active" : ""}
+              onClick={() => setViewMode("list")}
+              aria-pressed={viewMode === "list"}
+              title="Show the files as a list, in their folders"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="15"
+                height="15"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                aria-hidden="true"
+              >
+                <path d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+              List
+            </button>
+            <button
+              className={viewMode === "tiles" ? "active" : ""}
+              onClick={() => setViewMode("tiles")}
+              aria-pressed={viewMode === "tiles"}
+              title="Show the files as thumbnails"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="15"
+                height="15"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <rect x="3.5" y="3.5" width="7" height="7" rx="1.5" />
+                <rect x="13.5" y="3.5" width="7" height="7" rx="1.5" />
+                <rect x="3.5" y="13.5" width="7" height="7" rx="1.5" />
+                <rect x="13.5" y="13.5" width="7" height="7" rx="1.5" />
+              </svg>
+              Thumbnails
+            </button>
+          </div>
           <span className="spacer" />
           <input
             ref={searchRef}
@@ -1585,19 +1766,33 @@ export function Dashboard({ appState }: { appState: AppState }) {
           ) : files.isError ? (
             <p className="error">Could not list files: {String(files.error)}</p>
           ) : rows.length === 0 ? (
-            <p className="muted">No lockable CAD files found in this repository.</p>
-          ) : visibleRows.length === 0 ? (
+            <p className="muted">There are no files in this project yet.</p>
+          ) : visibleRows.length === 0 && viewMode === "list" ? (
             <p className="muted">No files match.</p>
           ) : (
-            <FileTree
-              rows={visibleRows}
-              actions={actions}
-              sort={sortMode}
-              repoPath={appState.repo!.repo_path}
-              forceExpand={
-                searchQuery.trim() !== "" || showOnlyMine || typeFilter !== "all"
-              }
-            />
+            /* Thumbnails say this themselves, in the folder you are in, and
+               keep the trail so you can walk out. Swapping the view for a line
+               of text unmounted it and lost the folder. */
+            viewMode === "tiles" ? (
+              <FileTiles
+                rows={visibleRows}
+                actions={actions}
+                sort={sortMode}
+                here={tileFolder}
+                setHere={setTileFolder}
+              />
+            ) : (
+              <FileTree
+                rows={visibleRows}
+                actions={actions}
+                sort={sortMode}
+                repoPath={appState.repo!.repo_path}
+                reveal={tileFolder}
+                forceExpand={
+                  searchQuery.trim() !== "" || showOnlyMine || typeFilter !== "all"
+                }
+              />
+            )
           )}
         </main>
         </div>
@@ -1608,8 +1803,13 @@ export function Dashboard({ appState }: { appState: AppState }) {
           title="Drag to resize"
         />
         )}
-        {panelOpen && (
-        <aside className="branchpanel" style={{ width: panelWidth }}>
+        {panelShown && (
+        <aside
+          className={`branchpanel${panelLeaving ? " isleaving" : ""}`}
+          style={
+            { width: panelWidth, "--panelw": `${panelWidth}px` } as React.CSSProperties
+          }
+        >
           <div className="paneltabs">
             <button
               className={panelTab === "locks" ? "active" : ""}
@@ -1640,6 +1840,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
                 setOffBranchFile({ path, branches: branchesOn })
               }
               onForceRelease={setForceTarget}
+              mineElsewhere={myClaimsElsewhere}
             />
           ) : (
             <ActivityPanel

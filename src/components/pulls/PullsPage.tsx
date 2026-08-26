@@ -105,10 +105,6 @@ export function PullsPage({
     <main className={`settingspage pullspage${back ? " pageback" : ""}`}>
       <div className="pagehead">
         <h2>Merge Requests</h2>
-        <p className="muted small">
-          Merge requests submitted by team members that are still waiting for approval, 
-          as well as those that have already been reviewed.
-        </p>
       </div>
 
       {asking && (
@@ -699,7 +695,10 @@ function PullView({
 
       {d && (
         <>
-          <section className="setupsection prhead">
+          {/* Everything below is a section of the request, and
+              boxing the request's own name and branches like one more section
+              made the page start with a card that had no heading and no job.*/}
+          <section className="prhead">
             <div className="prwho">
               <UserAvatar
                 url={d.author_avatar}

@@ -47,7 +47,11 @@
 }
 
 .branchcard {
-  transition: opacity 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    opacity 0.2s ease,
+    box-shadow 0.2s ease,
+    border-color 0.2s ease,
+    background-color 0.2s ease;
 }
 
 .branchcard.picked {
@@ -154,6 +158,14 @@
 .gg-row {
   margin: 0 -0.45rem;
   padding: 0 0.45rem;
+  transition: background-color 0.18s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .branchcard,
+  .gg-row {
+    transition: none;
+  }
 }
 
 .gg-line {
@@ -250,6 +262,26 @@
 .gg-open {
   display: flex;
   align-items: stretch;
+  animation: ggopen 0.2s ease-out;
+}
+
+@keyframes ggopen {
+  from {
+    opacity: 0;
+    max-height: 0;
+    overflow: clip;
+  }
+  to {
+    opacity: 1;
+    max-height: 34rem;
+    overflow: clip;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gg-open {
+    animation: none;
+  }
 }
 
 .gg-detailrails {
@@ -272,6 +304,7 @@
   overflow-wrap: anywhere;
 }
 
+/* 
 .gg-row.open .gg-meta {
   grid-column: 3;
   grid-row: 2;
@@ -282,6 +315,7 @@
 .gg-row.open .gg-railcol {
   grid-row: 1 / span 2;
 }
+*/
 
 .gg-body {
   margin: 0 0 0.4rem;
@@ -628,6 +662,28 @@ button.linkish:hover {
   display: flex;
   gap: 0.4rem;
   flex-wrap: wrap;
+  animation: branchgrow 0.2s ease-out;
+}
+
+@keyframes branchgrow {
+  from {
+    opacity: 0;
+    max-height: 0;
+    margin-top: -0.35rem;
+    overflow: clip;
+  }
+  to {
+    opacity: 1;
+    max-height: 8rem;
+    margin-top: 0;
+    overflow: clip;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .branchcardactions {
+    animation: none;
+  }
 }
 
 .mergeoptions {

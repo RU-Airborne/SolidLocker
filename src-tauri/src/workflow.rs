@@ -643,7 +643,11 @@ pub async fn sync_attributes(root: &Path, username_hint: Option<&str>) -> AppRes
 
     let mine: HashSet<String> = locks.ours.iter().map(|l| l.path.to_lowercase()).collect();
     let dirty = dirty_paths(root).await?;
-    let files = repo::list_lockable_files(root).await?;
+    let files: Vec<repo::FileEntry> = repo::list_lockable_files(root)
+        .await?
+        .into_iter()
+        .filter(|f| f.lockable)
+        .collect();
 
     let mut made_writable = Vec::new();
     let mut made_readonly = Vec::new();
@@ -948,7 +952,13 @@ pub struct AmbiguousRef {
 }
 
 pub async fn resolve_references(root: &Path, start_rel: String) -> AppResult<RefResolution> {
-    let files = repo::list_lockable_files(root).await?;
+    // Only what locking covers. This walk finds the parts a document needs so
+    // they can be held together, and nothing else can be held.
+    let files: Vec<repo::FileEntry> = repo::list_lockable_files(root)
+        .await?
+        .into_iter()
+        .filter(|f| f.lockable)
+        .collect();
     let mut by_basename: HashMap<String, Vec<String>> = HashMap::new();
     for f in &files {
         by_basename

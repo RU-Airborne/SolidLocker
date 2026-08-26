@@ -64,7 +64,11 @@
   align-items: center;
   gap: 0.5rem;
   padding: 0.35rem 0.5rem;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 45%, transparent);
+}
+
+.filerow.filehead {
+  border-bottom-color: var(--border);
 }
 
 .filerow:hover {
@@ -145,6 +149,12 @@
   color: #539bf5;
   border-color: color-mix(in srgb, #539bf5 55%, transparent);
   background: color-mix(in srgb, #539bf5 8%, transparent);
+}
+
+.badge-plain {
+  color: var(--muted);
+  border-style: dashed;
+  background: transparent;
 }
 
 .badge-broken {

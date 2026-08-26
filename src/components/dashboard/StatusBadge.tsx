@@ -23,11 +23,23 @@ function LockGlyph() {
 export function StatusBadge({
   status,
   writable,
+  lockable = true,
 }: {
   status: LockStatus;
   writable: boolean;
+  lockable?: boolean;
 }) {
   const directory = usePeople();
+  if (!lockable) {
+    return (
+      <span
+        className="badge badge-plain"
+        title="Taking turns is for SolidWorks parts, assemblies and drawings, where two people saving at once loses somebody's work. This file is shared with the team like everything else here."
+      >
+        No lock needed
+      </span>
+    );
+  }
   if (status.kind === "mine") {
     return (
       <span className="badge badge-mine" title="Locked by you">

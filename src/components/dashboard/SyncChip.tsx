@@ -1,6 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { SyncGlyph } from "../common/HistoryDiagrams";
 
 function agoText(seconds: number): string {
   if (seconds < 60) return `${seconds}s ago`;
@@ -67,11 +66,9 @@ function ToneMark({ tone }: { tone: Tone }) {
       </svg>
     );
   }
-  // busy: the same arrows as Check now, turning
   return (
     <svg {...common}>
-      <path d="M14.2 8a6.2 6.2 0 1 1-1.9-4.4" />
-      <path d="M14.4 1.6v3.4h-3.4" />
+      <circle cx="8" cy="8" r="3.2" fill="currentColor" stroke="none" />
     </svg>
   );
 }
@@ -215,7 +212,7 @@ export function SyncChip({
         type="button"
         className={`syncchip tone-${tone}`}
         onClick={toggle}
-        title={headline}
+        title={`${headline}. Click for details.`}
         aria-haspopup="dialog"
         aria-expanded={open}
       >
@@ -244,15 +241,14 @@ export function SyncChip({
           >
             <p className="syncpop-state">{headline}</p>
             <p className="syncpop-detail muted small">{detail}</p>
+            {/* The arrows in the bar do this too. This is the one with a
+                label. No spinner, the arrows are already turning. */}
             <button
               className="minibtn"
               onClick={onSyncNow}
               disabled={updating || syncing}
-              title="Check GitHub for team changes right now"
+              title="Ask GitHub what your team has changed since the last check"
             >
-              <span className={syncing ? "spinicon" : "stillicon"}>
-                <SyncGlyph />
-              </span>
               {syncing ? "Checking…" : "Check now"}
             </button>
           </div>,

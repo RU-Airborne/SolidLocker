@@ -422,6 +422,37 @@ button.crumb:hover .crumbswap {
   cursor: default;
 }
 
+.checkbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  flex: none;
+  width: 27px;
+  height: 27px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    color 0.14s ease,
+    border-color 0.14s ease,
+    background-color 0.14s ease;
+}
+
+.checkbtn:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.checkbtn:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
 .syncchip {
   display: inline-flex;
   align-items: center;
@@ -478,15 +509,9 @@ button.crumb:hover .crumbswap {
   border-color: color-mix(in srgb, var(--error) 45%, var(--border));
 }
 
-.syncchip.tone-busy .syncmark {
-  animation: iconspin 1.4s linear infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .syncchip.tone-busy .syncmark {
-    animation: none;
-    opacity: 0.7;
-  }
+.syncchip.tone-busy .syncmark,
+.syncchip.tone-busy .syncword {
+  color: var(--muted);
 }
 
 .syncpop {

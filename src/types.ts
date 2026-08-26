@@ -31,6 +31,7 @@ export interface FileEntry {
   writable: boolean;
   tracked: boolean;
   deleted: boolean;
+  lockable: boolean;
 }
 
 export interface Lock {

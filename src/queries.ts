@@ -1,4 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
+import { listen } from "@tauri-apps/api/event";
 import {
   checkOutsideRefs,
   claimFiles,
@@ -29,6 +31,34 @@ export function useFiles(enabled: boolean) {
     enabled,
     refetchInterval: 60_000,
   });
+}
+
+const FOLDER_CHANGED = "repo-folder-changed";
+
+export function useFolderWatch(enabled: boolean) {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    if (!enabled) return;
+    let stop: (() => void) | undefined;
+    let gone = false;
+    listen(FOLDER_CHANGED, () => {
+      for (const key of ["files", "repoStatus", "conflicts"]) {
+        queryClient.invalidateQueries({ queryKey: [key] });
+      }
+    })
+      .then((unlisten) => {
+        // The component can go before the listener is ready.
+        if (gone) unlisten();
+        else stop = unlisten;
+      })
+      .catch(() => {
+        // No watcher just means falling back to the timers.
+      });
+    return () => {
+      gone = true;
+      stop?.();
+    };
+  }, [enabled, queryClient]);
 }
 
 export function useLocks(enabled: boolean) {

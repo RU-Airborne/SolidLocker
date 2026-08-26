@@ -5,7 +5,7 @@ import { GlassSelect } from "../common/GlassSelect";
 import { useBranchColors } from "../common/BranchName";
 import { SyncChip } from "./SyncChip";
 import { RepoMenu } from "./RepoMenu";
-import { ShareGlyph } from "../common/HistoryDiagrams";
+import { ShareGlyph, SyncGlyph } from "../common/HistoryDiagrams";
 
 export function TopBar({
   appState,
@@ -27,6 +27,7 @@ export function TopBar({
   fetchIntervalS,
   updating,
   onDiscard,
+  leftovers,
 }: {
   appState: AppState;
   branches: string[] | undefined;
@@ -48,13 +49,14 @@ export function TopBar({
   updating: boolean;
   /** Open the discard-changes confirm. */
   onDiscard: () => void;
+  leftovers: string[];
 }) {
   const branchColorOf = useBranchColors();
-  // SolidWorks ~$ temp files never count as work worth saving.
-  const trackedDirty = status?.dirty.filter((p) => !isSwTemp(p)).length ?? 0;
+  const leftover = new Set(leftovers);
+  const isWork = (p: string) => !isSwTemp(p) && !leftover.has(p);
+  const trackedDirty = status?.dirty.filter(isWork).length ?? 0;
   const dirtyCount =
-    trackedDirty +
-    (status?.untracked.filter((p) => !isSwTemp(p)).length ?? 0);
+    trackedDirty + (status?.untracked.filter(isWork).length ?? 0);
   const behind = status?.behind ?? 0;
   const ahead = status?.ahead ?? 0;
 
@@ -124,8 +126,9 @@ export function TopBar({
               ? "Throw away everything changed since the last Save & Share"
               : "Move files that were never shared out of the project"
           }
+          aria-label="Discard changes"
         >
-          {trackedDirty > 0 ? "Discard…" : "Clear out…"}
+          Discard…
         </button>
       )}
       <button
@@ -158,6 +161,20 @@ export function TopBar({
           rail on the left; they are places to go, not things to do here. The
           side pane's switch sits on the Files page itself, since that is the
           only page with a side pane. */}
+
+      {/* A round button beside the chip, not a second pill. It used to live
+          inside the chip's popup, where nobody found it. */}
+      <button
+        className="checkbtn"
+        onClick={onSyncNow}
+        disabled={updating || syncing}
+        title="Check GitHub now for anything new from your team"
+        aria-label="Check GitHub now for anything new from your team"
+      >
+        <span className={syncing || checking ? "spinicon" : "stillicon"}>
+          <SyncGlyph />
+        </span>
+      </button>
 
       {/* Last thing on the bar, far corner: the place a Windows app puts the
           state of its connection, and out of the way of the crumbs. */}

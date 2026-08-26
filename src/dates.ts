@@ -43,3 +43,29 @@ export function useNow(intervalMs = 60_000): number {
   }, [intervalMs]);
   return now;
 }
+
+export function formatChanged(ms: number): string {
+  if (ms === 0) return "";
+  const age = Date.now() - ms;
+  const min = Math.floor(age / 60_000);
+  if (min < 1) return "just now";
+  if (min < 60) return `${min}m ago`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `${d}d ago`;
+  return new Date(ms).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+/** What a lock button says while it is working. */
+export function runningLabel(
+  running: "lock" | "unlock" | undefined,
+  fallback: string,
+): string {
+  if (running === "lock") return "Locking…";
+  if (running === "unlock") return "Unlocking…";
+  return fallback;
+}

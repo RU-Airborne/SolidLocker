@@ -143,6 +143,21 @@ pub fn could_not_fix_files(stderr: &str) -> String {
     format!("Could not put the files back: SolidWorks is still holding one of them. A part stays held as long as an assembly using it is open, so close that assembly (or all of SolidWorks) and try again. ({stderr})")
 }
 
+/// Names the files SolidWorks would not let go of.
+pub fn still_open_in_solidworks(paths: &[String]) -> String {
+    let names: Vec<&str> = paths
+        .iter()
+        .take(3)
+        .map(|p| p.rsplit('/').next().unwrap_or(p))
+        .collect();
+    let more = paths.len().saturating_sub(names.len());
+    if more > 0 {
+        format!("{} and {} more", names.join(", "), more)
+    } else {
+        names.join(", ")
+    }
+}
+
 // ---- Locking and unlocking ----
 
 pub const RELEASE_NEEDS_COMMIT: &str =

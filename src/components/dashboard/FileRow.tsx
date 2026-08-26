@@ -1,76 +1,22 @@
-import { useQuery } from "@tanstack/react-query";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { getFileHistory, getSwIcon, getSwInstalled, getUsedBy } from "../../api";
+import { memo, useRef, useState } from "react";
 import { type FileRowData, type RowActions } from "./Dashboard";
-import { BranchGlyph } from "../common/HistoryDiagrams";
 import { rowDomId } from "./rowid";
 import { StatusBadge } from "./StatusBadge";
-import {
-  formatPerson,
-  resolveCommitAuthors,
-  useIdentities,
-} from "../../identity";
-import { githubAvatarFromEmail, UserAvatar } from "../common/UserAvatar";
-import { formatDateTime } from "../../dates";
-import swIconFallback from "../../assets/sw-generic.svg";
+import { formatChanged, formatDateTime, runningLabel } from "../../dates";
 import { FilePreview } from "../common/FilePreview";
-import { RestoreVersionDialog } from "../dialogs/RestoreVersionDialog";
+import { FileDetails } from "./FileDetails";
+import { OpenFileButton } from "../common/OpenButtons";
 import { OutsideRefsDialog } from "../dialogs/OutsideRefsDialog";
-import type { FileCommit } from "../../api";
 
+// useSwIcon and useSwInstalled live in common/OpenButtons now so the tiles can
+// use them. Re-exported because the Dashboard asks this file for them.
+export { useSwIcon, useSwInstalled } from "../common/OpenButtons";
 
-function runningLabel(
-  running: "lock" | "unlock" | undefined,
-  fallback: string,
-) {
-  if (running === "lock") return "Locking…";
-  if (running === "unlock") return "Unlocking…";
-  return fallback;
-}
-
-/** The installed SolidWorks' own icon */
-export function useSwIcon(): string {
-  const icon = useQuery({
-    queryKey: ["swIcon"],
-    queryFn: getSwIcon,
-    staleTime: Infinity,
-    gcTime: Infinity,
-    retry: 1,
-  });
-  return icon.data ?? swIconFallback;
-}
-
-/** Whether this computer has SolidWorks at all. */
-export function useSwInstalled(): boolean {
-  const q = useQuery({
-    queryKey: ["swInstalled"],
-    queryFn: getSwInstalled,
-    staleTime: Infinity,
-    gcTime: Infinity,
-  });
-  return q.data ?? true;
-}
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function formatChanged(ms: number): string {
-  if (ms === 0) return "";
-  const age = Date.now() - ms;
-  const min = Math.floor(age / 60_000);
-  if (min < 1) return "just now";
-  if (min < 60) return `${min}m ago`;
-  const h = Math.floor(min / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  if (d < 30) return `${d}d ago`;
-  return new Date(ms).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
 }
 
 // Memoized: rows are the bulk of the DOM, and most state changes elsewhere
@@ -89,39 +35,12 @@ export const FileRow = memo(function FileRow({
   const busy = actions.busyPaths.has(path);
   const [showOutside, setShowOutside] = useState(false);
   const running = actions.busyPaths.get(path);
-  const swIcon = useSwIcon();
-  const swInstalled = useSwInstalled();
   const [expanded, setExpanded] = useState(false);
-  const [restoring, setRestoring] = useState<FileCommit | null>(null);
   const isPinned = actions.pinned.has(path.toLowerCase());
-
-  const usedBy = useQuery({
-    queryKey: ["usedBy", path],
-    queryFn: () => getUsedBy(path),
-    enabled: expanded && /\.sldprt$/i.test(path),
-    staleTime: 10 * 60_000,
-    retry: false,
-  });
-
-  const history = useQuery({
-    queryKey: ["fileHistory", path],
-    queryFn: () => getFileHistory(path),
-    enabled: expanded,
-    staleTime: 60_000,
-  });
-  const identities = useIdentities();
-  const authors = useMemo(
-    () => resolveCommitAuthors(history.data ?? [], identities.data ?? []),
-    [history.data, identities.data],
-  );
   const flashing = actions.highlightedPath === path.toLowerCase();
+  // The Dashboard does the scrolling. It has to keep looking until the row
+  // exists, which can be a while after a branch switch.
   const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (flashing) {
-      ref.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-    }
-  }, [flashing]);
 
   return (
     <>
@@ -164,7 +83,11 @@ export const FileRow = memo(function FileRow({
         {formatChanged(row.file.modified)}
       </span>
       <span className="status">
-        <StatusBadge status={row.status} writable={row.file.writable} />
+        <StatusBadge
+          status={row.status}
+          writable={row.file.writable}
+          lockable={row.file.lockable}
+        />
         {row.outside.length > 0 && (
           <button
             className="badge badge-broken"
@@ -213,18 +136,36 @@ export const FileRow = memo(function FileRow({
           </span>
         )}
       </span>
+      {/* The bulk action, the single file one, then opening it. */}
       <span className="actions">
-        {row.status.kind === "unlocked" && !row.file.deleted && (
-          <>
-            {/\.(sldasm|slddrw)$/i.test(path) && (
+        <span className="act-slot act-parts">
+          {row.file.lockable &&
+            /\.(sldasm|slddrw)$/i.test(path) &&
+            row.status.kind === "unlocked" &&
+            !row.file.deleted && (
               <button
                 disabled={busy || actions.previewing}
-                title="Find every part this file uses and lock them all together"
+                title="Follow this file's references and lock every part it uses along with it, in one go, so nobody can take one out from under you halfway through"
                 onClick={() => actions.claimWithRefs(path)}
               >
-                Lock with parts
+                Lock references
               </button>
             )}
+          {row.file.lockable &&
+            /\.(sldasm|slddrw)$/i.test(path) &&
+            row.status.kind === "mine" && (
+              <button
+                disabled={busy || actions.previewing}
+                title="Follow this file's references and give back every part it uses that you are holding, all together"
+                onClick={() => actions.releaseWithRefs(path)}
+              >
+                Unlock references
+              </button>
+            )}
+        </span>
+
+        <span className="act-slot act-main">
+          {row.file.lockable && row.status.kind === "unlocked" && !row.file.deleted && (
             <button
               disabled={busy || actions.previewing}
               title="Lock this file for yourself. It becomes editable for you and locked for teammates"
@@ -232,30 +173,23 @@ export const FileRow = memo(function FileRow({
             >
               {busy ? runningLabel(running, "Locking…") : "Lock"}
             </button>
-          </>
-        )}
-        {row.status.kind === "theirs" && (
-          <button
-            className={actions.watched.has(path.toLowerCase()) ? "watching" : ""}
-            title="Get a notification the moment this file is unlocked"
-            onClick={() => actions.toggleWatch(path)}
-          >
-            {actions.watched.has(path.toLowerCase())
-              ? "Will notify when free"
-              : "Notify when free"}
-          </button>
-        )}
-        {row.status.kind === "mine" && (
-          <>
-            {/\.(sldasm|slddrw)$/i.test(path) && (
-              <button
-                disabled={busy || actions.previewing}
-                title="Find every part this file uses and unlock the ones you hold all together"
-                onClick={() => actions.releaseWithRefs(path)}
-              >
-                Unlock with parts
-              </button>
-            )}
+          )}
+          {row.file.lockable && row.status.kind === "theirs" && (
+            <button
+              className={actions.watched.has(path.toLowerCase()) ? "watching" : ""}
+              title={
+                actions.watched.has(path.toLowerCase())
+                  ? "You will get a notification the moment this file is unlocked. Click to stop."
+                  : "Get a notification the moment this file is unlocked"
+              }
+              onClick={() => actions.toggleWatch(path)}
+            >
+              {actions.watched.has(path.toLowerCase())
+                ? "Will notify when free"
+                : "Notify when free"}
+            </button>
+          )}
+          {row.file.lockable && row.status.kind === "mine" && (
             <button
               disabled={busy || actions.previewing}
               title="Give this file back so teammates can lock it. Your latest changes must be shared to GitHub first"
@@ -263,100 +197,25 @@ export const FileRow = memo(function FileRow({
             >
               {busy ? runningLabel(running, "Unlocking…") : "Unlock"}
             </button>
-          </>
-        )}
-        <button
-          className="iconbtn openbtn"
+          )}
+        </span>
+
+        <span className="act-slot act-open">
+        <OpenFileButton
+          path={path}
+          lockable={row.file.lockable}
           disabled={busy || row.file.deleted}
-          title={swInstalled ? "Open in SolidWorks" : "Open this file"}
-          aria-label={swInstalled ? "Open in SolidWorks" : "Open this file"}
-          onClick={() => actions.open(path)}
-        >
-          <svg
-            viewBox="0 0 24 24"
-            width="15"
-            height="15"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-            <polyline points="15 3 21 3 21 9" />
-            <line x1="10" y1="14" x2="21" y2="3" />
-          </svg>
-          <img className="badgeicon" src={swIcon} alt="" />
-        </button>
+          onOpen={actions.open}
+        />
+        </span>
       </span>
     </div>
     {expanded && (
-      <div
-        className="filedetail muted small"
-        style={{ paddingLeft: `${depth * 1.1 + 1.6}rem` }}
-      >
-        <div className="filedetail-path">{path}</div>
-        {usedBy.data && usedBy.data.length > 0 && (
-          <div className="usedby">
-            Used by {usedBy.data.length}{" "}
-            {usedBy.data.length === 1 ? "assembly" : "assemblies"}:{" "}
-            {usedBy.data
-              .slice(0, 3)
-              .map((p) => p.split("/").pop())
-              .join(", ")}
-            {usedBy.data.length > 3 ? ` and ${usedBy.data.length - 3} more` : ""}
-            . Changing it changes {usedBy.data.length === 1 ? "that one" : "all of them"}.
-          </div>
-        )}
-        {history.isLoading && <div>Reading document history…</div>}
-        {history.data && history.data.length > 0 && (
-          <ul className="filehistory">
-            {history.data.map((c) => {
-              const person = authors.get(c.sha);
-              return (
-                <li key={c.sha}>
-                  <span className="fh-author">
-                    <UserAvatar
-                      url={
-                        person?.avatarUrl ??
-                        githubAvatarFromEmail(c.author_email)
-                      }
-                      name={person?.name ?? c.author_name}
-                      size={14}
-                    />
-                    {person
-                      ? formatPerson(person.name, person.login)
-                      : c.author_name}
-                  </span>
-                  <span className="fh-msg" title={c.message}>
-                    <span className="fh-msgtext">{c.message}</span>
-                    <button
-                      className="fh-branches"
-                      onClick={() => actions.openCommit(c.sha)}
-                      title="Open this change on the Branches page"
-                    >
-                      <BranchGlyph />
-                    </button>
-                  </span>
-                  <span className="fh-date">{formatDateTime(c.date)}</span>
-                  <button
-                    className="fh-restore"
-                    onClick={() => setRestoring(c)}
-                    title="Look at this version, and bring it back if it is the one you want"
-                  >
-                    View…
-                  </button>
-
-                </li>
-              );
-            })}
-          </ul>
-        )}
-        {history.isSuccess && history.data?.length === 0 && (
-          <div>No shared changes recorded for this file yet.</div>
-        )}
-      </div>
+      <FileDetails
+        path={path}
+        actions={actions}
+        indentRem={depth * 1.1 + 1.6}
+      />
     )}
     {showOutside && (
       <OutsideRefsDialog
@@ -364,22 +223,6 @@ export const FileRow = memo(function FileRow({
         // Nothing is being shared from here
         onShareAnyway={null}
         onClose={() => setShowOutside(false)}
-      />
-    )}
-    {restoring && (
-      <RestoreVersionDialog
-        path={path}
-        commit={restoring}
-        branchName={actions.currentBranch}
-        onClose={() => setRestoring(null)}
-        onDone={(notice, restored) => {
-          setRestoring(null);
-          actions.notify(notice, restored);
-        }}
-        onBranchedOff={(branch) => {
-          setRestoring(null);
-          actions.branchedOff(branch);
-        }}
       />
     )}
     </>

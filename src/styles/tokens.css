@@ -137,3 +137,44 @@ button,
 :root[data-theme="light"] .versiontag {
   --border: #9aa4af;
 }
+
+/* Offline mode */
+.app.offlinetone .badge,
+.app.offlinetone .st,
+.app.offlinetone .branchword,
+.app.offlinetone .gg-chip,
+.app.offlinetone .avatar-img,
+.app.offlinetone .typefilter button.active,
+.app.offlinetone .viewswitch button.active,
+.app.offlinetone .paneltabs button.active,
+.app.offlinetone .barbtn.attention,
+.app.offlinetone .filetile.ismine,
+.app.offlinetone .minechip.active {
+  filter: saturate(0.12);
+}
+
+.app.offlinetone .badge,
+.app.offlinetone .st,
+.app.offlinetone .avatar-img {
+  opacity: 0.78;
+}
+
+.badge,
+.st,
+.branchword,
+.gg-chip,
+.avatar-img {
+  transition:
+    filter 0.35s ease,
+    opacity 0.35s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .badge,
+  .st,
+  .branchword,
+  .gg-chip,
+  .avatar-img {
+    transition: none;
+  }
+}

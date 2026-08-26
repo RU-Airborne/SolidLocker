@@ -2,8 +2,7 @@ import { useEffect, useSyncExternalStore } from "react";
 
 import { getThumbnails } from "./api";
 
-/* Preview pictures for CAD files. */
-const PX = 96;
+const PX = 168;
 const CHUNK = 48;
 
 const cache = new Map<string, string>();

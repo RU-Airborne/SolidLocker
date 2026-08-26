@@ -1411,9 +1411,10 @@
   justify-content: space-between;
   gap: 1.2rem;
   flex-wrap: wrap;
+  padding: 0.2rem 0.2rem 0.35rem;
 }
 
-.settingsbody .setupsection.prhead > p {
+.settingsbody .prhead > p {
   flex: 1 1 100%;
   max-width: none;
   margin: 0;
@@ -2155,4 +2156,80 @@
 .branchrow.lit {
   background: color-mix(in srgb, var(--accent) 8%, transparent);
   border-radius: 8px;
+}
+
+.settingsbody .setupsection.devsection {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--warning) 45%, var(--border));
+}
+
+.devtag {
+  flex: none;
+  padding: 0.05rem 0.55rem;
+  border: 1px solid color-mix(in srgb, var(--warning) 55%, transparent);
+  border-radius: 999px;
+  color: var(--warning);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.splashrow {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  gap: 0.6rem;
+  margin-top: 0.7rem;
+}
+
+.splashpick {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.splashpick:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.splashstage {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  /* Opaque, so the settings page behind is out of the way. */
+  background: var(--headbg);
+  background-image: radial-gradient(
+    130% 80% at 4% -8%,
+    color-mix(in srgb, var(--accent) 30%, transparent),
+    transparent 58%
+  );
+  overflow: auto;
+}
+
+.splashclose {
+  position: fixed;
+  top: 0.9rem;
+  right: 1rem;
+  z-index: 310;
+  padding: 0.35rem 0.9rem;
+  border: 1px solid color-mix(in srgb, var(--warning) 55%, var(--border));
+  border-radius: 999px;
+  background: var(--menubg);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.splashclose:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }

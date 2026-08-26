@@ -1,6 +1,6 @@
 [package]
 name = "solidlocker"
-version = "0.7.1"
+version = "0.8.0"
 description = "Version control for SolidWorks teams: Git and Git LFS behind plain buttons, with file locking built in"
 edition = "2021"
 
@@ -29,6 +29,7 @@ cfb = "0.10"
 base64 = "0.22"
 tauri-plugin-notification = "2.3.3"
 tauri-plugin-window-state = "2.4.1"
+notify = "8"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-single-instance = "2"

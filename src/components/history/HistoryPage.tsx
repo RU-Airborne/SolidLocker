@@ -874,7 +874,15 @@ function RowRails({
   // through, and on its own bead where it only calls here. Either way the
   // dot lands exactly where that branch sits in the bar, so the bar can step
   // back behind it.
-  const focusStop = focusRoute != null ? (beadAt.get(focusRoute) ?? null) : null;
+  const litStopRoute =
+    litRoutes != null
+      ? (nodeRs.find((r) => litRoutes.has(r)) ??
+        beads.find((b) => litRoutes.has(b.r))?.r ??
+        null)
+      : null;
+  const stopRoute =
+    focusRoute != null && beadAt.has(focusRoute) ? focusRoute : litStopRoute;
+  const focusStop = stopRoute != null ? (beadAt.get(stopRoute) ?? null) : null;
   // Lit, but none of the highlighted branches actually calls here: this is
   // the stop their line ran into, where another line picked the work up.
   // Hollow says "change here", it keeps the stop's own colour, which is
@@ -1061,7 +1069,7 @@ function RowRails({
               {/* The lines sharing the stop stay in the bar, stepped back,
                   so it still reads as an interchange behind the lit dot. */}
               {beads
-                .filter((b) => b.r !== focusRoute)
+                .filter((b) => b.r !== stopRoute)
                 .map(({ r, bx }) => (
                   <circle
                     key={r}
@@ -1079,14 +1087,14 @@ function RowRails({
               cx={focusStop}
               cy={mid}
               r={11}
-              fill={routeColor(routes, focusRoute!)}
+              fill={routeColor(routes, stopRoute!)}
             />
           )}
           <circle
             cx={focusStop}
             cy={mid}
             r={open ? 6 : 5}
-            fill={routeColor(routes, focusRoute!)}
+            fill={routeColor(routes, stopRoute!)}
           />
         </g>
       ) : junction ? (

@@ -121,14 +121,21 @@ export function LockTimeline({
       </div>
 
       <div className="ltl-rows">
-        {ticks.map((t) => (
-          <span
-            className="ltl-grid"
-            key={t.at}
-            style={{ left: `${pct(t.at)}%` }}
-            aria-hidden="true"
-          />
-        ))}
+        {/* The day lines belong to the track. This layer repeats the row's 
+        own two columns, which is the only way the lines, the bars and the 
+        dates underneath can be guaranteed to agree. */}
+        <div className="ltl-gridlayer" aria-hidden="true">
+          <span />
+          <span className="ltl-gridtrack">
+            {ticks.map((t) => (
+              <span
+                className="ltl-grid"
+                key={t.at}
+                style={{ left: `${pct(t.at)}%` }}
+              />
+            ))}
+          </span>
+        </div>
 
         {locks.map((l) => {
           const key = l.login ?? "someone";
@@ -180,6 +187,8 @@ export function LockTimeline({
       </div>
 
       <div className="ltl-axis" aria-hidden="true">
+        <span />
+        <span className="ltl-axistrack">
         {ticks.map((t, i) => {
           // Centred on its line, except at the ends: the last tick sits at
           // 100% and half of it fell off the edge of the panel.
@@ -202,6 +211,7 @@ export function LockTimeline({
             </span>
           );
         })}
+        </span>
       </div>
     </div>
   );
@@ -425,6 +435,10 @@ export function ProjectTreemap({
 
 /* ----------------------------------------------------------- 3. calendar */
 
+/* Sunday first, matching the columns: each one is wound back to the Sunday on
+   or before its week. */
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
 /**
  * A square per day, weeks running down.
  */
@@ -476,9 +490,40 @@ export function ShareCalendar({
     ...cells.flat().map((c) => c.count),
   );
 
+  const months = useMemo(
+    () =>
+      cells.map((col, i) => {
+        const at = new Date(col[0].at);
+        const before = i > 0 ? new Date(cells[i - 1][0].at) : null;
+        const fresh = !before || before.getMonth() !== at.getMonth();
+        return fresh
+          ? at.toLocaleDateString(undefined, { month: "short" })
+          : "";
+      }),
+    [cells],
+  );
+
   return (
     <div className="cal">
-      <div className="cal-grid">
+      <div className="cal-scroll">
+        {/* The pad stands in for the day-name column, so a month still sits
+            over its own week. */}
+        <div className="cal-months" aria-hidden="true">
+          <span className="cal-pad" />
+          {months.map((m, i) => (
+            <span className="cal-month" key={i}>
+              {m}
+            </span>
+          ))}
+        </div>
+        <div className="cal-grid">
+          {/* Inside the grid, not beside it. The grid centres itself while it
+              fits, and a column parked at the far left would be stranded. */}
+          <div className="cal-side" aria-hidden="true">
+            {WEEKDAYS.map((d) => (
+              <span key={d}>{d}</span>
+            ))}
+          </div>
         {cells.map((col, i) => (
           <div className="cal-week" key={i}>
             {col.map((c) => {
@@ -506,6 +551,7 @@ export function ShareCalendar({
             })}
           </div>
         ))}
+        </div>
       </div>
       <div className="cal-key muted small">
         <span>Quieter</span>

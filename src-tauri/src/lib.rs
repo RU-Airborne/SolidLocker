@@ -17,6 +17,7 @@ mod settings;
 mod swrefs;
 mod thumbs;
 mod updates;
+mod watch;
 mod workflow;
 
 use std::path::{Path, PathBuf};
@@ -900,6 +901,7 @@ async fn select_existing_repo(
     logger::info(format!("selecting repository: {path}"));
     let info = repo::validate_repo(&path).await?;
     settings::set_string(&app, KEY_REPO_PATH, &info.repo_path)?;
+    watch::watch_repo(&app, Path::new(&info.repo_path));
     logger::info(format!(
         "repository selected: {} ({}) on branch {}",
         info.repo_path, info.repo_slug, info.branch
@@ -920,6 +922,7 @@ async fn clone_repo(
     .await?;
     let info = repo::validate_repo(&dest.to_string_lossy()).await?;
     settings::set_string(&app, KEY_REPO_PATH, &info.repo_path)?;
+    watch::watch_repo(&app, Path::new(&info.repo_path));
     Ok(info)
 }
 
@@ -1360,6 +1363,14 @@ fn report_window_failure(app: &tauri::AppHandle, detail: &str) {
                     }
                 })
                 .build(app)?;
+
+            // Pick up the project that was open last time.
+            if let Ok(Some(path)) = settings::get_string(app.handle(), KEY_REPO_PATH) {
+                let root = PathBuf::from(path);
+                if root.is_dir() {
+                    watch::watch_repo(app.handle(), &root);
+                }
+            }
             Ok(())
         })
         // Remembers window size and position between runs.
@@ -1372,6 +1383,7 @@ fn report_window_failure(app: &tauri::AppHandle, detail: &str) {
         .manage(people::ProfileNames::default())
         .manage(thumbs::ThumbCache::default())
         .manage(gate::RepoGate::default())
+        .manage(watch::FolderWatch::default())
         .manage(workflow::CancelFlag::default())
         .invoke_handler(tauri::generate_handler![
             get_app_state,

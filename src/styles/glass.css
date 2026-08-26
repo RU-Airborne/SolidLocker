@@ -288,6 +288,7 @@
 /* Row buttons were only changing their border on hover, so the label
    stayed grey and the button read as dead. */
 .filerow .actions button:hover:not(:disabled),
+.filetile .tileactions button:hover:not(:disabled),
 .group-actions button:hover:not(:disabled) {
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
@@ -434,10 +435,10 @@
    of frost do the hiding, so the sheet itself can stay glass. */
 .modal {
   position: relative;
-  background: color-mix(
-    in srgb,
-    var(--headbg) clamp(32%, calc(var(--glass-tint) * 1.42), 56%),
-    transparent
+  background-color: var(--menubg);
+  background-image: linear-gradient(
+    color-mix(in srgb, var(--headbg) 45%, transparent),
+    color-mix(in srgb, var(--headbg) 45%, transparent)
   );
   backdrop-filter: blur(calc(var(--glass-blur) * 1.85)) saturate(180%);
   -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.85)) saturate(180%);
@@ -920,7 +921,8 @@
 }
 
 .filerow.filehead,
-.filerow.filehead:hover {
+.filerow.filehead:hover,
+.tilecrumbs {
   background: color-mix(
     in srgb,
     var(--headbg) calc(var(--glass-tint) * 1.7),

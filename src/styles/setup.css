@@ -25,6 +25,15 @@
   margin-bottom: 0.5rem;
 }
 
+.setupcard .setupsection h3 {
+  margin-bottom: 1.5rem;
+}
+
+.setupcard .setupsection > h3 + button,
+.setupcard .setupsection > h3 + .setuprow {
+  margin-top: 0.6rem;
+}
+
 .setuprow {
   display: flex;
   gap: 0.5rem;
@@ -114,6 +123,23 @@
   box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
+/* A small drawing of the window in that theme, to match the sketches on the
+   next screen. */
+.themeart {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  overflow: hidden;
+  margin-bottom: 0.45rem;
+}
+
+.themecard.on .themeart {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
+}
+
+/* --- was: two flat bands of colour, before the sketches replaced them ------
 .themeswatch {
   display: block;
   width: 100%;
@@ -124,37 +150,100 @@
   margin-bottom: 0.35rem;
 }
 
-.themeswatch-bar {
-  display: block;
-  height: 30%;
-}
-
-.themeswatch-body {
-  display: block;
-  height: 70%;
-}
-
-.themeswatch.dark .themeswatch-bar {
-  background: #2a2f37;
-}
-
-.themeswatch.dark .themeswatch-body {
-  background: #1b1e24;
-}
-
-.themeswatch.light .themeswatch-bar {
-  background: #e7ebef;
-}
-
-.themeswatch.light .themeswatch-body {
-  background: #ffffff;
-}
-
+.themeswatch-bar { display: block; height: 30%; }
+.themeswatch-body { display: block; height: 70%; }
+.themeswatch.dark .themeswatch-bar { background: #2a2f37; }
+.themeswatch.dark .themeswatch-body { background: #1b1e24; }
+.themeswatch.light .themeswatch-bar { background: #e7ebef; }
+.themeswatch.light .themeswatch-body { background: #ffffff; }
 .themeswatch.system {
   background: linear-gradient(135deg, #1b1e24 0 50%, #ffffff 50% 100%);
 }
-
 .themeswatch.system .themeswatch-bar,
-.themeswatch.system .themeswatch-body {
+.themeswatch.system .themeswatch-body { background: transparent; }
+--- */
+
+
+.modal.viewpick {
+  max-width: 46rem;
+}
+
+/* Centred as a pair rather than stretched to the width of the dialog */
+.viewrow {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.8rem;
+  margin: 0.9rem 0 0.4rem;
+}
+
+.viewsketch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.45rem;
+  flex: 0 1 17rem;
+  padding: 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
   background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+  transition:
+    border-color 0.16s ease,
+    background-color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.viewsketch:hover:not(.on) {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+.viewsketch.on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 11%, transparent);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.viewsketch-art {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--muted) 8%, transparent);
+}
+
+.viewsketch-art .vs-head {
+  fill: color-mix(in srgb, var(--muted) 22%, transparent);
+}
+
+.viewsketch-art .vs-card {
+  fill: color-mix(in srgb, var(--muted) 12%, transparent);
+  stroke: color-mix(in srgb, var(--muted) 30%, transparent);
+  stroke-width: 0.8;
+}
+
+.viewsketch-art .vs-mark {
+  fill: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.viewsketch-art .vs-text {
+  fill: color-mix(in srgb, var(--muted) 55%, transparent);
+}
+
+.viewsketch-art .vs-dim {
+  fill: color-mix(in srgb, var(--muted) 30%, transparent);
+}
+
+.viewsketch-art .vs-btn {
+  fill: none;
+  stroke: color-mix(in srgb, var(--muted) 45%, transparent);
+  stroke-width: 0.9;
+}
+
+.viewsketch.on .viewsketch-art .vs-mark {
+  fill: var(--accent);
 }

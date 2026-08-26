@@ -1236,10 +1236,6 @@ export function ProgressPage({
     <main className="settingspage progresspage">
       <div className="pagehead">
         <h2>Insights</h2>
-        <p className="muted small">
-          Who is holding what, how the project is shaped, and where the work
-          is piling up.
-        </p>
       </div>
 
       <div className="settingsbody cardgrid">

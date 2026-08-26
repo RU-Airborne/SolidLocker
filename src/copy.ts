@@ -24,7 +24,9 @@ export const copy = {
 
   // Stuck cross-branch files
   stuckFiles: (files: string[]) =>
-    `${listNames(files)} still show the previous branch's version because SolidWorks had them open during the switch. Close them in SolidWorks, then press Fix now.`,
+    files.length > 6
+      ? `${files.length} files still show the previous branch's version, because SolidWorks had something open while the branch was switching (${listNames(files, 2)}). They are not your work and there is nothing to share: close everything in SolidWorks and this puts itself right, or press Fix now.`
+      : `${listNames(files)} still show the previous branch's version because SolidWorks had them open during the switch. They are not your work and there is nothing to share. Close them in SolidWorks, then press Fix now.`,
   stuckFixed: "Fixed. Those files now match this branch.",
 
   // Switching branches

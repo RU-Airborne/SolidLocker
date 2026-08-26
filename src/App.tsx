@@ -1,39 +1,43 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { useAppState } from "./queries";
 import { Dashboard } from "./components/dashboard/Dashboard";
 import { SetupWizard } from "./components/setup/SetupWizard";
 import { isAppError } from "./types";
 import DialLogo from "./components/DialLogo";
 import { ThemeChoiceDialog } from "./components/dialogs/ThemeChoiceDialog";
+import {
+  ViewChoiceDialog,
+  viewUnchosen,
+} from "./components/dialogs/ViewChoiceDialog";
+import { NeedsGitSplash, StartingUpSplash } from "./components/setup/Splashes";
+import { greetingDue, markGreeted } from "./release";
 import { themeUnchosen } from "./theme";
 
 export default function App() {
   const queryClient = useQueryClient();
   const appState = useAppState();
-  // Before anything else on a fresh install, and only then.
-  const [askTheme, setAskTheme] = useState(themeUnchosen);
+  const [owed] = useState(greetingDue);
+  const [askTheme, setAskTheme] = useState(() => owed || themeUnchosen());
+  const [askView, setAskView] = useState(() => owed || viewUnchosen());
+
+  useEffect(() => {
+    if (!askTheme && !askView) markGreeted();
+  }, [askTheme, askView]);
 
   if (askTheme) {
     return <ThemeChoiceDialog onDone={() => setAskTheme(false)} />;
+  }
+
+  if (askView) {
+    return <ViewChoiceDialog onDone={() => setAskView(false)} />;
   }
 
   // No sound here. A first time member simply has not installed Git yet,
   // which is expected, not a failure.
 
   if (appState.isLoading) {
-    return (
-      <div className="center">
-        <div className="card launchscreen">
-          <span className="logoglow">
-            <DialLogo className="setuplogo" label="" spinning />
-          </span>
-          <h2>SolidLocker</h2>
-          <p className="muted">Starting up…</p>
-        </div>
-      </div>
-    );
+    return <StartingUpSplash />;
   }
 
   if (appState.isError) {
@@ -81,44 +85,7 @@ export default function App() {
   const state = appState.data!;
 
   if (!state.git_ok || !state.lfs_ok) {
-    return (
-      <div className="center">
-        <div className="card">
-          <span className="logoglow">
-            <DialLogo className="setuplogo" label="" />
-          </span>
-          <h2>You need Git to continue</h2>
-          <p>
-            SolidLocker needs Git. GitHub Desktop brings everything you need in one
-            install (Git, Git&nbsp;LFS, and the GitHub sign in).
-          </p>
-          <button onClick={() => openUrl("https://desktop.github.com/")}>
-            Download GitHub Desktop
-          </button>
-          <p className="restart-callout">
-            After installing GitHub Desktop,{" "}
-            <strong>close SolidLocker completely and open it again.</strong>
-          </p>
-          <button onClick={() => appState.refetch()}>
-            I&rsquo;ve installed it. Check again
-          </button>
-          <p className="muted small altinstall">
-            Rather not use it?{" "}
-            <a
-              className="linkish inline"
-              href="https://git-scm.com/download/win"
-              onClick={(e) => {
-                e.preventDefault();
-                openUrl("https://git-scm.com/download/win");
-              }}
-            >
-              Install Git for Windows
-            </a>{" "}
-            instead.
-          </p>
-        </div>
-      </div>
-    );
+    return <NeedsGitSplash onRecheck={() => appState.refetch()} />;
   }
 
   if (!state.repo) {

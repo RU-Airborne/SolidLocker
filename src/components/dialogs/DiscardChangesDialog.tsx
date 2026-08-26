@@ -17,7 +17,7 @@ export function DiscardChangesDialog({
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h2>
           {files.length === 0
-            ? "Clear out new files?"
+            ? "Discard new files?"
             : "Discard your changes?"}
         </h2>
 
@@ -78,7 +78,7 @@ export function DiscardChangesDialog({
           <button onClick={onClose}>Keep everything</button>
           <button className="danger" onClick={onConfirm}>
             {files.length === 0
-              ? "Move them out"
+              ? "Discard them"
               : `Discard ${files.length === 1 ? "it" : "them"}`}
           </button>
         </div>

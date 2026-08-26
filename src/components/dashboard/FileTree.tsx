@@ -1,6 +1,8 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FileRowData, RowActions } from "./Dashboard";
 import { FileRow } from "./FileRow";
+import { OpenFolderButton } from "../common/OpenButtons";
+import { folderDomId } from "./rowid";
 
 interface FolderNode {
   name: string;
@@ -80,6 +82,7 @@ function subtreeStats(node: FolderNode): { claimable: string[]; mine: string[] }
   const mine: string[] = [];
   const visit = (n: FolderNode) => {
     for (const row of n.files) {
+      if (!row.file.lockable) continue;
       if (row.status.kind === "unlocked") claimable.push(row.file.rel_path);
       if (row.status.kind === "mine") mine.push(row.file.rel_path);
     }
@@ -150,6 +153,7 @@ const Folder = memo(function Folder({
   return (
     <div className="treefolder">
       <div
+        id={folderDomId(node.path)}
         className="folderrow"
         style={{ paddingLeft: `${depth * 1.1}rem` }}
         onClick={() => toggle(node.path)}
@@ -182,42 +186,11 @@ const Folder = memo(function Folder({
               Unlock mine ({mine.length})
             </button>
           )}
-          <button
-            className="iconbtn openbtn"
-            title="Open this folder on your computer"
-            aria-label="Open in File Explorer"
-            onClick={() => actions.open(node.path)}
-          >
-            <svg
-              viewBox="0 0 24 24"
-              width="15"
-              height="15"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-              <polyline points="15 3 21 3 21 9" />
-              <line x1="10" y1="14" x2="21" y2="3" />
-            </svg>
-            <svg
-              className="badgeicon"
-              viewBox="0 0 24 24"
-              aria-hidden="true"
-            >
-              <path
-                d="M2 6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z"
-                fill="#f0a92e"
-              />
-            </svg>
-          </button>
+          <OpenFolderButton path={node.path} onOpen={actions.open} />
         </span>
       </div>
       {!isCollapsed && (
-        <>
+        <div className="folderkids">
           {node.files.map((row) => (
             <FileRow
               key={row.file.rel_path}
@@ -237,7 +210,7 @@ const Folder = memo(function Folder({
               forceExpand={forceExpand}
             />
           ))}
-        </>
+        </div>
       )}
     </div>
   );
@@ -249,6 +222,7 @@ export const FileTree = memo(function FileTree({
   sort,
   forceExpand = false,
   repoPath,
+  reveal,
 }: {
   rows: FileRowData[];
   actions: RowActions;
@@ -257,6 +231,9 @@ export const FileTree = memo(function FileTree({
   forceExpand?: boolean;
   /** Keys the remembered open/closed state of the folders. */
   repoPath: string;
+  /** A folder to open and scroll to, handed over when somebody switches from
+      the thumbnails while standing inside one. */
+  reveal?: string;
 }) {
   const tree = useMemo(() => buildTree(rows, sort), [rows, sort]);
   const folderPaths = useMemo(() => collectFolderPaths(tree), [tree]);
@@ -362,6 +339,57 @@ export const FileTree = memo(function FileTree({
       return next;
     });
   }, [highlighted, rows]);
+
+  const revealed = useRef<string | null>(null);
+  useEffect(() => {
+    if (!reveal) {
+      revealed.current = null;
+      return;
+    }
+    if (revealed.current === reveal) return;
+    revealed.current = reveal;
+
+    const parts = reveal.split("/");
+    const chain = parts.map((_, i) => parts.slice(0, i + 1).join("/"));
+
+    const openTheWayDown = () =>
+      setCollapsed((prev) => {
+        if (chain.every((p) => !prev.has(p))) return prev;
+        const next = new Set(prev);
+        for (const p of chain) next.delete(p);
+        return next;
+      });
+
+    const land = () => {
+      const row = document.getElementById(folderDomId(reveal));
+      if (!row) return false;
+      const scroller = row.closest(".content") as HTMLElement | null;
+      const head = scroller?.querySelector(".filehead") as HTMLElement | null;
+      if (!scroller) {
+        row.scrollIntoView({ behavior: "smooth", block: "start" });
+        return true;
+      }
+      const clear = (head?.offsetHeight ?? 0) + 10;
+      const top =
+        row.getBoundingClientRect().top -
+        scroller.getBoundingClientRect().top +
+        scroller.scrollTop -
+        clear;
+      scroller.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+      return true;
+    };
+
+    openTheWayDown();
+    if (land()) return;
+
+    let tries = 0;
+    const hunt = window.setInterval(() => {
+      tries += 1;
+      openTheWayDown();
+      if (land() || tries > 20) window.clearInterval(hunt);
+    }, 120);
+    return () => window.clearInterval(hunt);
+  }, [reveal]);
 
   return (
     <div className="filetree">

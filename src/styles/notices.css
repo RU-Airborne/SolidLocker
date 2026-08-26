@@ -59,6 +59,7 @@
 }
 
 .filerow button,
+.filetile .tileactions button,
 .group-actions button,
 .linkish {
   padding: 0.2rem 0.7rem;
@@ -71,12 +72,14 @@
 }
 
 .filerow button:hover,
+.filetile .tileactions button:hover,
 .group-actions button:hover,
 .linkish:hover {
   border-color: var(--accent);
 }
 
-.filerow button:disabled {
+.filerow button:disabled,
+.filetile .tileactions button:disabled {
   opacity: 0.5;
   cursor: default;
 }
@@ -96,6 +99,10 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 0.3rem;
+}
+
+.filerow .act-slot {
+  display: contents;
 }
 
 .iconbtn {

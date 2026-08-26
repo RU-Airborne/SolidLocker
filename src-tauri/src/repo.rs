@@ -1137,11 +1137,47 @@ pub async fn restore_paths(root: &Path, files: Vec<String>) -> AppResult<()> {
         }
     }
 
+    // "Fix now" also clears the previous branch's leftovers, and those are
+    // untracked here, so there is nothing to restore them to. They come off
+    // disk instead. Their real copy is safe on the branch they belong to.
+    let untracked: HashSet<String> = match get_repo_status(root).await {
+        Ok(status) => status.untracked.into_iter().collect(),
+        Err(_) => HashSet::new(),
+    };
+    let (leftovers, tracked): (Vec<String>, Vec<String>) =
+        files.into_iter().partition(|p| untracked.contains(p));
+
+    let mut held = Vec::new();
+    for rel in &leftovers {
+        let abs = root.join(rel);
+        if !abs.exists() {
+            continue;
+        }
+        let _ = fsattr::set_readonly(&abs, false);
+        if std::fs::remove_file(&abs).is_err() {
+            held.push(rel.clone());
+        }
+    }
+
+    if tracked.is_empty() {
+        return if held.is_empty() {
+            Ok(())
+        } else {
+            Err(AppError::git(messages::could_not_fix_files(
+                &messages::still_open_in_solidworks(&held),
+            )))
+        };
+    }
+
     let mut args = vec!["restore", "--staged", "--worktree", "--"];
-    args.extend(files.iter().map(String::as_str));
+    args.extend(tracked.iter().map(String::as_str));
     let out = run_git(root, &args, 60).await?;
-    if out.ok() {
+    if out.ok() && held.is_empty() {
         Ok(())
+    } else if out.ok() {
+        Err(AppError::git(messages::could_not_fix_files(
+            &messages::still_open_in_solidworks(&held),
+        )))
     } else {
         Err(AppError::git(messages::could_not_fix_files(
             out.stderr.trim(),
@@ -1537,14 +1573,29 @@ async fn matches_commit(root: &Path, commit: &str, path: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Remove files the switch meant to delete but couldn't .
-async fn sweep_leftovers(root: &Path, prev_head: &str) -> usize {
+/// Whether a commit carries this path at all.
+async fn path_in_commit(root: &Path, commit: &str, path: &str) -> bool {
+    let spec = format!("{commit}:{path}");
+    run_git(root, &["cat-file", "-e", &spec], 30)
+        .await
+        .map(|out| out.status == 0)
+        .unwrap_or(false)
+}
+
+async fn sweep_leftovers(root: &Path, prev_head: &str) -> Vec<String> {
     let Ok(status) = get_repo_status(root).await else {
-        return 0;
+        return Vec::new();
     };
     let mut swept = 0;
+    let mut stayed = Vec::new();
     for path in status.untracked {
-        if is_sw_temp(&path) || !matches_commit(root, prev_head, &path).await {
+        if is_sw_temp(&path) {
+            continue;
+        }
+        if !path_in_commit(root, prev_head, &path).await {
+            continue;
+        }
+        if !matches_commit(root, prev_head, &path).await {
             continue;
         }
         let abs = root.join(&path);
@@ -1552,6 +1603,8 @@ async fn sweep_leftovers(root: &Path, prev_head: &str) -> usize {
         let _ = fsattr::set_readonly(&abs, false);
         if std::fs::remove_file(&abs).is_ok() {
             swept += 1;
+        } else {
+            stayed.push(path);
         }
     }
     if swept > 0 {
@@ -1559,7 +1612,13 @@ async fn sweep_leftovers(root: &Path, prev_head: &str) -> usize {
             "switch: cleared {swept} file(s) the previous branch left behind"
         ));
     }
-    swept
+    if !stayed.is_empty() {
+        crate::logger::info(format!(
+            "switch: {} file(s) the previous branch left behind are still held open",
+            stayed.len()
+        ));
+    }
+    stayed
 }
 
 pub async fn sweep_foreign_files(root: &Path) -> AppResult<Vec<String>> {
@@ -1663,9 +1722,10 @@ pub async fn sweep_foreign_files(root: &Path) -> AppResult<Vec<String>> {
 /// is not a verbatim copy of the old branch is left alone and reported.
 async fn finish_switch(root: &Path, prev_head: Option<&str>) -> SwitchResult {
     let _ = heal_upstream(root).await;
-    if let Some(head) = prev_head {
-        sweep_leftovers(root, head).await;
-    }
+    let left_behind = match prev_head {
+        Some(head) => sweep_leftovers(root, head).await,
+        None => Vec::new(),
+    };
     let real_dirty = |s: RepoStatus| -> Vec<String> {
         s.dirty.into_iter().filter(|p| !is_sw_temp(p)).collect()
     };
@@ -1674,7 +1734,10 @@ async fn finish_switch(root: &Path, prev_head: Option<&str>) -> SwitchResult {
         Err(_) => Vec::new(),
     };
     if dirty.is_empty() {
-        return SwitchResult::default();
+        return SwitchResult {
+            stuck_files: left_behind,
+            kept_files: Vec::new(),
+        };
     }
 
     //     if !files.is_empty() {
@@ -1712,10 +1775,24 @@ async fn finish_switch(root: &Path, prev_head: Option<&str>) -> SwitchResult {
         }
     }
 
+    // Both kinds are the same thing to the user: files that still say the
+    // previous branch and want putting right.
+    blocked.extend(left_behind);
     SwitchResult {
         stuck_files: blocked,
         kept_files: kept,
     }
+}
+
+/// Whether HEAD names this branch now. True after a checkout that moved HEAD
+/// and then failed partway, false when git refused before touching anything.
+async fn landed_on(root: &Path, name: &str) -> bool {
+    run_git(root, &["rev-parse", "--abbrev-ref", "HEAD"], 15)
+        .await
+        .ok()
+        .filter(|out| out.ok())
+        .map(|out| out.stdout.trim() == name)
+        .unwrap_or(false)
 }
 
 pub async fn switch_branch(root: &Path, name: &str) -> AppResult<SwitchResult> {
@@ -1778,6 +1855,17 @@ pub async fn switch_branch(root: &Path, name: &str) -> AppResult<SwitchResult> {
             last_err = forced.stderr.trim().to_string();
         }
         break;
+    }
+
+    // Git does not undo a checkout it could not finish. When Windows refuses
+    // to replace a file SolidWorks holds open, git reports the error but HEAD
+    // has already moved, leaving the folder a mix of two branches. Tidy that
+    // up rather than hand back a raw git error and walk away from it.
+    if landed_on(root, name).await {
+        crate::logger::info(format!(
+            "switch to {name} reported an error but HEAD moved; putting right what it left behind"
+        ));
+        return Ok(finish_switch(root, prev_head.as_deref()).await);
     }
 
     // Translate git's refusal into something a non-git user can act on.
@@ -1853,6 +1941,8 @@ pub struct FileEntry {
     pub tracked: bool,
     /// Deleted from disk, but the deletion has not been shared yet.
     pub deleted: bool,
+    /// The locking rules cover this file, so it can be claimed.
+    pub lockable: bool,
 }
 
 pub async fn list_lockable_files(root: &Path) -> AppResult<Vec<FileEntry>> {
@@ -1963,14 +2053,26 @@ pub async fn list_lockable_files(root: &Path) -> AppResult<Vec<FileEntry>> {
     }
 
     let fields: Vec<&str> = attr.stdout.split('\0').collect();
-    let mut files = Vec::new();
+    // Which paths the locking rules cover. Everything else in the folder is
+    // listed too, marked as something nobody can hold. People keep exports and
+    // spreadsheets beside their models and expect to see them.
+    let mut lockable_paths: HashSet<&str> = HashSet::new();
     for chunk in fields.chunks(3) {
         let [path, attr_name, value] = chunk else {
             continue;
         };
-        if *attr_name != "lockable" || *value != "set" {
+        if *attr_name == "lockable" && *value == "set" {
+            lockable_paths.insert(path);
+        }
+    }
+
+    let mut files = Vec::new();
+    for path in &all_paths {
+        // Git's own plumbing is nobody's design work.
+        if path.starts_with('.') || path.contains("/.") {
             continue;
         }
+        let lockable = lockable_paths.contains(path);
         let rel_path = path.to_string();
         let name = rel_path
             .rsplit('/')
@@ -2010,6 +2112,7 @@ pub async fn list_lockable_files(root: &Path) -> AppResult<Vec<FileEntry>> {
             writable,
             tracked,
             deleted,
+            lockable,
         });
     }
     files.sort_by(|a, b| a.rel_path.cmp(&b.rel_path));

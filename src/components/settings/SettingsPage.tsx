@@ -1,3 +1,6 @@
+/* 
+// import { SplashGallery, SPLASH_GALLERY } from "./SplashGallery";
+*/
 import { useEffect, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -679,6 +682,10 @@ export function SettingsPage({
           </a>
           , and attach the log from the folder above.
         </p>
+
+        {/*
+        {SPLASH_GALLERY && <SplashGallery />}
+        */}
       </div>
     </main>
   );

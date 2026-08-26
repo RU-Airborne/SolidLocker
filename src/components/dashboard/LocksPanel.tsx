@@ -32,6 +32,7 @@ export function LocksPanel({
   onSelectFile,
   onOffBranchFile,
   onForceRelease,
+  mineElsewhere,
 }: {
   locks: LocksResult | undefined;
   lockError: string | null;
@@ -39,6 +40,7 @@ export function LocksPanel({
   onSelectFile: (path: string) => void;
   onOffBranchFile: (path: string, branches: string[]) => void;
   onForceRelease: (lock: Lock) => void;
+  mineElsewhere: number;
 }) {
   const offBranchPaths = useMemo(
     () =>
@@ -102,6 +104,9 @@ export function LocksPanel({
             </strong>
             <span className="muted small">
               {person.locks.length} file{person.locks.length === 1 ? "" : "s"}
+              {person.isMe && mineElsewhere > 0
+                ? `, ${mineElsewhere} on other branches`
+                : ""}
             </span>
           </div>
           <ul className="personfiles">
