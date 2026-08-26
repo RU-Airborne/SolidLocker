@@ -16,13 +16,13 @@ SolidLocker works with the GitHub repo and accounts your team already uses. Ther
 Developed by [Scaven X](https://github.com/scavenx) at RU Airborne.
 
 <p align="center">
-  <img src="docs/images/dashboard.png" alt="SolidLocker file list">
+  <img src="docs/images/dashboard-v2.png" alt="SolidLocker file list">
   <br>
   <em>Every file in the project, who is holding which, and what you can pick up.</em>
 </p>
 
 <p align="center">
-  <img src="docs/images/thumbnail.png" alt="SolidLocker thumbnail view">
+  <img src="docs/images/thumbnail-v2.png" alt="SolidLocker thumbnail view">
   <br>
   <em>The same project as thumbnails, using the preview SolidWorks saved of each document.</em>
 </p>
@@ -99,7 +99,7 @@ installer or run it in dev mode on your own machine. See [Building from source](
   click too.
 
   <p align="center">
-  <img src="docs/images/lock_with_parts.png" alt="Lock with parts dialog" width="800">
+  <img src="docs/images/lock_with_parts-v2.png" alt="Lock with parts dialog" width="600">
   <br>
   <em>Lock with parts: the references come straight from your running SolidWorks, and the whole set locks in one click.</em>
   </p>
@@ -108,7 +108,7 @@ installer or run it in dev mode on your own machine. See [Building from source](
   tell apart. Open a commit to see what changed, look at a file as it was then, restore it, or branch off from that point.
 
   <p align="center">
-  <img src="docs/images/branches.png" alt="Branches page with a railway diagram" width="800">
+  <img src="docs/images/branches-v2.png" alt="Branches page with a railway diagram" width="700">
   <br>
   <em>The Branches page: every branch on one railway, with branch off, restore and merge a click away</em>
   </p>
@@ -130,7 +130,7 @@ installer or run it in dev mode on your own machine. See [Building from source](
   Merge on your own machine, or send a request for a team lead to approve if branch protection rules are active. If files clash, the sort box opens first, with both versions side by side so you pick the one to keep.
 
   <p align="center">
-  <img src="docs/images/merge_request.png" alt="Merge branches dialog" width="800">
+  <img src="docs/images/merge_request-v2.png" alt="Merge branches dialog" width="700">
   <br>
   <em>Merge: see what the other branch brings before anything changes.</em>
   </p>
@@ -143,13 +143,13 @@ installer or run it in dev mode on your own machine. See [Building from source](
   differently, ask for changes, or approve and merge in one go.
 
   <p align="center">
-  <img src="docs/images/reviews.png" alt="Merge Requests page" width="800">
+  <img src="docs/images/reviews-v2.png" alt="Merge Requests page" width="700">
   <br>
   <em>Merge Requests: open and closed requests, shown directly in the app.</em>
   </p>
 
   <p align="center">
-  <img src="docs/images/conflict_resolution.png" alt="Sort box with two versions of a file side by side" width="800">
+  <img src="docs/images/conflict_resolution-v2.png" alt="Sort box with two versions of a file side by side" width="700">
   <br>
   <em>The sort box: both versions of a clashing file, with a picture, author and date, so you choose the one to keep.</em>
   </p>
@@ -163,11 +163,11 @@ installer or run it in dev mode on your own machine. See [Building from source](
   this week, shared changes per day, the parts being reworked most, and who has
   been busiest lately.
 <div align="center">
-  <img src="docs/images/insights.png" alt="Insights page" width="800">
+  <img src="docs/images/insights-v2.png" alt="Insights page" width="700">
   <br>
 
 
-  <img src="docs/images/insights2.png" alt="Insights page" width="800">
+  <img src="docs/images/insights2-v2.png" alt="Insights page" width="700">
 
   <br>
 
