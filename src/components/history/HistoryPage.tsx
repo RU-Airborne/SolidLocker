@@ -875,7 +875,7 @@ function RowRails({
   // dot lands exactly where that branch sits in the bar, so the bar can step
   // back behind it.
   const litStopRoute =
-    litRoutes != null
+    litRoutes != null && litRoutes.size === 1
       ? (nodeRs.find((r) => litRoutes.has(r)) ??
         beads.find((b) => litRoutes.has(b.r))?.r ??
         null)
