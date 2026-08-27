@@ -120,8 +120,8 @@ installer or run it in dev mode on your own machine. See [Building from source](
 
   <table align="center">
     <tr>
-      <td align="center"><img src="docs/images/restore.png" alt="Restore this version dialog" width="420"><br><em>Restore: bring an earlier version back.</em></td>
-      <td align="center"><img src="docs/images/branch_off.png" alt="Branch off from here dialog" width="420"><br><em>Branch off: start a new branch from an earlier point.</em></td>
+      <td align="center"><img src="docs/images/restore-v2.png" alt="Restore this version dialog" width="420"><br><em>Restore: bring an earlier version back.</em></td>
+      <td align="center"><img src="docs/images/branch_off-v2.png" alt="Branch off from here dialog" width="420"><br><em>Branch off: start a new branch from an earlier point.</em></td>
     </tr>
   </table>
 
