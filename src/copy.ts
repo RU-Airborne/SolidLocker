@@ -10,6 +10,15 @@ const listNames = (paths: string[], max = 3): string => {
 };
 
 export const copy = {
+  locksMoved(moves: { from: string; to: string }[]): string {
+    const names = (p: string) => p.split("/").pop() ?? p;
+    if (moves.length === 1) {
+      const m = moves[0]!;
+      return ` Your lock followed ${names(m.from)} to ${names(m.to)}.`;
+    }
+    return ` ${moves.length} locks followed their files to the new names.`;
+  },
+
   // Sync and sharing
   sharedOk: "Shared with your team on GitHub.",
   offlineRetry: "Could not reach GitHub. Will retry automatically.",

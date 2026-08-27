@@ -1087,10 +1087,13 @@ export function Dashboard({ appState }: { appState: AppState }) {
       setOutsideRefs(null);
       saveShareMut
         .mutateAsync({ message, paths })
-        .then(() => {
+        .then((result) => {
           playRebuildComplete();
           setCommitDialogOpen(false);
-          setNotice(copy.sharedOk);
+          const moved = result?.moved_locks ?? [];
+          setNotice(
+            copy.sharedOk + (moved.length > 0 ? copy.locksMoved(moved) : ""),
+          );
         })
         .catch((e) => warn(isAppError(e) ? e.message : String(e)));
     };

@@ -540,8 +540,14 @@ export const abortMerge = () => invoke<void>("abort_merge");
 export const resolveKeepTheirs = (paths: string[]) =>
   invoke<void>("resolve_keep_theirs", { paths });
 
+export interface SaveResult {
+  pushed: boolean;
+  /** Renames whose lock was carried over to the new name. */
+  moved_locks: { from: string; to: string }[];
+}
+
 export const saveAndShare = (message: string, paths: string[]) =>
-  invoke<{ pushed: boolean }>("save_and_share", { message, paths });
+  invoke<SaveResult>("save_and_share", { message, paths });
 
 export const pushNow = () => invoke<{ pushed: boolean }>("push_now");
 

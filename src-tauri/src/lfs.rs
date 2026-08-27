@@ -154,10 +154,11 @@ pub async fn get_locks(repo: &Path, username_hint: Option<&str>) -> AppResult<Lo
 }
 
 pub async fn lock_file(repo: &Path, rel_path: &str) -> AppResult<()> {
-    let mut out = run_git(repo, &["lfs", "lock", rel_path], 30).await?;
+    // `--` or a name starting with a dash is read as flags.
+    let mut out = run_git(repo, &["lfs", "lock", "--", rel_path], 30).await?;
     if !out.ok() && is_lockcache_corruption(&out.stderr) {
         heal_lockcache(repo).await;
-        out = run_git(repo, &["lfs", "lock", rel_path], 30).await?;
+        out = run_git(repo, &["lfs", "lock", "--", rel_path], 30).await?;
     }
     if out.ok() {
         return Ok(());
@@ -174,6 +175,7 @@ pub async fn unlock_file(repo: &Path, rel_path: &str, force: bool) -> AppResult<
     if force {
         args.push("--force");
     }
+    args.push("--");
     args.push(rel_path);
     let mut out = run_git(repo, &args, 30).await?;
     if !out.ok() && is_lockcache_corruption(&out.stderr) {

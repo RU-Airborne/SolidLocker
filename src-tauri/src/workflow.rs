@@ -9,7 +9,7 @@ use crate::error::{AppError, AppResult};
 use crate::fsattr;
 use crate::messages;
 use crate::lfs;
-use crate::proc::run_git;
+use crate::proc::{run_git, run_git_stdin};
 use crate::repo;
 use crate::swrefs;
 
@@ -66,6 +66,107 @@ pub fn parse_porcelain_z(stdout: &str) -> HashSet<String> {
         }
     }
     paths
+}
+
+/// Staged renames as (old, new).
+///
+/// Verified against git: a rename entry is `XY <new>` followed by `<old>` in
+/// the next NUL field, which is the opposite way round from how it reads in
+/// the non-z output.
+pub fn parse_renames_z(stdout: &str) -> Vec<(String, String)> {
+    let mut pairs = Vec::new();
+    let mut fields = stdout.split('\0').filter(|s| !s.is_empty());
+    while let Some(entry) = fields.next() {
+        if entry.len() < 4 {
+            continue;
+        }
+        let (xy, new_path) = entry.split_at(3);
+        if xy.starts_with('R') || xy.starts_with('C') {
+            if let Some(old_path) = fields.next() {
+                if xy.starts_with('R') {
+                    pairs.push((old_path.to_string(), new_path.to_string()));
+                }
+            }
+        }
+    }
+    pairs
+}
+
+/// Which of these paths the project marks lockable.
+async fn lockable_of(root: &Path, paths: &[String]) -> HashSet<String> {
+    if paths.is_empty() {
+        return HashSet::new();
+    }
+    let stdin_data = paths.join("\0").into_bytes();
+    let Ok(out) = run_git_stdin(
+        root,
+        &["check-attr", "--stdin", "-z", "lockable"],
+        &stdin_data,
+        30,
+    )
+    .await
+    else {
+        return HashSet::new();
+    };
+    let mut fields = out.stdout.split('\0').filter(|s| !s.is_empty());
+    let mut set = HashSet::new();
+    while let (Some(path), Some(_attr), Some(value)) =
+        (fields.next(), fields.next(), fields.next())
+    {
+        if value == "set" {
+            set.insert(path.to_string());
+        }
+    }
+    set
+}
+
+/// An LFS lock is a path on the server, and the API has no way to move one, so
+/// a rename leaves the lock behind on a name that no longer exists. This is the
+/// only point where we know both halves of the rename and that the lock is ours
+/// to move. The new path is locked before the old one is released, so a failure
+/// leaves the work held rather than open to everyone.
+async fn move_locks_over_renames(
+    root: &Path,
+    renames: &[(String, String)],
+) -> Vec<LockMove> {
+    if renames.is_empty() {
+        return Vec::new();
+    }
+    let Ok(locks) = lfs::get_locks(root, None).await else {
+        return Vec::new();
+    };
+    if !locks.fresh {
+        return Vec::new();
+    }
+    let new_paths: Vec<String> = renames.iter().map(|(_, n)| n.clone()).collect();
+    let lockable = lockable_of(root, &new_paths).await;
+
+    let mut moved = Vec::new();
+    for (old, new) in renames {
+        if !lockable.contains(new) {
+            continue;
+        }
+        if !locks
+            .ours
+            .iter()
+            .any(|l| l.path.eq_ignore_ascii_case(old))
+        {
+            continue;
+        }
+        if let Err(e) = lfs::lock_file(root, new).await {
+            crate::logger::info(format!("rename: could not lock {new}: {e:?}"));
+            continue;
+        }
+        if let Err(e) = lfs::unlock_file(root, old, false).await {
+            crate::logger::info(format!("rename: locked {new} but {old} stayed: {e:?}"));
+        }
+        crate::logger::info(format!("rename: lock moved from {old} to {new}"));
+        moved.push(LockMove {
+            from: old.clone(),
+            to: new.clone(),
+        });
+    }
+    moved
 }
 
 async fn dirty_paths(root: &Path) -> AppResult<HashSet<String>> {
@@ -844,6 +945,13 @@ pub async fn resolve_keep_theirs(root: &Path, paths: Vec<String>) -> AppResult<(
 #[derive(Debug, Serialize)]
 pub struct SaveResult {
     pub pushed: bool,
+    pub moved_locks: Vec<LockMove>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct LockMove {
+    pub from: String,
+    pub to: String,
 }
 
 pub async fn push_now(root: &Path) -> AppResult<SaveResult> {
@@ -852,14 +960,14 @@ pub async fn push_now(root: &Path) -> AppResult<SaveResult> {
 
     let push = run_git(root, &push_args, 600).await?;
     if push.ok() {
-        return Ok(SaveResult { pushed: true });
+        return Ok(SaveResult { pushed: true, moved_locks: Vec::new() });
     }
 
     if push.stderr.contains("fetch first") || push.stderr.contains("non-fast-forward") {
         get_latest(root).await?;
         let retry = run_git(root, &push_args, 600).await?;
         if retry.ok() {
-            return Ok(SaveResult { pushed: true });
+            return Ok(SaveResult { pushed: true, moved_locks: Vec::new() });
         }
         return Err(AppError::git(retry.stderr.trim().to_string()));
     }
@@ -924,6 +1032,13 @@ pub async fn save_and_share(
         return Err(AppError::git(add.stderr.trim().to_string()));
     }
 
+    // After add, before commit: this is the only moment the index shows the
+    // rename as a pair.
+    let renames = match run_git(root, &["status", "--porcelain", "-z"], 30).await {
+        Ok(out) if out.ok() => parse_renames_z(&out.stdout),
+        _ => Vec::new(),
+    };
+
     let commit = run_git(root, &["commit", "-m", &message], 60).await?;
     if !commit.ok() && !commit.stdout.contains("nothing to commit") {
         return Err(AppError::git(if commit.stderr.trim().is_empty() {
@@ -933,7 +1048,13 @@ pub async fn save_and_share(
         }));
     }
 
-    push_now(root).await
+    let mut result = push_now(root).await?;
+    // Only once the new name is actually shared, so the lock never points at
+    // something nobody else can see.
+    if result.pushed {
+        result.moved_locks = move_locks_over_renames(root, &renames).await;
+    }
+    Ok(result)
 }
 
 #[derive(Debug, Serialize)]
@@ -1484,6 +1605,22 @@ pub async fn open_version(root: &Path, path: &str, sha: &str) -> AppResult<Strin
 #[cfg(test)]
 mod tests {
     use super::parse_porcelain_z;
+
+    #[test]
+    fn reads_rename_pairs_the_right_way_round() {
+        // Straight from `git status --porcelain -z`: the new name rides with
+        // the XY code, the old name follows it.
+        let out = "R  -new.sldprt\0old.sldprt\0M  edited.sldprt\0A  added.sldprt\0";
+        let pairs = super::parse_renames_z(out);
+        assert_eq!(pairs, vec![("old.sldprt".to_string(), "-new.sldprt".to_string())]);
+    }
+
+    #[test]
+    fn copies_are_not_renames() {
+        // A copy leaves the original in place, so nothing has to move.
+        let pairs = super::parse_renames_z("C  copy.sldprt\0source.sldprt\0");
+        assert!(pairs.is_empty());
+    }
 
     #[test]
     fn parses_simple_and_rename_entries() {
