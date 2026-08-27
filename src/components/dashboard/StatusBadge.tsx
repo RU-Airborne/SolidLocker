@@ -34,7 +34,7 @@ export function StatusBadge({
     return (
       <span
         className="badge badge-plain"
-        title="Taking turns is for SolidWorks parts, assemblies and drawings, where two people saving at once loses somebody's work. This file is shared with the team like everything else here."
+        title="Locking is for SolidWorks parts, assemblies and drawings. This file type is not tracked by SolidLocker."
       >
         No lock needed
       </span>

@@ -179,6 +179,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
   // UI blocks interaction so clicks do not queue up and land on a project
   // that changed underneath them.
   const [switchingTo, setSwitchingTo] = useState<string | null>(null);
+  const [openingRepo, setOpeningRepo] = useState<string | null>(null);
   const [stuckFiles, setStuckFiles] = useState<string[] | null>(null);
   const [fixingStuck, setFixingStuck] = useState(false);
   // Closing to the tray destroys the window, so a switch can outlive the UI
@@ -413,7 +414,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
 
   /**
    * After a branch switch the switch has to finish, the list has to be read
-   * again, and in thumbnails the folder has to open. Wait for the row to 
+   * again, and in tiles the folder has to open. Wait for the row to 
    * exist and start the countdown.
    */
   useEffect(() => {
@@ -533,11 +534,16 @@ export function Dashboard({ appState }: { appState: AppState }) {
     (mode) => mode,
   );
 
-  // Which folder the thumbnails are showing. Up here so a filter that matches
+  // Which folder the tiles are showing. Up here so a filter that matches
   // nothing cannot throw it away, and so the list knows where to open.
   const [tileFolder, setTileFolder] = useState("");
 
-  // List or thumbnails, remembered too.
+  const [tileCols, setTileCols] = useChoice(
+    "tileColumns",
+    [2, 3, 4, 5, 6, 7, 8, 9, 10],
+    5,
+  );
+  // List or tiles, remembered too.
   const [viewMode, setViewMode] = usePersisted<"list" | "tiles">(
     "fileView",
     (raw) => (raw === "tiles" ? "tiles" : "list"),
@@ -1201,14 +1207,22 @@ export function Dashboard({ appState }: { appState: AppState }) {
     await handleOpenRepo(dir);
   }
 
+  // Both top-bar routes come through here, browsing and the opened-before
+  // list. Swaps as much underfoot as a branch switch, so it blocks the same way.
   async function handleOpenRepo(dir: string) {
+    const name = dir.split(/[\\/]/).filter(Boolean).pop() ?? dir;
+    setOpeningRepo(name);
     try {
       await selectExistingRepo(dir);
       forgetRepoData();
+      playFileOpenComplete();
     } catch (e) {
       // A remembered project can be renamed, moved, or on an unplugged drive.
+      playMateFailed();
       forgetRepo(dir);
       setNotice(isAppError(e) ? e.message : String(e));
+    } finally {
+      setOpeningRepo(null);
     }
   }
 
@@ -1464,7 +1478,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
                   ...(/\.(sldasm|slddrw)$/i.test(rowMenu.row.file.rel_path)
                     ? [
                         {
-                          label: "Lock references",
+                          label: "Lock with parts",
                           onClick: () =>
                             setClaimDialogPath(rowMenu.row.file.rel_path),
                         },
@@ -1481,7 +1495,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
                   ...(/\.(sldasm|slddrw)$/i.test(rowMenu.row.file.rel_path)
                     ? [
                         {
-                          label: "Unlock references",
+                          label: "Unlock with parts",
                           onClick: () =>
                             setReleaseDialogPath(rowMenu.row.file.rel_path),
                         },
@@ -1575,14 +1589,20 @@ export function Dashboard({ appState }: { appState: AppState }) {
           on another page and a switch can be started from the branch picker
           wherever you are. A switch holds up the whole window, so it says so
           across the whole window. */}
-      {switching && (
+      {(switching || openingRepo !== null) && (
         <div className="switchblock" role="status" aria-live="polite">
           <div className="switchblock-card">
             <DialLogo className="switchlogo" label="" spinning />
             <p className="switchblock-title">
-              {copy.switching(switchingTo ?? currentBranch)}
+              {openingRepo !== null
+                ? `Opening ${openingRepo}…`
+                : copy.switching(switchingTo ?? currentBranch)}
             </p>
-            <p className="muted small">{copy.switchingDetail}</p>
+            <p className="muted small">
+              {openingRepo !== null
+                ? "Checking the repository and preparing the CAD files. The first open of a large project can take a few minutes."
+                : copy.switchingDetail}
+            </p>
           </div>
         </div>
       )}
@@ -1719,7 +1739,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
               className={viewMode === "tiles" ? "active" : ""}
               onClick={() => setViewMode("tiles")}
               aria-pressed={viewMode === "tiles"}
-              title="Show the files as thumbnails"
+              title="Show the files as tiles"
             >
               <svg
                 viewBox="0 0 24 24"
@@ -1736,9 +1756,24 @@ export function Dashboard({ appState }: { appState: AppState }) {
                 <rect x="3.5" y="13.5" width="7" height="7" rx="1.5" />
                 <rect x="13.5" y="13.5" width="7" height="7" rx="1.5" />
               </svg>
-              Thumbnails
+              Tiles
             </button>
           </div>
+          {viewMode === "tiles" && (
+            <label className="tilezoom">
+              {/* Right means bigger, so 12 - value flips 2..10 onto 10..2. */}
+              <input
+                type="range"
+                min={2}
+                max={10}
+                step={1}
+                value={12 - tileCols}
+                onChange={(e) => setTileCols(12 - Number(e.target.value))}
+                aria-label="How big the tiles are"
+                title={`${tileCols} tiles across`}
+              />
+            </label>
+          )}
           <span className="spacer" />
           <input
             ref={searchRef}
@@ -1770,7 +1805,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
           ) : visibleRows.length === 0 && viewMode === "list" ? (
             <p className="muted">No files match.</p>
           ) : (
-            /* Thumbnails say this themselves, in the folder you are in, and
+            /* Tiles say this themselves, in the folder you are in, and
                keep the trail so you can walk out. Swapping the view for a line
                of text unmounted it and lost the folder. */
             viewMode === "tiles" ? (
@@ -1780,6 +1815,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
                 sort={sortMode}
                 here={tileFolder}
                 setHere={setTileFolder}
+                columns={tileCols}
               />
             ) : (
               <FileTree

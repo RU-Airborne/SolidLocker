@@ -156,7 +156,7 @@ export function RepoMenu({
                 setOpen(false);
                 onBrowse();
               }}
-              title="Pick a project this computer has not opened yet"
+              title="Point SolidLocker at a project folder already on this computer"
             >
               <span className="repopop-browseicon" aria-hidden="true">
                 <svg
@@ -173,7 +173,7 @@ export function RepoMenu({
                   <path d="M12 11v5M9.5 13.5h5" />
                 </svg>
               </span>
-              Open another repository…
+              Choose another folder on this computer…
             </button>
           </div>,
           document.body,

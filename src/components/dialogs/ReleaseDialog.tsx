@@ -76,7 +76,7 @@ export function ReleaseDialog({
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>Unlock with parts</h2>
+        <h2>Unlock this file and the parts it uses</h2>
         <p className="muted">{startPath}</p>
 
         {error && <p className="error">{error}</p>}

@@ -2635,3 +2635,99 @@ mod tests {
         assert_eq!(parse_slug_from_remote("https://gitlab.com/org/repo"), None);
     }
 }
+
+#[derive(Debug, Serialize)]
+pub struct RepoChoice {
+    pub slug: String,
+    pub name: String,
+    pub owner: String,
+    pub owner_avatar: String,
+    pub clone_url: String,
+    pub private: bool,
+    pub description: String,
+    pub updated_at: String,
+    pub default_branch: String,
+}
+
+pub async fn my_repos() -> AppResult<Vec<RepoChoice>> {
+    let token = crate::people::github_token_anywhere()
+        .await
+        .ok_or_else(|| AppError::new("AUTH", crate::messages::NO_GITHUB_SIGN_IN))?;
+    let client = reqwest::Client::builder()
+        .user_agent("SolidLocker")
+        .build()
+        .map_err(|e| AppError::new("NET", e.to_string()))?;
+
+    let mut out: Vec<RepoChoice> = Vec::new();
+    // 100 is GitHub's ceiling per call.
+    for page in 1..=5u32 {
+        let url = format!(
+            "https://api.github.com/user/repos?per_page=100&page={page}\
+             &sort=updated&affiliation=owner,collaborator,organization_member"
+        );
+        let resp = client
+            .get(&url)
+            .bearer_auth(&token)
+            .header("Accept", "application/vnd.github+json")
+            .send()
+            .await
+            .map_err(|e| AppError::offline(e.to_string()))?;
+        if !resp.status().is_success() {
+            let code = resp.status().as_u16();
+            return Err(AppError::new(
+                "GITHUB",
+                crate::messages::repos_refused(code),
+            ));
+        }
+        let items: Vec<serde_json::Value> = resp
+            .json()
+            .await
+            .map_err(|e| AppError::new("GITHUB", e.to_string()))?;
+        let full = items.len() == 100;
+        for r in items {
+            let text = |k: &str| {
+                r.get(k)
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string()
+            };
+            let flag = |k: &str| r.get(k).and_then(|v| v.as_bool()).unwrap_or(false);
+            if flag("archived") {
+                continue;
+            }
+            // Locking and sharing both need write access.
+            let can_push = r
+                .get("permissions")
+                .and_then(|p| p.get("push"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            if !can_push {
+                continue;
+            }
+            let owner = r.get("owner");
+            out.push(RepoChoice {
+                slug: text("full_name"),
+                name: text("name"),
+                owner: owner
+                    .and_then(|o| o.get("login"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                owner_avatar: owner
+                    .and_then(|o| o.get("avatar_url"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                clone_url: text("clone_url"),
+                private: flag("private"),
+                description: text("description"),
+                updated_at: text("updated_at"),
+                default_branch: text("default_branch"),
+            });
+        }
+        if !full {
+            break;
+        }
+    }
+    Ok(out)
+}

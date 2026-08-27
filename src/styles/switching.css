@@ -44,4 +44,7 @@
   margin-bottom: 0;
 }
 
-
+.switchblock-full {
+  position: fixed;
+  z-index: 120;
+}

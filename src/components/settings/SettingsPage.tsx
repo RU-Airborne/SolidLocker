@@ -1,6 +1,4 @@
-/* 
-// import { SplashGallery, SPLASH_GALLERY } from "./SplashGallery";
-*/
+import { SplashGallery, SPLASH_GALLERY } from "./SplashGallery";
 import { useEffect, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -9,7 +7,6 @@ import DialLogo from "../DialLogo";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   checkForUpdate,
-  cloneRepo,
   githubSignIn,
   githubSignedIn,
   openLogsFolder,
@@ -23,6 +20,7 @@ import { usePeople } from "../../identity";
 import { copy } from "../../copy";
 // import { BugReportDialog } from "../dialogs/BugReportDialog";
 import { GlassSelect } from "../common/GlassSelect";
+import { RepoPicker } from "../common/RepoPicker";
 import { FilterBar } from "../common/FilterBar";
 import { SetupChecks } from "./SetupChecks";
 import { useTheme } from "../../theme";
@@ -147,9 +145,7 @@ export function SettingsPage({
 }) {
   const [theme, setTheme] = useTheme();
   const [error, setError] = useState<string | null>(null);
-  const [url, setUrl] = useState("");
-  const [cloning, setCloning] = useState(false);
-  const [progress, setProgress] = useState<string | null>(null);
+  const [switchOpen, setSwitchOpen] = useState(false);
   // const [bugOpen, setBugOpen] = useState(false);
   const [signOutOpen, setSignOutOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
@@ -198,7 +194,6 @@ export function SettingsPage({
   })();
 
   async function pickExisting() {
-    if (cloning) return;
     setError(null);
     const dir = await open({
       directory: true,
@@ -213,32 +208,36 @@ export function SettingsPage({
     }
   }
 
-  async function startClone() {
-    if (cloning || url.trim() === "") return;
-    setError(null);
-    const parent = await open({
-      directory: true,
-      title: "Choose where to put the project folder",
-    });
-    if (typeof parent !== "string") return;
-    setCloning(true);
-    setProgress("Contacting GitHub…");
-    try {
-      const info = await cloneRepo(url.trim(), parent, (line) =>
-        setProgress(line),
-      );
-      onRepoChanged(copy.downloadedAndManaging(info.repo_slug));
-    } catch (e) {
-      setError(isAppError(e) ? e.message : String(e));
-    } finally {
-      setCloning(false);
-      setProgress(null);
-    }
-  }
-
   return (
     <main className="settingspage">
       {/* bugOpen && <BugReportDialog onClose={() => setBugOpen(false)} /> */}
+      {switchOpen && (
+        <div className="modal-backdrop" onClick={() => setSwitchOpen(false)}>
+          <div
+            className="modal repopickmodal"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2>Choose another repository from GitHub</h2>
+            <p className="muted">
+              Choosing one downloads it to this computer and switches to it.
+            </p>
+            <RepoPicker
+              browseTitle="Select the repository folder SolidLocker should manage"
+              onOpened={(info, cloned) => {
+                setSwitchOpen(false);
+                onRepoChanged(
+                  cloned
+                    ? copy.downloadedAndManaging(info.repo_slug)
+                    : copy.nowManaging(info.repo_slug),
+                );
+              }}
+            />
+            <div className="modal-actions">
+              <button onClick={() => setSwitchOpen(false)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
       {signOutOpen && (
         <div className="modal-backdrop" onClick={() => setSignOutOpen(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -449,47 +448,25 @@ export function SettingsPage({
                 {repo.repo_path}
               </code>
             </div>
+            <button
+              className="repoexplore"
+              onClick={() =>
+                openRepoFolder().catch((e) =>
+                  setError(isAppError(e) ? e.message : String(e)),
+                )
+              }
+            >
+              Show in File Explorer
+            </button>
             <div className="repoaction">
-              <button
-                onClick={() =>
-                  openRepoFolder().catch((e) =>
-                    setError(isAppError(e) ? e.message : String(e)),
-                  )
-                }
-                disabled={cloning}
-              >
-                Open in File Explorer
+              <button onClick={pickExisting}>
+                Choose another folder on this computer…
               </button>
-              <button onClick={pickExisting} disabled={cloning}>
-                Change…
+              <button className="primary" onClick={() => setSwitchOpen(true)}>
+                Choose another repository from GitHub…
               </button>
             </div>
           </div>
-        </section>
-
-        <section className="setupsection">
-          <h3>Download another Git LFS project</h3>
-          <p className="muted">
-            Paste the repository link from GitHub's green &ldquo;Code&rdquo;
-            button. SolidLocker will download it and switch to it.
-          </p>
-          <div className="setuprow">
-            <input
-              placeholder="https://github.com/your-team/your-project"
-              value={url}
-              disabled={cloning}
-              onChange={(e) => setUrl(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && startClone()}
-            />
-            <button
-              className="primary"
-              disabled={cloning || url.trim() === ""}
-              onClick={startClone}
-            >
-              {cloning ? "Downloading…" : "Download"}
-            </button>
-          </div>
-          {progress && <p className="muted progressline">{progress}</p>}
         </section>
 
         <section className="setupsection settingsplit">
@@ -683,9 +660,7 @@ export function SettingsPage({
           , and attach the log from the folder above.
         </p>
 
-        {/*
         {SPLASH_GALLERY && <SplashGallery />}
-        */}
       </div>
     </main>
   );

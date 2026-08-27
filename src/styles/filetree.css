@@ -3,7 +3,9 @@
 .treetoolbar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.5rem;
+  row-gap: 0.4rem;
   flex: none;
   padding: 0.2rem 1.5rem 0.6rem;
 }
@@ -13,14 +15,22 @@
 }
 
 .treesearch {
-  flex: 1;
+  flex: 1 1 10rem;
+  min-width: 0;
   max-width: 22rem;
-  padding: 0.35rem 0.7rem;
+  padding: 0.25rem 0.7rem;
   border-radius: 6px;
   border: 1px solid var(--border);
   background: transparent;
   color: inherit;
   font: inherit;
+  font-size: 0.8rem;
+  line-height: 1rem;
+}
+
+.treetoolbar .typefilter button,
+.treetoolbar .viewswitch button {
+  line-height: 1rem;
 }
 
 .treesearch:focus {
@@ -28,6 +38,14 @@
   border-color: var(--accent);
 }
 
+.typefilter,
+.viewswitch {
+  flex: none;
+}
+
+.typefilter button {
+  white-space: nowrap;
+}
 
 .typefilter {
   display: flex;
@@ -495,8 +513,9 @@
 
 .filetiles {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(12.5rem, 1fr));
-  gap: 0.7rem;
+  grid-template-columns: repeat(var(--tilecols, 5), minmax(0, 1fr));
+  /* Clears the 10px stack a folder tile casts on hover. */
+  gap: 0.85rem;
   padding: 0.65rem 0 1.5rem;
   align-items: stretch;
 }
@@ -523,6 +542,10 @@
 
 .filetile.ismine {
   border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.filetile.istheirs {
+  border-color: color-mix(in srgb, #9e6a03 55%, transparent);
 }
 
 .filetile.isdeleted .tilename {
@@ -692,11 +715,50 @@
 }
 
 .foldertile {
+  --foldline: color-mix(in srgb, var(--accent) 38%, var(--border));
+  --foldfill: color-mix(in srgb, var(--accent) 10%, var(--headbg));
+
   cursor: pointer;
   text-align: left;
   font: inherit;
   color: inherit;
   padding: 0;
+  transition:
+    transform 0.22s cubic-bezier(0.34, 1.32, 0.64, 1),
+    box-shadow 0.3s cubic-bezier(0.34, 1.32, 0.64, 1) 0.04s,
+    border-color 0.18s ease;
+}
+
+.foldertile:hover {
+  --foldline: color-mix(in srgb, var(--accent) 58%, var(--border));
+
+  transform: translate(-2px, -4px);
+  box-shadow:
+    4px 7px 0 -1px var(--foldfill),
+    4px 7px 0 0 var(--foldline),
+    8px 13px 0 -1px var(--foldfill),
+    8px 13px 0 0 var(--foldline);
+}
+
+.foldertile:active {
+  transform: translate(0, 1px);
+  box-shadow:
+    2px 3px 0 -1px var(--foldfill),
+    2px 3px 0 0 var(--foldline),
+    4px 6px 0 -1px var(--foldfill),
+    4px 6px 0 0 var(--foldline);
+  transition:
+    transform 0.08s ease-out,
+    box-shadow 0.08s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .foldertile,
+  .foldertile:hover,
+  .foldertile:active {
+    transform: none;
+    transition: none;
+  }
 }
 
 .foldertile .folderpic {
@@ -705,14 +767,30 @@
   border-color: color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
+.folderart {
+  position: relative;
+  display: block;
+  width: 62%;
+  aspect-ratio: 1;
+}
+
 .foldertile .folderpic svg {
-  width: 44%;
-  height: 44%;
+  width: 100%;
+  height: 100%;
   opacity: 1;
 }
 
-.foldertile .tileopen {
-  flex: 1;
+.foldercount {
+  position: absolute;
+  left: 50%;
+  top: 58%;
+  transform: translate(-50%, -50%);
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--accent) 62%, var(--muted));
 }
 
 .foldertile .act-main {
@@ -922,3 +1000,23 @@
 .minechip.active { ... }
 --- */
 
+
+.tilezoom {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+
+.tilezoom input[type="range"] {
+  width: 6.5rem;
+  height: 1rem;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.tileactions button {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

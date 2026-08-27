@@ -127,6 +127,20 @@ pub const PR_UNKNOWN_REVIEW: &str = "That is not one of the review options.";
 
 pub const PR_REVIEW_NEEDS_WORDS: &str = "Say what needs changing.";
 
+pub const NO_GITHUB_SIGN_IN: &str =
+    "SolidLocker could not find your GitHub sign-in on this computer. \
+Signing in with GitHub Desktop, or running `git credential fill`, puts it \
+where SolidLocker can find it.";
+
+pub fn repos_refused(code: u16) -> String {
+    match code {
+        401 | 403 => "GitHub would not accept the sign-in stored on this \
+computer. Signing in again with GitHub Desktop usually settles it."
+            .to_string(),
+        _ => format!("GitHub could not list your projects ({code})."),
+    }
+}
+
 pub fn pr_not_allowed(detail: &str) -> String {
     format!("GitHub would not allow that: {detail}. The repository settings decide who can approve and merge.")
 }

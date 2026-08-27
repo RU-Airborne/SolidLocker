@@ -909,6 +909,12 @@ async fn select_existing_repo(
     Ok(info)
 }
 
+/// Every project the signed-in person can work in. Needs no repository open.
+#[tauri::command]
+async fn list_my_repos() -> AppResult<Vec<repo::RepoChoice>> {
+    repo::my_repos().await
+}
+
 #[tauri::command]
 async fn clone_repo(
     app: AppHandle,
@@ -1398,6 +1404,7 @@ fn report_window_failure(app: &tauri::AppHandle, detail: &str) {
             get_default_branch,
             get_dependency_graph,
             check_for_update,
+            list_my_repos,
             list_pulls,
             pull_detail,
             create_pull,

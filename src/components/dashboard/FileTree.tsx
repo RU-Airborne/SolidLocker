@@ -232,7 +232,7 @@ export const FileTree = memo(function FileTree({
   /** Keys the remembered open/closed state of the folders. */
   repoPath: string;
   /** A folder to open and scroll to, handed over when somebody switches from
-      the thumbnails while standing inside one. */
+      the tiles while standing inside one. */
   reveal?: string;
 }) {
   const tree = useMemo(() => buildTree(rows, sort), [rows, sort]);
@@ -286,7 +286,6 @@ export const FileTree = memo(function FileTree({
       for (const p of toClose) next.add(p);
       return next;
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repoPath, folderPaths]);
 
   // Remember how the tree was left per repo.

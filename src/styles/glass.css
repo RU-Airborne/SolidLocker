@@ -712,6 +712,10 @@
   box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 75%, transparent);
 }
 
+.railbadge {
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .railpane,
   .railitem {

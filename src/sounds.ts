@@ -34,12 +34,12 @@ export function playMateFailed() {
 
 /** Work landed on GitHub: the chime after a clean rebuild. */
 export function playRebuildComplete() {
-  void play("rebuild complete.wav");
+  void play("rebuild complete.wav", synthChime);
 }
 
 /** Finished checking GitHub. */
 export function playCheckComplete() {
-  void play("render complete.wav");
+  void play("render complete.wav", synthChime);
 }
 
 /** Something SolidLocker depends on is not there: SolidWorks is not running. */
@@ -49,7 +49,37 @@ export function playSensorAlert() {
 
 /** A new set of documents is now on disk, like a document finishing loading. */
 export function playFileOpenComplete() {
-  void play("file open complete.wav");
+  void play("file open complete.wav", synthChime);
+}
+
+function synthChime() {
+  try {
+    const Ctx =
+      window.AudioContext ??
+      (window as unknown as { webkitAudioContext?: typeof AudioContext })
+        .webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    const now = ctx.currentTime;
+    [
+      { freq: 784, start: 0, len: 0.16 },
+      { freq: 1175, start: 0.11, len: 0.34 },
+    ].forEach(({ freq, start, len }) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(freq, now + start);
+      gain.gain.setValueAtTime(0.0001, now + start);
+      gain.gain.exponentialRampToValueAtTime(0.1, now + start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + start + len);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + start);
+      osc.stop(now + start + len + 0.02);
+    });
+    window.setTimeout(() => ctx.close(), 900);
+  } catch {
+  }
 }
 
 function synthBuzz() {

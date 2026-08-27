@@ -247,3 +247,196 @@
 .viewsketch.on .viewsketch-art .vs-mark {
   fill: var(--accent);
 }
+
+.repopicker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.repopicksearch {
+  padding: 0.35rem 0.7rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.9rem;
+}
+
+.repopicksearch:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.repopicklist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 21rem;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.repopicklist li + li {
+  border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+
+.repopickitem {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.5rem 0.7rem;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.repopickitem:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.repopickitem:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.repopickbody {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.repopickname {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.repopickprivate {
+  flex: none;
+  padding: 0 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.1rem;
+}
+
+.repopickblurb,
+.repopickname {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.repopickbusy {
+  flex: none;
+}
+
+.repopickbrowse,
+.repopicknone {
+  margin: 0;
+}
+
+.setuppick {
+  max-width: 34rem;
+  width: 100%;
+}
+
+.repopickmodal {
+  width: min(38rem, 92vw);
+  text-align: left;
+}
+
+.card button.needsgit-get,
+.card button.needsgit-quiet {
+  display: block;
+  margin-inline: auto;
+}
+
+.card button.needsgit-get {
+  margin-top: 0.5rem;
+  padding: 0.6rem 1.4rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+  border-color: color-mix(in srgb, var(--accent) 70%, transparent);
+  box-shadow: 0 0 22px color-mix(in srgb, var(--accent) 32%, transparent);
+}
+
+.card button.needsgit-get:hover {
+  background: color-mix(in srgb, var(--accent) 85%, #fff);
+  box-shadow: 0 0 28px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.card button.needsgit-quiet {
+  margin-top: 1.1rem;
+  padding: 0.3rem 0.85rem;
+  font-size: 0.85rem;
+  background: transparent;
+  color: var(--muted);
+  border-color: color-mix(in srgb, var(--border) 75%, transparent);
+}
+
+.card button.needsgit-quiet:hover {
+  color: inherit;
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+/* .card button in tokens.css is (0,1,1) and painted every row solid accent on
+   the splash. These are (0,2,0) so the splash and Settings match. */
+.repopicker .repopickitem {
+  padding: 0.5rem 0.7rem;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.95rem;
+}
+
+.repopicker .repopickitem:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.repopicker .repopicksearch {
+  background: transparent;
+  color: inherit;
+  font-size: 0.9rem;
+}
+
+.setuppick {
+  max-width: 38rem;
+}
+
+.setuppick .repopicklist {
+  max-height: 19.5rem;
+}
+
+.setuppick .setuplogo {
+  width: 72px;
+  height: 72px;
+}
+
+.setuppick h1 {
+  margin: 0.35rem 0 0.75rem;
+  font-size: 1.45rem;
+}
+
+.setuppick .setupsection {
+  margin-top: 0;
+}

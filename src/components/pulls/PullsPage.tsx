@@ -9,7 +9,6 @@ import {
   createPull,
   deleteBranch,
   getBranchOverview,
-  listPulls,
   mergePreviewBetween,
   closePull,
   mergePull,
@@ -26,6 +25,7 @@ import {
   type PullSummary,
 } from "../../api";
 import { clearPicks, picksFor, type Side } from "../../conflictPicks";
+import { usePulls } from "../../queries";
 import { ConflictPicker, type Proposal } from "../common/ConflictPicker";
 import { formatDateTime } from "../../dates";
 import { isAppError } from "../../types";
@@ -59,12 +59,7 @@ export function PullsPage({
       .map((b) => b.name),
   );
 
-  const pulls = useQuery<PullSummary[]>({
-    queryKey: ["pulls"],
-    queryFn: listPulls,
-    staleTime: 60_000,
-    retry: false,
-  });
+  const pulls = usePulls(true);
 
   // GitHub refuses a second open PR for the same pair, just open the existing one.
   const already = ask
@@ -1080,9 +1075,11 @@ function PullView({
               >
                 {busy === "merge"
                   ? "Merging…"
-                  : d.mergeable === false && onBase && unpicked > 0
-                    ? `${unpicked} still to pick`
-                    : "Approve and merge"}
+                  : d.mergeable === false && !onBase
+                    ? `Switch to ${d.base} to merge`
+                    : d.mergeable === false && unpicked > 0
+                      ? `${unpicked} still to pick`
+                      : "Approve and merge"}
               </button>
             </div>
 

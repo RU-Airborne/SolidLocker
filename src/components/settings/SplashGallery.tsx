@@ -24,7 +24,7 @@ const SCREENS: { id: Exclude<Which, null>; label: string; when: string }[] = [
   },
   {
     id: "view",
-    label: "List or thumbnails",
+    label: "List or tiles",
     when: "First launch, straight after the light-or-dark question.",
   },
   {

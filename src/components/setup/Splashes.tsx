@@ -27,14 +27,15 @@ export function NeedsGitSplash({ onRecheck }: { onRecheck: () => void }) {
           SolidLocker needs Git. GitHub Desktop brings everything you need in one
           install (Git, Git&nbsp;LFS, and the GitHub sign in).
         </p>
-        <button onClick={() => openUrl("https://desktop.github.com/")}>
+        <button
+          className="needsgit-get"
+          onClick={() => openUrl("https://desktop.github.com/")}
+        >
           Download GitHub Desktop
         </button>
-        <p className="restart-callout">
-          After installing GitHub Desktop,{" "}
-          <strong>close SolidLocker completely and open it again.</strong>
-        </p>
-        <button onClick={onRecheck}>I&rsquo;ve installed it. Check again</button>
+        <button className="needsgit-quiet" onClick={onRecheck}>
+          I&rsquo;ve installed it. Check again
+        </button>
         <p className="muted small altinstall">
           Rather not use it?{" "}
           <a

@@ -148,7 +148,7 @@ export const FileRow = memo(function FileRow({
                 title="Follow this file's references and lock every part it uses along with it, in one go, so nobody can take one out from under you halfway through"
                 onClick={() => actions.claimWithRefs(path)}
               >
-                Lock references
+                Lock with parts
               </button>
             )}
           {row.file.lockable &&
@@ -159,7 +159,7 @@ export const FileRow = memo(function FileRow({
                 title="Follow this file's references and give back every part it uses that you are holding, all together"
                 onClick={() => actions.releaseWithRefs(path)}
               >
-                Unlock references
+                Unlock with parts
               </button>
             )}
         </span>

@@ -11,11 +11,13 @@ import {
   getLocks,
   getRepoStatus,
   listFiles,
+  listPulls,
   releaseFiles,
   saveAndShare,
   syncAttributes,
   type LockProgress,
   type OutsideCheck,
+  type PullSummary,
 } from "./api";
 
 export const POLL_LOCKS_MS = 10_000;
@@ -132,6 +134,16 @@ export function useCollisions(branch: string, enabled: boolean) {
     queryFn: getCollisions,
     enabled,
     staleTime: 5 * 60_000,
+    retry: false,
+  });
+}
+
+export function usePulls(enabled: boolean) {
+  return useQuery<PullSummary[]>({
+    queryKey: ["pulls"],
+    queryFn: listPulls,
+    enabled,
+    staleTime: 60_000,
     retry: false,
   });
 }

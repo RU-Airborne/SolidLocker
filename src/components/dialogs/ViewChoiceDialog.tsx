@@ -75,8 +75,8 @@ const CHOICES: {
   },
   {
     value: "tiles",
-    label: "Thumbnails",
-    blurb: "Best when you want to see the preview thumbnail visually.",
+    label: "Tiles",
+    blurb: "Best when you want to recognise a part by its preview picture.",
     art: TilesSketch,
   },
 ];

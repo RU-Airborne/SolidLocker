@@ -17,7 +17,7 @@ import { formatChanged, runningLabel } from "../../dates";
 import { OpenFileButton, OpenFolderButton } from "../common/OpenButtons";
 
 /**
- * The thumbnails layout.
+ * The tiles layout.
  */
 
 function FolderGlyph() {
@@ -36,6 +36,7 @@ function FolderGlyph() {
 }
 
 const REFERENCING = /\.(sldasm|slddrw)$/i;
+
 
 interface Subfolder {
   name: string;
@@ -68,7 +69,10 @@ const FolderTile = memo(function FolderTile({
         title={`Open ${folder.path}`}
       >
         <span className="tilepic folderpic">
-          <FolderGlyph />
+          <span className="folderart">
+            <FolderGlyph />
+            <span className="foldercount">{folder.files}</span>
+          </span>
         </span>
         <span className="tilebody">
           <span className="tilename">{folder.name}</span>
@@ -128,6 +132,7 @@ const Tile = memo(function Tile({
   const running = actions.busyPaths.get(path);
   const flashing = actions.highlightedPath === path.toLowerCase();
   const mine = row.status.kind === "mine";
+  const theirs = row.status.kind === "theirs";
   const isPinned = actions.pinned.has(path.toLowerCase());
 
   return (
@@ -135,7 +140,9 @@ const Tile = memo(function Tile({
       id={rowDomId(path)}
       className={`filetile${flashing ? " flash" : ""}${
         row.file.deleted ? " isdeleted" : ""
-      }${mine ? " ismine" : ""}${open ? " isopen" : ""}`}
+      }${mine ? " ismine" : ""}${theirs ? " istheirs" : ""}${
+        open ? " isopen" : ""
+      }`}
       onContextMenu={(e) => actions.contextMenu(e, row)}
       title={path}
     >
@@ -217,7 +224,7 @@ Click for versions and details`}
                   title="Follow this file's references and lock every part it uses along with it, in one go"
                   onClick={() => actions.claimWithRefs(path)}
                 >
-                  Lock references
+                  Lock with parts
                 </button>
               )}
             {row.file.lockable &&
@@ -228,7 +235,7 @@ Click for versions and details`}
                   title="Follow this file's references and give back every part it uses that you are holding, all together"
                   onClick={() => actions.releaseWithRefs(path)}
                 >
-                  Unlock references
+                  Unlock with parts
                 </button>
               )}
           </div>
@@ -282,10 +289,12 @@ export function FileTiles({
   sort,
   here,
   setHere,
+  columns,
 }: {
   rows: FileRowData[];
   actions: RowActions;
   sort: SortMode;
+  columns: number;
   /** Which folder is open. Kept outside so it survives this component being
       taken off screen, and so switching to the list can land in the same
       place. */
@@ -293,6 +302,7 @@ export function FileTiles({
   setHere: (folder: string) => void;
 }) {
   const [showing, setShowing] = useState<string | null>(null);
+  const detail = useRef<HTMLDivElement>(null);
   // Which way the last move went, so the wall of tiles comes in from the side
   // you are travelling towards. Going into a folder reads as moving right.
   const [going, setGoing] = useState<"in" | "out">("in");
@@ -426,6 +436,34 @@ export function FileTiles({
     return lines;
   }, [wall, cols]);
 
+  useEffect(() => {
+    if (!showing) return;
+    const el = detail.current;
+    const scroller = el?.closest<HTMLElement>(".content");
+    if (!el || !scroller) return;
+
+    const GAP = 16;
+    const bring = () => {
+      const box = el.getBoundingClientRect();
+      const port = scroller.getBoundingClientRect();
+      const below = box.bottom - (port.bottom - GAP);
+      // Bottom first, the buttons are down there.
+      if (below > 1) {
+        scroller.scrollTop += below;
+      } else if (box.top < port.top) {
+        scroller.scrollTop += box.top - port.top - GAP;
+      }
+    };
+
+    const id = window.requestAnimationFrame(bring);
+    const watch = new ResizeObserver(bring);
+    watch.observe(el);
+    return () => {
+      window.cancelAnimationFrame(id);
+      watch.disconnect();
+    };
+  }, [showing]);
+
   const openAt = showing
     ? wall.findIndex((item) => item.row?.file.rel_path === showing)
     : -1;
@@ -495,6 +533,7 @@ export function FileTiles({
       ) : (
         <div
           className={`filetiles walk-${going}${showing ? " hasopen" : ""}`}
+          style={{ "--tilecols": columns } as React.CSSProperties}
           key={here}
           ref={gridRef}
         >
@@ -518,7 +557,7 @@ export function FileTiles({
                 />
               )}
               {i === lineEnd && openRow && (
-                <div className="tiledetail">
+                <div className="tiledetail" ref={detail}>
                   <div className="tiledetail-head">
                     <FilePreview
                       path={openRow.file.rel_path}

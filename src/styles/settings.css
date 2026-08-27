@@ -211,8 +211,8 @@
 .repocard {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 1rem;
+  align-items: start;
+  gap: 0.5rem 1rem;
   margin-top: 0.7rem;
   padding: 0.9rem 1rem;
   border: 1px solid var(--border);
@@ -272,18 +272,31 @@
   font-family: ui-monospace, monospace;
   font-size: 0.82rem;
   color: var(--muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .repoaction {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
-  flex: none;
+  grid-column: 1 / -1;
+  padding-top: 0.75rem;
+  border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
 }
 
-.repoaction button {
+.repoexplore {
+  grid-column: 3;
+  grid-row: 1;
+  align-self: start;
+}
+
+.repoaction {
+  justify-content: flex-end;
+}
+
+.repoaction button,
+.repoexplore {
   padding: 0.4rem 1rem;
   border-radius: 6px;
   border: 1px solid var(--border);
@@ -293,25 +306,16 @@
   white-space: nowrap;
 }
 
-.repoaction button:hover:not(:disabled) {
+.repoaction button:hover:not(:disabled),
+.repoexplore:hover:not(:disabled) {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
-.repoaction button:disabled {
+.repoaction button:disabled,
+.repoexplore:disabled {
   opacity: 0.5;
   cursor: default;
-}
-
-@media (max-width: 44rem) {
-  .repocard {
-    grid-template-columns: auto minmax(0, 1fr);
-  }
-
-  .repoaction {
-    grid-column: 1 / -1;
-    justify-content: flex-end;
-  }
 }
 
 .accountdetails {

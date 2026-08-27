@@ -281,6 +281,20 @@ export interface UpdateCheck {
 
 export const checkForUpdate = () => invoke<UpdateCheck>("check_for_update");
 
+export interface RepoChoice {
+  slug: string;
+  name: string;
+  owner: string;
+  owner_avatar: string;
+  clone_url: string;
+  private: boolean;
+  description: string;
+  updated_at: string;
+  default_branch: string;
+}
+
+export const listMyRepos = () => invoke<RepoChoice[]>("list_my_repos");
+
 export const listPulls = () => invoke<PullSummary[]>("list_pulls");
 
 export const pullDetail = (number: number) =>

@@ -85,7 +85,7 @@ export function ClaimDialog({
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>Lock with parts</h2>
+        <h2>Lock this file and the parts it uses</h2>
 
         {error && <p className="error">{error}</p>}
         {!refs && !error && <p className="muted">Scanning references…</p>}

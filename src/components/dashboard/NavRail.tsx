@@ -3,6 +3,7 @@ import { githubAvatarUrl, UserAvatar } from "../common/UserAvatar";
 import { usePeople } from "../../identity";
 import DialLogo from "../DialLogo";
 import { useFlag } from "../../persist";
+import { usePulls } from "../../queries";
 import {
   BranchGlyph,
   CogGlyph,
@@ -35,12 +36,14 @@ function RailItem({
   label,
   hint,
   active,
+  count,
   onClick,
 }: {
   icon: React.ReactNode;
   label: string;
   hint: string;
   active: boolean;
+  count?: number;
   onClick: () => void;
 }) {
   return (
@@ -53,6 +56,11 @@ function RailItem({
       <span className="railicon" aria-hidden="true">
         {icon}
       </span>
+      {count !== undefined && count > 0 && (
+        <span className="railbadge" aria-hidden="true">
+          {count > 99 ? "99+" : count}
+        </span>
+      )}
       <span className="raillabel">{label}</span>
     </button>
   );
@@ -73,6 +81,8 @@ export function NavRail({
 }) {
   const directory = usePeople();
   const [pinned, setPinned] = useFlag("railOpen", true);
+  const pulls = usePulls(!!appState.repo);
+  const waiting = (pulls.data ?? []).filter((p) => p.state === "open").length;
 
   const who = appState.username
     ? (directory.nameFor(appState.username) ?? appState.username)
@@ -132,8 +142,13 @@ export function NavRail({
           <RailItem
             icon={<PullRequestGlyph size={19} />}
             label="Merge Requests"
-            hint={`Branches waiting to be merged into ${defaultBranch}, and the ones already dealt with`}
+            hint={
+              waiting > 0
+                ? `${waiting} request${waiting === 1 ? "" : "s"} waiting to be merged into ${defaultBranch}`
+                : `Branches waiting to be merged into ${defaultBranch}, and the ones already dealt with`
+            }
             active={view === "pulls"}
+            count={waiting}
             onClick={() => onGo("pulls")}
           />
           <RailItem
