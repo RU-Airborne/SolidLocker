@@ -5,8 +5,7 @@ import { NeedsGitSplash, StartingUpSplash } from "../setup/Splashes";
 import { SetupWizard } from "../setup/SetupWizard";
 
 /* ------------ NOT FOR RELEASE!!!!! -------------- */
-/** Set to false to hide. */
-export const SPLASH_GALLERY = true;
+export const SPLASH_GALLERY = false;
 
 type Which =
   | "theme"

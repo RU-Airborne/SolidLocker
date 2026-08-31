@@ -15,7 +15,7 @@ export function ReleaseAllDialog({
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>Release everything you hold</h2>
+        <h2>Unlock everything you hold</h2>
         <p>
           This unlocks {locks.length} file{locks.length === 1 ? "" : "s"} so
           your team can take {locks.length === 1 ? "it" : "them"}. Anything you

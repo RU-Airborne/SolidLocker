@@ -1018,11 +1018,31 @@ async fn force_unlock(
     app: AppHandle,
     gate: State<'_, gate::RepoGate>,
     path: String,
+    id: Option<String>,
 ) -> AppResult<()> {
     let root = current_repo(&app)?;
     let _tree = gate.exclusive().await;
-    lfs::unlock_file(&root, &path, true).await?;
+    lfs::drop_lock(&root, &path, id.as_deref(), true).await?;
     let _ = fsattr::set_readonly(&root.join(&path), true);
+    Ok(())
+}
+
+#[tauri::command]
+async fn drop_own_lock(
+    app: AppHandle,
+    gate: State<'_, gate::RepoGate>,
+    path: String,
+    id: Option<String>,
+) -> AppResult<()> {
+    let root = current_repo(&app)?;
+    let _tree = gate.exclusive().await;
+    lfs::drop_lock(&root, &path, id.as_deref(), false).await?;
+    // Nothing to set read-only when the lock was dangling; the file is gone.
+    let abs = root.join(&path);
+    if abs.exists() {
+        let _ = fsattr::set_readonly(&abs, true);
+    }
+    crate::logger::info(format!("unlocked own file {path} from the locks list"));
     Ok(())
 }
 
@@ -1309,6 +1329,7 @@ macro_rules! commands {
             release_files,
             discard_sw_changes,
             force_unlock,
+            drop_own_lock,
             resolve_references,
             sync_attributes,
             get_repo_status,

@@ -463,8 +463,11 @@ export const discardSwChanges = (paths: string[]) =>
 
 export const cancelLockRun = () => invoke<void>("cancel_lock_run");
 
-export const forceUnlock = (path: string) =>
-  invoke<void>("force_unlock", { path });
+export const forceUnlock = (path: string, id?: string) =>
+  invoke<void>("force_unlock", { path, id: id ?? null });
+
+export const dropOwnLock = (path: string, id?: string) =>
+  invoke<void>("drop_own_lock", { path, id: id ?? null });
 
 export const syncAttributes = () => invoke<SyncResult>("sync_attributes");
 
