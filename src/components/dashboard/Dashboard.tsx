@@ -23,6 +23,7 @@ import {
   cancelLockRun,
   checkOutsideRefs,
   discardSwChanges,
+  dropOwnLock,
   type CommitInfo,
   type LockProgress,
   type OutsideRef,
@@ -153,6 +154,8 @@ export interface RowActions {
   currentBranch: string;
   previewing: boolean;
 }
+
+const TOUCH_SETTLE_MS = 30_000;
 
 export function Dashboard({ appState }: { appState: AppState }) {
   const files = useFiles(true);
@@ -397,7 +400,15 @@ export function Dashboard({ appState }: { appState: AppState }) {
       setPanelOpen(true);
     }
   }
+
+  const touchedPaths = useRef<Map<string, number>>(new Map());
+  function touchPaths(paths: string[], until: number) {
+    for (const p of paths) touchedPaths.current.set(p, until);
+  }
+
   const [forceTarget, setForceTarget] = useState<Lock | null>(null);
+  const [dropMineAsk, setDropMineAsk] = useState<Lock | null>(null);
+  const [droppingMine, setDroppingMine] = useState(false);
   const [offBranchFile, setOffBranchFile] = useState<{
     path: string;
     branches: string[];
@@ -812,12 +823,14 @@ export function Dashboard({ appState }: { appState: AppState }) {
 
 
   function withBusy(paths: string[], kind: LockRunKind, fn: () => Promise<void>) {
+    touchPaths(paths, Number.POSITIVE_INFINITY);
     setBusyPaths((prev) => {
       const next = new Map(prev);
       for (const p of paths) next.set(p, kind);
       return next;
     });
     fn().finally(() => {
+      touchPaths(paths, Date.now() + TOUCH_SETTLE_MS);
       setBusyPaths((prev) => {
         const next = new Map(prev);
         for (const p of paths) next.delete(p);
@@ -854,6 +867,68 @@ export function Dashboard({ appState }: { appState: AppState }) {
   const [resolving, setResolving] = useState<{ plan?: string } | null>(null);
   const [showCollisions, setShowCollisions] = useState(false);
 
+  const collisionKeys = useMemo(() => {
+    const keys: string[] = [];
+    for (const c of collisions.data ?? []) {
+      for (const f of c.cad_files) keys.push(`${c.branch}|${f}`);
+    }
+    return keys.sort();
+  }, [collisions.data]);
+  const collisionSig = useMemo(
+    () => JSON.stringify(collisionKeys),
+    [collisionKeys],
+  );
+  const [collisionsHidden, setCollisionsHidden] = useState(
+    () => localStorage.getItem("collisionsDismissed") ?? "",
+  );
+  const collisionsShown =
+    collisionKeys.length > 0 && collisionSig !== collisionsHidden;
+
+  const heldKey = `heldLocks:${appState.repo?.repo_slug ?? ""}`;
+  useEffect(() => {
+    const data = locks.data;
+    if (!data || !data.fresh) return;
+
+    // Sorted so the comparison below only fires on a real change.
+    const mine = data.ours.map((l) => l.path).sort();
+    const held = new Set(mine);
+    let before: string[] = [];
+    try {
+      const raw = localStorage.getItem(heldKey);
+      if (raw) before = JSON.parse(raw) as string[];
+    } catch {
+      // A damaged entry just means we start watching from here.
+    }
+    // Every ten seconds otherwise, for a set that rarely changes.
+    const packed = JSON.stringify(mine);
+    if (packed !== JSON.stringify(before)) {
+      localStorage.setItem(heldKey, packed);
+    }
+
+    const now = Date.now();
+    for (const [p, until] of touchedPaths.current) {
+      if (until < now) touchedPaths.current.delete(p);
+    }
+    const taken = before.filter(
+      (p) => !held.has(p) && !touchedPaths.current.has(p),
+    );
+    if (taken.length === 0) return;
+
+    // The lock is gone, so it carries no owner any more. If somebody has
+    // claimed the file since, that at least tells us who has it now.
+    const heldBy = new Map<string, string>();
+    for (const l of data.theirs) {
+      if (l.owner?.name) heldBy.set(l.path, l.owner.name);
+    }
+    warn(copy.locksTaken(taken));
+    void notifyDesktop(
+      taken.length === 1
+        ? "Your lock was taken off"
+        : "Your locks were taken off",
+      copy.locksTakenBody(taken, heldBy),
+    );
+  }, [locks.data, heldKey]);
+
   useEffect(() => {
     const risky = (collisions.data ?? []).filter((c) => c.cad_files.length > 0);
     if (risky.length === 0) return;
@@ -871,8 +946,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
         const key = `${c.branch}|${f}`;
         if (known.has(key)) continue;
         fresh.push(key);
-        const who = c.is_mine ? "your other branch" : c.author;
-        lines.push(`${f.split("/").pop() ?? f}, you and ${who}, on ${c.branch}`);
+        lines.push(`${f.split("/").pop() ?? f} — also on ${c.branch}`);
       }
     }
     if (fresh.length === 0) return;
@@ -1114,6 +1188,31 @@ export function Dashboard({ appState }: { appState: AppState }) {
     queryFn: listRepoBranches,
     staleTime: 5 * 60_000,
   });
+
+  function dropMyLock(lock: Lock) {
+    if (droppingMine) return;
+    setDroppingMine(true);
+    dropOwnLock(lock.path, lock.id)
+      .then(() => {
+        setDropMineAsk(null);
+        succeed(copy.releasedOk([lock.path]));
+        queryClient.invalidateQueries({ queryKey: ["locks"] });
+        queryClient.invalidateQueries({ queryKey: ["files"] });
+        queryClient.invalidateQueries({ queryKey: ["repoStatus"] });
+      })
+      .catch((e) => warn(isAppError(e) ? e.message : String(e)))
+      .finally(() => setDroppingMine(false));
+  }
+
+  const unsharedPaths = useMemo(
+    () =>
+      new Set([
+        ...(repoStatus.data?.dirty ?? []),
+        ...(repoStatus.data?.untracked ?? []),
+      ]),
+    [repoStatus.data],
+  );
+
   function handleFixStuck() {
     if (!stuckFiles || fixingStuck) return;
     setFixingStuck(true);
@@ -1383,10 +1482,14 @@ export function Dashboard({ appState }: { appState: AppState }) {
           </button>
         </div>
       )}
-      {collisions.data && collisions.data.length > 0 && (
+      {collisions.data && collisionsShown && (
         <CollisionNotice
           collisions={collisions.data}
           onShow={() => setShowCollisions(true)}
+          onDismiss={() => {
+            setCollisionsHidden(collisionSig);
+            localStorage.setItem("collisionsDismissed", collisionSig);
+          }}
         />
       )}
       {stuckFiles && stuckFiles.length > 0 && (
@@ -1879,6 +1982,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
                 setOffBranchFile({ path, branches: branchesOn })
               }
               onForceRelease={setForceTarget}
+              onDropMine={setDropMineAsk}
               mineElsewhere={myClaimsElsewhere}
             />
           ) : (
@@ -2223,6 +2327,62 @@ export function Dashboard({ appState }: { appState: AppState }) {
           onClose={() => setSetAside(null)}
         />
       )}
+      {dropMineAsk &&
+        (() => {
+          const name = dropMineAsk.path.split("/").pop() ?? dropMineAsk.path;
+          const unshared = unsharedPaths.has(dropMineAsk.path);
+          return (
+            <div
+              className="modal-backdrop"
+              onClick={() => !droppingMine && setDropMineAsk(null)}
+            >
+              <div className="modal" onClick={(e) => e.stopPropagation()}>
+                <h2>
+                  {unshared ? "Unlock without sharing?" : "Unlock this file?"}
+                </h2>
+                {unshared ? (
+                  <>
+                    <p>
+                      <strong>{name}</strong> has changes that are not on
+                      GitHub yet. Unlocking hands the file to the next
+                      person, and your edits stay on this computer only &mdash;
+                      whoever takes it next starts from the last shared
+                      version.
+                    </p>
+                    <p className="muted">
+                      Save &amp; Share first if you want the work to travel.
+                    </p>
+                  </>
+                ) : (
+                  <p>
+                    <strong>{name}</strong> goes back to view-only and anyone
+                    on the team can claim it. Take it again whenever you need
+                    it.
+                  </p>
+                )}
+                <div className="modal-actions">
+                  <button
+                    onClick={() => setDropMineAsk(null)}
+                    disabled={droppingMine}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className={unshared ? "danger" : "primary"}
+                    disabled={droppingMine}
+                    onClick={() => dropMyLock(dropMineAsk)}
+                  >
+                    {droppingMine
+                      ? "Unlocking…"
+                      : unshared
+                        ? "Unlock anyway"
+                        : "Unlock"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       {forceTarget && (
         <ForceUnlockDialog
           lock={forceTarget}

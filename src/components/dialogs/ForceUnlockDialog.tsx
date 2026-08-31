@@ -23,7 +23,7 @@ export function ForceUnlockDialog({
     setBusy(true);
     setError(null);
     try {
-      await forceUnlock(lock.path);
+      await forceUnlock(lock.path, lock.id);
       onDone(`Force-unlocked ${filename} (was locked by ${owner}).`);
     } catch (e) {
       setError(isAppError(e) ? e.message : String(e));

@@ -1,0 +1,2197 @@
+@import "../styles/dial.css";
+@import "./railway.css";
+
+/* The phone app.
+   Nothing in here touches a desktop class name: every rule is under .m-*, so
+   the two shells can share one bundle without one restyling the other. */
+
+.m-app {
+  --m-gap: 12px;
+  --m-radius: 12px;
+  --m-tap: 44px;
+  /* The chart shades, checked for lightness, chroma and contrast against the
+     surface in both themes.
+     Three shades of the brand red rather than three hues. They are panel
+     identity, not an encoding: every panel is a single measure with its
+     numbers written on it, so what has to hold is contrast against the
+     surface, which all three clear at 3:1 in both themes. */
+  --chart-1: #8f2427;
+  --chart-2: #b53439;
+  --chart-3: #d4595e;
+  /* The brand red still sits at 2.48:1 on the dark surface, so where a chart
+     does use the accent it uses a lighter step of it. */
+  --chart-accent: #a92e31;
+
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--headbg);
+  /* iOS scroll momentum inside panes, never on the page itself. */
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+  /* No double-tap zoom; the viewport meta handles pinch. */
+  touch-action: manipulation;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .m-app {
+    --chart-1: #c04044;
+    --chart-2: #cd5458;
+    --chart-3: #d96a6e;
+    --chart-accent: #c9484c;
+  }
+}
+
+:root[data-theme="dark"] .m-app {
+  --chart-1: #c04044;
+  --chart-2: #cd5458;
+  --chart-3: #d96a6e;
+  --chart-accent: #c9484c;
+}
+
+.m-centre {
+  align-items: center;
+  justify-content: center;
+  /* The screens with a header get their inset from .m-head. This one has no
+     header, so without saying so the logo draws up under the status bar. */
+  padding: calc(env(safe-area-inset-top) + 24px) 24px
+    calc(env(safe-area-inset-bottom) + 24px);
+  overflow-y: auto;
+}
+
+.m-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  /* A pushed page is positioned against this, not the screen, so the tab bar
+     below it is never covered: going into a merge request should not take
+     away the way out of it. */
+  position: relative;
+}
+
+.m-screen {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* ---- Header ---- */
+
+.m-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: calc(env(safe-area-inset-top) + 10px) var(--m-gap) 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 45%, transparent);
+}
+
+.m-head h1 {
+  margin: 0;
+  font-size: 1.32rem;
+  font-weight: 640;
+  letter-spacing: -0.01em;
+  flex: 1;
+  min-width: 0;
+}
+
+.m-backbtn {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 1rem;
+  padding: 6px 4px 6px 0;
+  cursor: pointer;
+}
+
+.m-head-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px var(--m-gap);
+}
+
+.m-iconbtn {
+  min-width: var(--m-tap);
+  min-height: var(--m-tap);
+  display: grid;
+  place-items: center;
+  border: none;
+  background: none;
+  color: inherit;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.m-iconbtn:active {
+  background: color-mix(in srgb, var(--border) 30%, transparent);
+}
+
+/* ---- Scrolling body ---- */
+
+.m-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 var(--m-gap) 20px;
+  overscroll-behavior: contain;
+}
+
+/* ---- Rows ---- */
+
+.m-row {
+  width: 100%;
+  min-height: var(--m-tap);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 4px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 28%, transparent);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.m-row {
+  transition:
+    background-color 0.18s ease,
+    opacity 0.16s ease,
+    transform 0.12s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.m-row:active {
+  background: color-mix(in srgb, var(--border) 22%, transparent);
+  /* A shade smaller under the thumb: enough to feel pressed, not enough to
+     shift the words out from under where they were tapped. */
+  transform: scale(0.995);
+}
+
+.m-row:disabled {
+  opacity: 0.55;
+}
+
+.m-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.m-row-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.m-row .muted.small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.small {
+  font-size: 0.82rem;
+}
+
+.m-chevron {
+  color: var(--muted);
+  flex: none;
+  transition: transform 0.22s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* A chevron on a row that opens out should point at what it did. */
+[aria-expanded="true"] > .m-chevron {
+  transform: rotate(90deg);
+}
+
+/* The same coloured chips the desktop uses, at a size a thumb can aim at.
+   The colours belong to the icon, not to the box around it, so a part reads
+   as a part in both apps. Copied from controls.css rather than moved, so the
+   desktop cascade is untouched. */
+.ftype {
+  box-sizing: border-box;
+  border-radius: 6px;
+  background: var(--muted);
+  color: #ffffff;
+  flex-shrink: 0;
+}
+
+.ftype-prt {
+  background: #00b3b3;
+}
+
+.ftype-asm {
+  background: #d29922;
+}
+
+.ftype-drw {
+  background: #57ab5a;
+}
+
+.m-filetype {
+  flex: none;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+
+.m-filetype .ftype {
+  width: 28px;
+  height: 28px;
+  padding: 5px;
+  margin: 0;
+  vertical-align: 0;
+}
+
+/* The folder glyph is not a file type, so it keeps the quiet treatment. */
+.m-folder .m-filetype > svg {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  padding: 4px;
+  background: color-mix(in srgb, var(--border) 22%, transparent);
+}
+
+.m-tag {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.m-count {
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+/* ---- Lock marks ---- */
+
+.m-lockmark {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+  max-width: 42%;
+  overflow: hidden;
+}
+
+.m-lockmark span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.m-lockmark.mine {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 15%, transparent);
+}
+
+/* ---- Groups ---- */
+
+.m-groupbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 16px 4px 6px;
+  position: sticky;
+  top: 0;
+  background: var(--headbg);
+  z-index: 1;
+}
+
+.m-groupbar h2 {
+  margin: 0;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.m-subhead {
+  margin: 18px 0 8px;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+/* ---- Branch chip on the home screen ---- */
+
+.m-branchpick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: var(--m-radius);
+  border: 1px solid color-mix(in srgb, var(--border) 45%, transparent);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.m-branchpick .branchword {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.m-branchpick:active {
+  background: color-mix(in srgb, var(--border) 22%, transparent);
+}
+
+/* A tools row that is already inside a sheet's own padding. */
+.m-flush {
+  padding-left: 0;
+  padding-right: 0;
+  padding-top: 0;
+}
+
+/* ---- Search ---- */
+
+.m-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  height: var(--m-tap);
+  border-radius: var(--m-radius);
+  border: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  color: var(--muted);
+}
+
+.m-search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  /* Under 16px iOS zooms the whole page on focus. */
+  font-size: 16px;
+  outline: none;
+  appearance: none;
+}
+
+.m-search input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.m-search-clear {
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 1.3rem;
+  line-height: 1;
+  padding: 0 4px;
+  cursor: pointer;
+}
+
+/* ---- Segmented control ---- */
+
+.m-segmented {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--m-radius);
+  background: color-mix(in srgb, var(--border) 24%, transparent);
+}
+
+.m-segmented button {
+  flex: 1;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: none;
+  background: none;
+  border-radius: 9px;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 560;
+  cursor: pointer;
+}
+
+.m-segmented button.active {
+  background: var(--menubg);
+  color: inherit;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.16);
+}
+
+.m-seg-count {
+  font-size: 0.72rem;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--accent);
+}
+
+/* ---- Crumbs ---- */
+
+.m-crumbs {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  overflow-x: auto;
+  padding: 0 var(--m-gap) 8px;
+  scrollbar-width: none;
+}
+
+.m-crumbs::-webkit-scrollbar {
+  display: none;
+}
+
+.m-crumbs button {
+  flex: none;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.86rem;
+  padding: 6px 6px;
+  cursor: pointer;
+}
+
+.m-crumbs button:not(:last-child)::after {
+  content: "›";
+  margin-left: 8px;
+  opacity: 0.6;
+}
+
+.m-crumbs button.here {
+  color: inherit;
+  font-weight: 600;
+}
+
+
+
+
+
+
+
+
+/* ---- Buttons ---- */
+
+.m-btn {
+  min-height: var(--m-tap);
+  padding: 0 16px;
+  border-radius: var(--m-radius);
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 570;
+  cursor: pointer;
+}
+
+.m-btn {
+  transition:
+    background-color 0.16s ease,
+    opacity 0.16s ease,
+    transform 0.12s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.m-btn:active {
+  background: color-mix(in srgb, var(--border) 26%, transparent);
+  transform: scale(0.97);
+}
+
+.m-btn:disabled {
+  opacity: 0.5;
+}
+
+.m-btn-wide {
+  width: 100%;
+}
+
+.m-btn-go {
+  background: var(--accent);
+  border-color: transparent;
+  color: #fff;
+}
+
+.m-btn-danger {
+  border-color: color-mix(in srgb, var(--error) 70%, transparent);
+  color: var(--error);
+}
+
+.m-btn-warn {
+  border-color: color-mix(in srgb, var(--warning) 70%, transparent);
+  color: var(--warning);
+}
+
+.m-linkbtn {
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 560;
+  padding: 10px 2px;
+  min-height: var(--m-tap);
+  cursor: pointer;
+}
+
+/* ---- Tab bar ---- */
+
+.m-tabs {
+  display: flex;
+  border-top: 1px solid color-mix(in srgb, var(--border) 45%, transparent);
+  padding-bottom: env(safe-area-inset-bottom);
+  background: var(--menubg);
+}
+
+.m-tab {
+  flex: 1;
+  min-height: 52px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  padding: 6px 2px;
+  cursor: pointer;
+  transition: color 0.18s ease;
+}
+
+.m-tab .m-tab-icon {
+  transition: transform 0.22s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.m-tab.active .m-tab-icon {
+  transform: translateY(-1px) scale(1.06);
+}
+
+.m-tab:active .m-tab-icon {
+  transform: scale(0.92);
+}
+
+.m-tab.active {
+  color: var(--accent);
+}
+
+.m-tab-icon {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+.m-tab-label {
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.m-tab-badge {
+  position: absolute;
+  top: -3px;
+  right: -8px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--success);
+  color: #fff;
+  font-size: 0.64rem;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+}
+
+/* ---- Sheets ---- */
+
+.m-sheet-back {
+  position: fixed;
+  inset: 0;
+  background: rgb(0 0 0 / 0.45);
+  display: flex;
+  align-items: flex-end;
+  z-index: 40;
+  animation: m-fade 0.16s ease;
+}
+
+.m-sheet {
+  width: 100%;
+  max-height: 92dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--menubg);
+  border-radius: 18px 18px 0 0;
+  outline: none;
+  animation: m-rise 0.22s cubic-bezier(0.22, 0.7, 0.3, 1);
+}
+
+@keyframes m-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes m-rise {
+  from {
+    transform: translateY(14px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .m-sheet-back,
+  .m-sheet {
+    animation: none;
+  }
+}
+
+.m-sheet-grip {
+  width: 38px;
+  height: 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border) 80%, transparent);
+  margin: 8px auto 0;
+}
+
+.m-sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px var(--m-gap);
+}
+
+.m-sheet-head h2 {
+  margin: 0;
+  font-size: 1.06rem;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.m-sheet-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.m-sheet-close {
+  flex: none;
+  width: var(--m-tap);
+  height: var(--m-tap);
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 1.6rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.m-sheet-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 var(--m-gap) 12px;
+  overscroll-behavior: contain;
+}
+
+.m-sheet-foot {
+  display: flex;
+  gap: 8px;
+  padding: 10px var(--m-gap) calc(env(safe-area-inset-bottom) + 12px);
+  border-top: 1px solid color-mix(in srgb, var(--border) 35%, transparent);
+}
+
+.m-sheet-foot > * {
+  flex: 1;
+}
+
+.m-confirm p {
+  margin: 4px 0 12px;
+  line-height: 1.5;
+}
+
+/* ---- Facts, history, previews ---- */
+
+.m-preview {
+  border-radius: var(--m-radius);
+  background: color-mix(in srgb, var(--border) 16%, transparent);
+  display: grid;
+  place-items: center;
+  padding: 8px;
+  margin-bottom: 12px;
+}
+
+.m-preview img {
+  max-width: 100%;
+  max-height: 42dvh;
+  object-fit: contain;
+}
+
+.m-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 14px;
+  margin: 4px 0 0;
+  font-size: 0.9rem;
+}
+
+.m-facts dt {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.m-facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.m-holder {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.m-history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.m-history li {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+}
+
+.m-history-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* ---- Merge requests ---- */
+
+.m-pullstate {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--muted);
+}
+
+.m-pullstate-open {
+  background: var(--success);
+}
+
+.m-pullstate-merged {
+  background: #8957e5;
+}
+
+.m-pullstate-closed {
+  background: var(--error);
+}
+
+.m-pulltitle {
+  margin: 8px 0 4px;
+  font-size: 1.14rem;
+  line-height: 1.32;
+}
+
+.m-pullbody {
+  white-space: pre-wrap;
+  line-height: 1.5;
+  margin: 12px 0;
+}
+
+.m-pullfiles {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.m-pullfiles li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 22%, transparent);
+}
+
+.m-pullfile-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.86rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+.m-inset {
+  padding-left: 40px;
+}
+
+.m-status {
+  flex: none;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.m-status-added {
+  color: var(--success);
+}
+
+.m-status-removed {
+  color: var(--error);
+}
+
+.m-comments {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.m-comments li {
+  display: flex;
+  gap: 9px;
+}
+
+.m-comment-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.m-comment-who {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-weight: 570;
+}
+
+.m-verdict {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.m-verdict-approved {
+  color: var(--success);
+}
+
+.m-verdict-changes_requested {
+  color: var(--warning);
+}
+
+.m-review {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.m-review textarea {
+  width: 100%;
+  border-radius: var(--m-radius);
+  border: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 16px;
+  padding: 9px 11px;
+  resize: none;
+}
+
+.m-review-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.m-review-buttons .m-btn {
+  flex: 1;
+  padding: 0 8px;
+  font-size: 0.88rem;
+}
+
+/* ---- Branches ---- */
+
+.m-branch.here {
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+
+.m-here-mark {
+  flex: none;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+}
+
+.m-standing {
+  display: flex;
+  gap: 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.m-standing .ahead {
+  color: var(--success);
+}
+
+.m-standing .behind {
+  color: var(--warning);
+}
+
+.branchword {
+  font-weight: 640;
+}
+
+/* ---- Sign in ---- */
+
+.m-signin {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+  max-width: 420px;
+  width: 100%;
+}
+
+.m-signin h1 {
+  margin: 0;
+  font-size: 1.6rem;
+}
+
+.m-signin p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.m-signin-logo {
+  width: 74px;
+  height: 74px;
+}
+
+.m-signin .m-btn-wide,
+.m-signin .m-tokenform,
+.m-signin .m-device {
+  width: 100%;
+}
+
+.m-device {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.m-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  padding: 12px 18px;
+  border-radius: var(--m-radius);
+  border: 1px dashed color-mix(in srgb, var(--accent) 55%, var(--border));
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: inherit;
+  cursor: pointer;
+}
+
+.m-tokenform,
+.m-bypath,
+.m-settings section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+}
+
+.m-tokenform label,
+.m-bypath label,
+.m-settings label {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.m-tokenform input,
+.m-bypath input,
+.m-settings input {
+  min-height: var(--m-tap);
+  padding: 0 12px;
+  border-radius: var(--m-radius);
+  border: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 16px;
+}
+
+.m-bypath {
+  padding: 22px 0 8px;
+}
+
+.m-bypath-row {
+  display: flex;
+  gap: 8px;
+}
+
+.m-bypath-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.m-note {
+  line-height: 1.5;
+}
+
+/* ---- Settings, team, whoami ---- */
+
+.m-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  padding-top: 8px;
+}
+
+.m-settings p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.m-setting-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 560;
+}
+
+.m-whoami {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 4px 18px;
+}
+
+.m-holding {
+  flex: none;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 7px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 15%, transparent);
+}
+
+/* ---- Insights ----
+   One measure per chart, so no legend: each title names its own series, and
+   every bar carries its own number. */
+
+.m-insights {
+  padding-top: 8px;
+}
+
+.m-statrow {
+  display: flex;
+  gap: 8px;
+}
+
+.m-stat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 10px;
+  border-radius: var(--m-radius);
+  border: 1px solid color-mix(in srgb, var(--border) 32%, transparent);
+}
+
+.m-stat-value {
+  font-size: 1.5rem;
+  font-weight: 680;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.m-stat-label {
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+
+.m-weeks-plot {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 96px;
+}
+
+.m-week {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.m-week-bar {
+  width: 100%;
+  min-height: 2px;
+  /* Rounded at the data end only; the baseline stays square so the column
+     reads as measured from zero. */
+  border-radius: 4px 4px 0 0;
+  background: color-mix(in srgb, var(--panel-hue, var(--chart-1)) 60%, transparent);
+  transition: background 0.15s ease;
+}
+
+.m-week.touched .m-week-bar {
+  background: var(--panel-hue, var(--chart-1));
+}
+
+.m-weeks-note {
+  margin: 8px 0 0;
+}
+
+.m-rank {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.m-rank-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.88rem;
+  margin-bottom: 4px;
+}
+
+.m-rank-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.m-rank-count {
+  flex: none;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.m-rank-track {
+  display: block;
+  height: 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border) 22%, transparent);
+  overflow: hidden;
+}
+
+.m-rank-bar {
+  display: block;
+  height: 100%;
+  border-radius: 0 4px 4px 0;
+  background: var(--panel-hue, var(--chart-1));
+}
+
+/* ---- The railway ----
+   History runs down the page and branches stack across, which is the desktop
+   map turned on its side to fit a phone. The rail is one SVG behind the whole
+   list so a line can run past several stops without being cut at each row. */
+
+.m-railway {
+  display: grid;
+  grid-template-columns: var(--rail-w) 1fr;
+  align-items: start;
+  padding-top: 6px;
+}
+
+.m-rail {
+  grid-column: 1;
+  grid-row: 1;
+  display: block;
+  overflow: visible;
+}
+
+.m-stops {
+  grid-column: 2;
+  grid-row: 1;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.m-stops li {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.m-stop {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 2px 4px 8px;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.m-stop-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.m-stop-subject {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9rem;
+}
+
+.m-stop-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.m-stop-refs {
+  display: flex;
+  gap: 5px;
+  flex: none;
+}
+
+.m-stop-refs .branchword {
+  font-size: 0.76rem;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+}
+
+.m-stop-sha {
+  padding: 0 8px 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* ---- Activity calendar ----
+   One hue, five steps, ordered light to dark. A quantity is ordered, so the
+   colour has to be ordered with it. */
+
+.m-cal-grid {
+  display: grid;
+  grid-template-rows: repeat(7, 1fr);
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  /* A two pixel gap so neighbouring days read as separate marks. */
+  gap: 2px;
+}
+
+.m-cal-day {
+  aspect-ratio: 1;
+  border: none;
+  border-radius: 2px;
+  padding: 0;
+  cursor: pointer;
+}
+
+.m-cal-day.touched {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.m-cal-note {
+  margin: 8px 0 0;
+}
+
+/* "Yours" is said in the label beside the bar, so the bar does not have to
+   change hue to say it. Green against scarlet reads as a traffic light and
+   means neither of those things here. */
+.m-rank-bar.mine {
+  background: var(--chart-1);
+}
+
+.m-filetype.m-inline .ftype {
+  width: 19px;
+  height: 19px;
+  padding: 3px;
+  border-radius: 5px;
+}
+
+.m-filetype.m-inline {
+  display: inline-grid;
+  vertical-align: -5px;
+  margin-right: 6px;
+}
+
+/* ---- Insights panels ----
+   Each measure gets its own card so the page reads as a set of answers rather
+   than one long column of bars, and so there is real air between them. */
+
+.m-insights {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 12px 0 8px;
+}
+
+.m-panel {
+  padding: 16px 14px 14px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--border) 30%, transparent);
+  background: color-mix(in srgb, var(--border) 7%, transparent);
+}
+
+.m-panel > h3 {
+  margin: 0 0 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* A short bar of the panel's own colour beside its name, so the colour in the
+   chart is accounted for without a legend box. */
+.m-panel > h3::before {
+  content: "";
+  width: 3px;
+  height: 13px;
+  border-radius: 999px;
+  background: var(--panel-hue, var(--chart-1));
+  flex: none;
+}
+
+.m-panel .m-subhead {
+  margin: 0 0 14px;
+}
+
+.m-panel .m-rank {
+  gap: 14px;
+}
+
+.m-insights .m-statrow {
+  gap: 10px;
+}
+
+.m-cal-day {
+  border-radius: 3px;
+}
+
+/* ---- Sliding between tabs ---- */
+
+.m-body.m-fromright {
+  animation: m-slide-right 0.2s cubic-bezier(0.22, 0.7, 0.3, 1);
+}
+
+.m-body.m-fromleft {
+  animation: m-slide-left 0.2s cubic-bezier(0.22, 0.7, 0.3, 1);
+}
+
+@keyframes m-slide-right {
+  from {
+    transform: translateX(14px);
+    opacity: 0;
+  }
+}
+
+@keyframes m-slide-left {
+  from {
+    transform: translateX(-14px);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .m-body.m-fromright,
+  .m-body.m-fromleft {
+    animation: none;
+  }
+}
+
+/* A page pushed in from the right, the way iOS moves between places you go
+   and come back from. Used where there is too much to read for a panel over
+   the top of the list it came from. */
+.m-pagewrap {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  overflow: hidden;
+}
+
+.m-page {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--headbg);
+  animation: m-page-in 0.32s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@keyframes m-page-in {
+  from {
+    transform: translateX(100%);
+  }
+}
+
+.m-pullpage .m-sheet-foot {
+  padding-bottom: 12px;
+}
+
+/* Inside the More sheet the page does not own the screen, so it slides within
+   the sheet rather than over it. It has to carry the column layout the sheet
+   would otherwise give its children directly. */
+.m-subpage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.m-subpage.m-fromright {
+  animation: m-slide-right 0.24s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.m-subpage.m-fromleft {
+  animation: m-slide-left 0.24s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .m-page,
+  .m-subpage.m-fromright,
+  .m-subpage.m-fromleft {
+    animation: none;
+  }
+}
+
+/* ---- The railway tab ---- */
+
+.m-railhint {
+  margin: 10px 0 4px;
+}
+
+/* The map is wider than the phone; it scrolls sideways inside its own box
+   rather than making the page scroll. */
+.m-railtab {
+  padding-bottom: 24px;
+}
+
+/* Six tabs on a phone, so each one gets less room. */
+.m-tabs {
+  padding-left: 2px;
+  padding-right: 2px;
+}
+
+.m-tab {
+  padding: 6px 1px;
+}
+
+.m-tab-label {
+  font-size: 0.6rem;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- Odds and ends ---- */
+
+.m-spinner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 26px 0;
+}
+
+.m-spinner-dial,
+.m-row-busy {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  border: 2px solid color-mix(in srgb, var(--border) 55%, transparent);
+  border-top-color: var(--accent);
+  animation: m-turn 0.8s linear infinite;
+}
+
+.m-row-busy {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+
+.m-spin {
+  animation: m-turn 0.9s linear infinite;
+}
+
+@keyframes m-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .m-spinner-dial,
+  .m-row-busy,
+  .m-spin {
+    animation-duration: 2.4s;
+  }
+}
+
+.m-empty {
+  padding: 46px 20px;
+  text-align: center;
+}
+
+.m-empty-title {
+  margin: 0 0 6px;
+  font-weight: 600;
+}
+
+.m-trouble {
+  padding: 14px;
+  margin: 10px 0;
+  border-radius: var(--m-radius);
+  border: 1px solid color-mix(in srgb, var(--error) 45%, transparent);
+  background: color-mix(in srgb, var(--error) 8%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.m-trouble p {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.m-notice {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border-radius: var(--m-radius);
+  background: color-mix(in srgb, var(--border) 20%, transparent);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.m-flash {
+  /* Something that just happened should arrive rather than appear. */
+  animation: m-drop-in 0.26s cubic-bezier(0.32, 0.72, 0, 1);
+  margin: 8px var(--m-gap);
+  padding: 10px 12px;
+  border-radius: var(--m-radius);
+  background: color-mix(in srgb, var(--success) 16%, transparent);
+  color: inherit;
+  font-size: 0.88rem;
+}
+
+.avatar-img {
+  border-radius: 999px;
+  flex: none;
+  object-fit: cover;
+}
+
+.avatar-initials {
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--border) 40%, transparent);
+  font-weight: 700;
+}
+
+
+
+
+
+
+/* The rails are drawn to a fixed pitch, so the row cannot grow with its
+   text or the lines stop meeting between rows. */
+
+/* One line per change. The rail is drawn to a fixed pitch, so the row cannot
+   grow with its text; a single line at this size sits in it comfortably and
+   fits half again as many changes on screen as two lines would. */
+
+
+/* A branch name where its line ends, in that line's own colour. */
+
+.m-branchdrawer {
+  max-height: 42dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-radius: var(--m-radius);
+  border: 1px solid color-mix(in srgb, var(--border) 30%, transparent);
+  padding: 0 10px;
+}
+
+.m-chevron.m-turned {
+  transform: rotate(90deg);
+  display: inline-block;
+}
+
+/* ---- The account button that replaced the More tab ---- */
+
+.m-mebtn {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border: none;
+  background: none;
+  padding: 0;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+/* ---- Branch pills ---- */
+
+.m-pills {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding: 8px var(--m-gap) 10px;
+  scrollbar-width: none;
+}
+
+.m-pills::-webkit-scrollbar {
+  display: none;
+}
+
+.m-pill {
+  flex: none;
+  min-height: 32px;
+  padding: 0 13px;
+  border-radius: 999px;
+  border: 1.5px solid color-mix(in srgb, var(--border) 60%, transparent);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease,
+    transform 0.12s cubic-bezier(0.32, 0.72, 0, 1);
+  max-width: 46vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.m-pill.on {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.m-pill:active {
+  transform: scale(0.95);
+}
+
+
+/* ---- More, as a sheet off the avatar ---- */
+
+.m-moresheet-back {
+  position: fixed;
+  inset: 0;
+  background: rgb(0 0 0 / 0.45);
+  display: flex;
+  align-items: flex-end;
+  z-index: 45;
+  animation: m-fade 0.16s ease;
+}
+
+.m-moresheet {
+  width: 100%;
+  /* Enough for the menu and no more: pressing your own face should not take
+     the whole screen away from what you were looking at. */
+  height: 40dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--menubg);
+  border-radius: 18px 18px 0 0;
+  animation: m-rise 0.22s cubic-bezier(0.22, 0.7, 0.3, 1);
+  transition: height 0.22s cubic-bezier(0.22, 0.7, 0.3, 1);
+  overflow: hidden;
+}
+
+/* Settings, Team and Activity are lists worth reading, so going into one
+   lets the sheet grow. */
+.m-moresheet.deep {
+  height: 88dvh;
+}
+
+.m-moresheet .m-head {
+  padding-top: 14px;
+}
+
+.m-moresheet .m-scroll {
+  padding-bottom: calc(env(safe-area-inset-bottom) + 16px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .m-moresheet-back,
+  .m-moresheet {
+    animation: none;
+    transition: none;
+  }
+}
+
+/* Folder to folder, the same slide the tabs use. */
+.m-browse.m-fromright {
+  animation: m-slide-right 0.17s cubic-bezier(0.22, 0.7, 0.3, 1);
+}
+
+.m-browse.m-fromleft {
+  animation: m-slide-left 0.17s cubic-bezier(0.22, 0.7, 0.3, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .m-browse.m-fromright,
+  .m-browse.m-fromleft {
+    animation: none;
+  }
+}
+
+/* ---- Toggles ---- */
+
+.m-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: var(--m-tap);
+  padding: 6px 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.m-toggle-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.92rem;
+}
+
+.m-toggle-track {
+  flex: none;
+  width: 46px;
+  height: 28px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border) 55%, transparent);
+  padding: 3px;
+  display: flex;
+  transition: background 0.16s ease;
+}
+
+.m-toggle-track.on {
+  background: var(--accent);
+}
+
+.m-toggle-knob {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: #fff;
+  transition: transform 0.16s cubic-bezier(0.22, 0.7, 0.3, 1);
+}
+
+.m-toggle-track.on .m-toggle-knob {
+  transform: translateX(18px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .m-toggle-track,
+  .m-toggle-knob {
+    transition: none;
+  }
+}
+
+/* The button in the file sheet that puts a file on the watchlist. */
+.m-watch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: var(--m-tap);
+  margin-top: 10px;
+  padding: 0 12px;
+  border-radius: var(--m-radius);
+  border: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 0.88rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.m-watch.on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.m-panel-note {
+  margin: 10px 0 0;
+}
+
+
+
+
+/* Magnified as one piece, so every stroke and radius grows together and the
+   geometry stays what it was. */
+
+
+/* Forty-four pixels of target over a stop drawn at five. */
+
+
+/* Names sit at their own size whatever the zoom: a label is for reading, not
+   for measuring. */
+
+
+/* ---- The railway list ----
+   The desktop Branches page, at a size a thumb and an arm's length can deal
+   with: the same rails, drawn taller, with the type stepped up to match and a
+   line between each change so the eye has something to run down. */
+
+.m-graph {
+  padding-left: 0;
+  padding-right: 0;
+  scroll-behavior: smooth;
+}
+
+/* The rail needs air on its left, or the first lane reads as a border stuck
+   to the edge of the screen.
+
+   On the whole column, never on .gg-rails alone: the column is the station
+   bars plus the stretches of line running to the rows above and below, and
+   indenting only the middle of that puts a 10px kink in every lane. */
+.m-graph .gg-railcol {
+  margin-left: 10px;
+}
+
+.m-grow {
+  padding: 0 var(--m-gap) 0 0;
+  transition: background-color 0.18s ease;
+}
+
+.m-grow + .m-grow {
+  border-top: 1px solid color-mix(in srgb, var(--border) 38%, transparent);
+}
+
+.m-grow:active {
+  background: color-mix(in srgb, var(--lane, var(--accent)) 14%, transparent);
+}
+
+/* A change on the branch being followed takes a wash of that line's colour,
+   so the followed history reads as one run rather than a set of bright dots
+   in a grey list. */
+.m-grow:not(.quiet) {
+  background: none;
+}
+
+/* The rails quiet themselves when a line is followed, so the row only has to
+   fade the words beside them. Both dimming at once left the rest of the
+   history nearly invisible. */
+.m-grow.quiet .m-grow-main,
+.m-grow.quiet .m-grow-refs {
+  opacity: 0.4;
+}
+
+.m-grow-line {
+  display: flex;
+  /* Stretch, not centre: the rail column has to run the whole height of the
+     row, and an open row is as tall as its message. */
+  align-items: stretch;
+  gap: 10px;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.m-grow-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+}
+
+.m-grow-subject {
+  font-size: 0.95rem;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.m-grow-meta {
+  font-size: 0.78rem;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.m-grow-who {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Open, the message is the thing being read, so it stops being one clipped
+   line. The rail column stretches with it, which is why the row may grow. */
+.m-grow.open .m-grow-subject {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+
+.m-grow-refs {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  /* Centred, because the row stretches its children now: left to itself this
+     column filled the row and dropped its chips at the top of it. */
+  justify-content: center;
+  gap: 3px;
+  align-items: flex-end;
+  max-width: 38%;
+}
+
+.m-reftag {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* An opened change sits under its own stop, with the rails carrying on down
+   the side of it. Covering the map with a sheet hid the one thing pressing a
+   stop is asking about: where on the line it happened.
+
+   No padding here. This is the flex parent of the rails, and padding on it
+   sits outside them, which left a rail-free band across the bottom of every
+   open row and broke the line at exactly the stop being read. Any breathing
+   room belongs to the text column beside them. */
+.m-grow-open {
+  animation: m-open-in 0.24s cubic-bezier(0.32, 0.72, 0, 1);
+  overflow: clip;
+}
+
+/* max-height only bounds the reveal. The animation does not hold its final
+   frame, so once it has run the height is its own again and a long file list
+   is not clipped. */
+@keyframes m-open-in {
+  from {
+    opacity: 0;
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    max-height: 40rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .m-grow-open {
+    animation: none;
+  }
+}
+
+/* A row that opens out under itself, on the pages that have no railway to
+   run alongside: files and held locks. Same idea as a change on the branches
+   page, so the two feel like one app. */
+.m-expander + .m-expander {
+  border-top: 1px solid color-mix(in srgb, var(--border) 38%, transparent);
+}
+
+.m-expander.open {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+.m-rowdetail {
+  animation: m-open-in 0.24s cubic-bezier(0.32, 0.72, 0, 1);
+  overflow: clip;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .m-rowdetail {
+    animation: none;
+  }
+}
+
+.m-fdetail {
+  padding: 0 var(--m-gap) 14px;
+}
+
+/* The buttons that act on the file sit at the end of what they act on. In a
+   sheet they had a footer of their own; opened out in a list there is no
+   footer, so they get a rule and some air instead. */
+.m-fdetail-actions {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 45%, transparent);
+}
+
+.m-grow.open {
+  background: color-mix(in srgb, var(--lane, var(--accent)) 8%, transparent);
+}
+
+/* The row rails are inset from the edge of the screen, so the detail rails
+   have to be inset by the same amount. A pixel out and the line visibly steps
+   sideways at the stop being read. */
+.m-graph .m-grow-open .gg-detailrails {
+  margin-left: 10px;
+}
+
+/* Overrides the desktop padding copied into railway.css: the phone has no
+   room to indent the detail that far from an already narrow rail. */
+.m-cdetail {
+  padding: 2px 0 12px 10px;
+}
+
+.m-cdetail-body {
+  margin: 0 0 7px;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  /* Commit bodies are written with their own line breaks and they carry
+     meaning, so they are kept rather than reflowed. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.m-cdetail-on {
+  margin: 5px 0 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .m-grow {
+    transition: none;
+  }
+}
+
+
+/* ---- Motion used in more than one place ---- */
+
+@keyframes m-drop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+/* Anything that says "this is being fetched" fades rather than flickering,
+   which matters most on a phone where the network is the slow part. */
+.m-spin,
+.m-empty,
+.m-trouble {
+  animation: m-fade 0.2s ease;
+}
+
+/* One switch for the lot. Everything above is decoration on top of a layout
+   that already works, so turning it off costs nothing. */
+@media (prefers-reduced-motion: reduce) {
+  .m-row,
+  .m-btn,
+  .m-pill,
+  .m-tab,
+  .m-tab .m-tab-icon,
+  .m-chevron {
+    transition: none;
+  }
+
+  .m-flash,
+  .m-spin,
+  .m-empty,
+  .m-trouble {
+    animation: none;
+  }
+}

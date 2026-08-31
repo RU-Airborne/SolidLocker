@@ -54,6 +54,22 @@ export const copy = {
     paths.length === 1
       ? `Unlocked ${listNames(paths)}. Your team can take it now.`
       : `Unlocked ${paths.length} files: ${listNames(paths)}. Your team can take them now.`,
+
+  locksTaken: (paths: string[]) =>
+    paths.length === 1
+      ? `Your lock on ${listNames(paths)} was taken off. Anything you have not shared yet is still here on your computer, but the file is view-only again.`
+      : `Your locks on ${paths.length} files were taken off: ${listNames(paths)}. Anything you have not shared yet is still here on your computer, but the files are view-only again.`,
+  locksTakenBody: (paths: string[], heldBy: Map<string, string>) => {
+    const named = paths.filter((p) => heldBy.has(p));
+    const who =
+      named.length === 1
+        ? `
+${shortName(named[0])} is now held by ${heldBy.get(named[0])}.`
+        : "";
+    return paths.length === 1
+      ? `${listNames(paths)} is view-only again.${who}`
+      : `${listNames(paths)} are view-only again.${who}`;
+  },
   claimPartial: (claimed: number, total: number, held: string) =>
     `Locked ${claimed} of ${total}. Already taken: ${held}`,
   lockingSetUp: (pushed: boolean) =>

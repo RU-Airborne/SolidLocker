@@ -1,9 +1,9 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use std::time::Duration;
 
 use serde::Serialize;
 
+use crate::ghapi::Api;
 use crate::error::{AppError, AppResult};
 use crate::messages;
 use crate::proc::run_git;
@@ -110,17 +110,16 @@ async fn slug(root: &Path) -> AppResult<String> {
         .ok_or_else(|| AppError::new("REPO", messages::not_a_github_remote(out.stdout.trim())))
 }
 
-async fn client(root: &Path) -> AppResult<(reqwest::Client, String, String)> {
+/// On desktop, the project comes from the checkout's origin remote,
+/// and the token from whatever credential helper git is already using. The
+/// phone builds have neither, so they build the same `Api` from a token the
+/// member signed in with instead, and every call below is shared.
+pub async fn api_for_repo(root: &Path) -> AppResult<Api> {
     let slug = slug(root).await?;
     let token = crate::people::github_token(root)
         .await
         .ok_or_else(|| AppError::new("AUTH", messages::PR_NEEDS_SIGN_IN))?;
-    let client = reqwest::Client::builder()
-        .user_agent("SolidLocker")
-        .timeout(Duration::from_secs(30))
-        .build()
-        .map_err(|e| AppError::new("PR", e.to_string()))?;
-    Ok((client, slug, token))
+    Api::new(slug, token, String::new())
 }
 
 async fn read_json(resp: reqwest::Response) -> AppResult<serde_json::Value> {
@@ -175,8 +174,8 @@ fn person(v: &serde_json::Value) -> (String, String) {
     )
 }
 
-pub async fn list(root: &Path) -> AppResult<Vec<PullSummary>> {
-    let (client, slug, token) = client(root).await?;
+pub async fn list(api: &Api) -> AppResult<Vec<PullSummary>> {
+    let (client, slug, token) = (api.http.clone(), api.slug.clone(), api.token.clone());
     let resp = client
         .get(format!(
             "https://api.github.com/repos/{slug}/pulls?state=all&sort=updated&direction=desc&per_page=50"
@@ -222,8 +221,8 @@ pub async fn list(root: &Path) -> AppResult<Vec<PullSummary>> {
     Ok(found)
 }
 
-pub async fn detail(root: &Path, number: u64) -> AppResult<PullDetail> {
-    let (client, slug, token) = client(root).await?;
+pub async fn detail(api: &Api, number: u64) -> AppResult<PullDetail> {
+    let (client, slug, token) = (api.http.clone(), api.slug.clone(), api.token.clone());
     let get = |url: String| {
         let client = client.clone();
         let token = token.clone();
@@ -461,7 +460,7 @@ fn within_minutes(a: &str, b: &str, minutes: i64) -> bool {
 }
 
 pub async fn create(
-    root: &Path,
+    api: &Api,
     title: &str,
     body: &str,
     head: &str,
@@ -470,7 +469,7 @@ pub async fn create(
     if title.trim().is_empty() {
         return Err(AppError::new("PR", messages::PR_NEEDS_TITLE));
     }
-    let (client, slug, token) = client(root).await?;
+    let (client, slug, token) = (api.http.clone(), api.slug.clone(), api.token.clone());
     let resp = client
         .post(format!("https://api.github.com/repos/{slug}/pulls"))
         .header("Accept", "application/vnd.github+json")
@@ -492,7 +491,7 @@ pub async fn create(
 
 /// `event` is APPROVE, REQUEST_CHANGES or COMMENT. Returns whether it went
 /// out as asked (GitHub downgrades an author's own verdict to a comment).
-pub async fn review(root: &Path, number: u64, event: &str, body: &str) -> AppResult<bool> {
+pub async fn review(api: &Api, number: u64, event: &str, body: &str) -> AppResult<bool> {
     let event = match event {
         "APPROVE" | "REQUEST_CHANGES" | "COMMENT" => event,
         _ => return Err(AppError::new("PR", messages::PR_UNKNOWN_REVIEW)),
@@ -501,7 +500,7 @@ pub async fn review(root: &Path, number: u64, event: &str, body: &str) -> AppRes
         return Err(AppError::new("PR", messages::PR_REVIEW_NEEDS_WORDS));
     }
 
-    let (client, slug, token) = client(root).await?;
+    let (client, slug, token) = (api.http.clone(), api.slug.clone(), api.token.clone());
     let sent = post_review(&client, &slug, &token, number, event, body).await?;
     crate::logger::info(format!("reviewed pull request #{number}: {sent}"));
     Ok(sent == event)
@@ -564,7 +563,7 @@ pub struct Proposal {
 
 /// One file comment per pick, then a review with the words. Merges nothing.
 pub async fn propose(
-    root: &Path,
+    api: &Api,
     number: u64,
     commit_id: &str,
     picks: &[Proposal],
@@ -578,7 +577,7 @@ pub async fn propose(
     if picks.is_empty() && body.trim().is_empty() {
         return Err(AppError::new("PR", messages::PR_REVIEW_NEEDS_WORDS));
     }
-    let (client, slug, token) = client(root).await?;
+    let (client, slug, token) = (api.http.clone(), api.slug.clone(), api.token.clone());
     for p in picks {
         let note = format!(
             "Proposed: keep the version from **{}** for `{}`.\n\n{PICK_MARK}{}\" -->",
@@ -629,8 +628,8 @@ pub struct Protection {
 
 /// Rulesets are readable by anyone; classic branch protection needs admin,
 /// so that lookup is allowed to fail.
-pub async fn protection(root: &Path, branch: &str) -> AppResult<Protection> {
-    let (client, slug, token) = client(root).await?;
+pub async fn protection(api: &Api, branch: &str) -> AppResult<Protection> {
+    let (client, slug, token) = (api.http.clone(), api.slug.clone(), api.token.clone());
     let get = |url: String| {
         let client = client.clone();
         let token = token.clone();
@@ -702,12 +701,12 @@ fn urlencoding(name: &str) -> String {
 }
 
 /// Merge on GitHub; GitHub enforces who may.
-pub async fn merge(root: &Path, number: u64, method: &str) -> AppResult<()> {
+pub async fn merge(api: &Api, number: u64, method: &str) -> AppResult<()> {
     let method = match method {
         "merge" | "squash" | "rebase" => method,
         _ => "merge",
     };
-    let (client, slug, token) = client(root).await?;
+    let (client, slug, token) = (api.http.clone(), api.slug.clone(), api.token.clone());
     let resp = client
         .put(format!(
             "https://api.github.com/repos/{slug}/pulls/{number}/merge"
@@ -723,8 +722,8 @@ pub async fn merge(root: &Path, number: u64, method: &str) -> AppResult<()> {
     Ok(())
 }
 
-pub async fn close(root: &Path, number: u64) -> AppResult<()> {
-    let (client, slug, token) = client(root).await?;
+pub async fn close(api: &Api, number: u64) -> AppResult<()> {
+    let (client, slug, token) = (api.http.clone(), api.slug.clone(), api.token.clone());
     let resp = client
         .patch(format!("https://api.github.com/repos/{slug}/pulls/{number}"))
         .header("Accept", "application/vnd.github+json")

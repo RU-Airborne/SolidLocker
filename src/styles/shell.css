@@ -355,7 +355,8 @@
   flex-shrink: 0;
 }
 
-.lockitem:hover .forcebtn {
+.lockitem:hover .forcebtn,
+.lockitem .forcebtn:focus-visible {
   opacity: 1;
 }
 

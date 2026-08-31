@@ -32,6 +32,7 @@ export function LocksPanel({
   onSelectFile,
   onOffBranchFile,
   onForceRelease,
+  onDropMine,
   mineElsewhere,
 }: {
   locks: LocksResult | undefined;
@@ -40,6 +41,7 @@ export function LocksPanel({
   onSelectFile: (path: string) => void;
   onOffBranchFile: (path: string, branches: string[]) => void;
   onForceRelease: (lock: Lock) => void;
+  onDropMine: (lock: Lock) => void;
   mineElsewhere: number;
 }) {
   const offBranchPaths = useMemo(
@@ -118,10 +120,20 @@ export function LocksPanel({
               const onBranch = knownPaths.has(lock.path.toLowerCase());
               return (
                 <li key={lock.id} title={lock.path} className="lockitem">
-                  {!person.isMe && (
+                  {person.isMe ? (
                     <button
                       className="forcebtn"
-                      title="Force unlock this file (admin)"
+                      title="Unlock this file"
+                      aria-label={`Unlock ${name}`}
+                      onClick={() => onDropMine(lock)}
+                    >
+                      ✕
+                    </button>
+                  ) : (
+                    <button
+                      className="forcebtn"
+                      title="Take this lock off its holder"
+                      aria-label={`Force unlock ${name}`}
                       onClick={() => onForceRelease(lock)}
                     >
                       ✕

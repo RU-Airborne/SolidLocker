@@ -54,13 +54,13 @@ export function CollisionsDialog({
             <div key={c.branch} className="collisiongroup">
               <div className="collisionwho">
                 <BranchName name={c.branch} />
-                <span className="muted small">
-                  {c.is_mine ? "your own branch" : c.author}
-                  {c.last_commit_at > 0 &&
-                    ` · last changed ${formatDateTime(
+                {c.last_commit_at > 0 && (
+                  <span className="muted small">
+                    {`last changed ${formatDateTime(
                       new Date(c.last_commit_at * 1000).toISOString(),
                     )}`}
-                </span>
+                  </span>
+                )}
               </div>
               <ul className="collisionfiles">
                 {c.cad_files.map((f) => (
@@ -79,8 +79,7 @@ export function CollisionsDialog({
                       <figure className="duelside">
                         <TheirShot path={f} branch={c.branch} />
                         <figcaption className="muted small">
-                          {c.is_mine ? "You" : c.author} on{" "}
-                          <BranchName name={c.branch} />
+                          On <BranchName name={c.branch} />
                         </figcaption>
                       </figure>
                     </div>

@@ -13,6 +13,7 @@ import {
 import { NeedsGitSplash, StartingUpSplash } from "./components/setup/Splashes";
 import { greetingDue, markGreeted } from "./release";
 import { themeUnchosen } from "./theme";
+import "./styles.css";
 
 export default function App() {
   const queryClient = useQueryClient();

@@ -170,6 +170,34 @@ pub async fn lock_file(repo: &Path, rel_path: &str) -> AppResult<()> {
     }))
 }
 
+async fn lock_is_gone(repo: &Path, rel_path: &str, id: Option<&str>) -> Option<bool> {
+    let selector = match id {
+        Some(id) if !id.is_empty() => format!("--id={id}"),
+        _ => format!("--path={rel_path}"),
+    };
+    let out = run_git(repo, &["lfs", "locks", "--json", &selector], 20)
+        .await
+        .ok()?;
+    if !out.ok() {
+        return None;
+    }
+    let body = out.stdout.trim();
+    if body.is_empty() {
+        return Some(true);
+    }
+    Some(parse_flat_json(body).ok()?.is_empty())
+}
+
+
+async fn unlock_complaint_is_real(repo: &Path, rel_path: &str, id: Option<&str>) -> bool {
+    match lock_is_gone(repo, rel_path, id).await {
+        // Gone: whatever git-lfs printed, the job is done.
+        Some(true) => false,
+        // Still held, or we could not reach the server to check.
+        _ => true,
+    }
+}
+
 pub async fn unlock_file(repo: &Path, rel_path: &str, force: bool) -> AppResult<()> {
     let mut args = vec!["lfs", "unlock"];
     if force {
@@ -185,10 +213,74 @@ pub async fn unlock_file(repo: &Path, rel_path: &str, force: bool) -> AppResult<
     if out.ok() {
         return Ok(());
     }
+    if !unlock_complaint_is_real(repo, rel_path, None).await {
+        crate::logger::info(format!(
+            "git-lfs complained about unlocking {rel_path} but the lock is gone: {}",
+            out.stderr.trim()
+        ));
+        return Ok(());
+    }
     Err(AppError::git(if out.stderr.trim().is_empty() {
         messages::could_not_unlock(rel_path)
     } else {
         out.stderr.trim().to_string()
+    }))
+}
+
+pub async fn drop_lock(repo: &Path, rel_path: &str, id: Option<&str>, force: bool) -> AppResult<()> {
+    let by_id = id
+        .filter(|s| !s.is_empty())
+        .map(|id| format!("--id={id}"));
+
+    let mut attempts: Vec<Vec<String>> = Vec::new();
+    let mut add = |target: &str, forced: bool| {
+        let mut args = vec!["lfs".to_string(), "unlock".to_string()];
+        if forced {
+            args.push("--force".to_string());
+        }
+        args.push(target.to_string());
+        attempts.push(args);
+    };
+    if let Some(sel) = &by_id {
+        add(sel, force);
+    }
+    add(rel_path, force);
+    // User's own lock should come off without --force.
+    if !force {
+        if let Some(sel) = &by_id {
+            add(sel, true);
+        }
+        add(rel_path, true);
+    }
+
+    let mut last = String::new();
+    for args in attempts {
+        let argv: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+        let mut out = run_git(repo, &argv, 30).await?;
+        if !out.ok() && is_lockcache_corruption(&out.stderr) {
+            heal_lockcache(repo).await;
+            out = run_git(repo, &argv, 30).await?;
+        }
+        if out.ok() {
+            return Ok(());
+        }
+        let stderr = out.stderr.trim().to_string();
+        if !stderr.is_empty() {
+            last = stderr;
+        }
+        // The very first attempt may already have done the job.
+        if !unlock_complaint_is_real(repo, rel_path, id).await {
+            crate::logger::info(format!(
+                "git-lfs complained about unlocking {rel_path} but the lock is gone: {last}"
+            ));
+            return Ok(());
+        }
+    }
+
+    Err(AppError::git(if last.is_empty() {
+        messages::could_not_unlock(rel_path)
+    } else {
+        last
     }))
 }
 

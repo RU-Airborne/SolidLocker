@@ -1,22 +1,29 @@
 mod avatars;
+// Phone only, so the desktop binary does not carry it.
+#[cfg(any(mobile, test))]
+#[cfg_attr(test, allow(dead_code))]
+mod cloud;
 mod conflicts;
 mod deps;
 mod doctor;
 mod error;
 mod fsattr;
 mod gate;
+mod ghapi;
 mod lfs;
 mod logger;
 mod proc;
 mod pulls;
 mod radar;
 mod repo;
+#[cfg_attr(mobile, allow(dead_code))]
 mod messages;
 mod people;
 mod settings;
 mod swrefs;
 mod thumbs;
 mod updates;
+#[cfg(desktop)]
 mod watch;
 mod workflow;
 
@@ -170,13 +177,13 @@ async fn get_default_branch(app: AppHandle) -> AppResult<String> {
 #[tauri::command]
 async fn list_pulls(app: AppHandle) -> AppResult<Vec<pulls::PullSummary>> {
     let root = current_repo(&app)?;
-    pulls::list(&root).await
+    pulls::list(&pulls::api_for_repo(&root).await?).await
 }
 
 #[tauri::command]
 async fn pull_detail(app: AppHandle, number: u64) -> AppResult<pulls::PullDetail> {
     let root = current_repo(&app)?;
-    pulls::detail(&root, number).await
+    pulls::detail(&pulls::api_for_repo(&root).await?, number).await
 }
 
 #[tauri::command]
@@ -188,7 +195,7 @@ async fn create_pull(
     base: String,
 ) -> AppResult<u64> {
     let root = current_repo(&app)?;
-    pulls::create(&root, &title, &body, &head, &base).await
+    pulls::create(&pulls::api_for_repo(&root).await?, &title, &body, &head, &base).await
 }
 
 #[tauri::command]
@@ -199,7 +206,7 @@ async fn review_pull(
     body: String,
 ) -> AppResult<bool> {
     let root = current_repo(&app)?;
-    pulls::review(&root, number, &event, &body).await
+    pulls::review(&pulls::api_for_repo(&root).await?, number, &event, &body).await
 }
 
 #[tauri::command]
@@ -211,13 +218,13 @@ async fn merge_pull(
 ) -> AppResult<()> {
     let root = current_repo(&app)?;
     let _tree = gate.exclusive().await;
-    pulls::merge(&root, number, &method).await
+    pulls::merge(&pulls::api_for_repo(&root).await?, number, &method).await
 }
 
 #[tauri::command]
 async fn close_pull(app: AppHandle, number: u64) -> AppResult<()> {
     let root = current_repo(&app)?;
-    pulls::close(&root, number).await
+    pulls::close(&pulls::api_for_repo(&root).await?, number).await
 }
 
 /// Branch names for the two sides of a merge in progress.
@@ -248,7 +255,7 @@ async fn plan_conflicts_between(
 #[tauri::command]
 async fn branch_protection(app: AppHandle, branch: String) -> AppResult<pulls::Protection> {
     let root = current_repo(&app)?;
-    pulls::protection(&root, &branch).await
+    pulls::protection(&pulls::api_for_repo(&root).await?, &branch).await
 }
 
 /// Which side each clashing file took in a past merge, read from the merge commit.
@@ -269,7 +276,7 @@ async fn propose_picks(
     body: String,
 ) -> AppResult<bool> {
     let root = current_repo(&app)?;
-    pulls::propose(&root, number, &commit_id, &picks, &event, &body).await
+    pulls::propose(&pulls::api_for_repo(&root).await?, number, &commit_id, &picks, &event, &body).await
 }
 
 /// Merge a branch, settling clashes per the picks, then push.
@@ -901,6 +908,7 @@ async fn select_existing_repo(
     logger::info(format!("selecting repository: {path}"));
     let info = repo::validate_repo(&path).await?;
     settings::set_string(&app, KEY_REPO_PATH, &info.repo_path)?;
+    #[cfg(desktop)]
     watch::watch_repo(&app, Path::new(&info.repo_path));
     logger::info(format!(
         "repository selected: {} ({}) on branch {}",
@@ -928,6 +936,7 @@ async fn clone_repo(
     .await?;
     let info = repo::validate_repo(&dest.to_string_lossy()).await?;
     settings::set_string(&app, KEY_REPO_PATH, &info.repo_path)?;
+    #[cfg(desktop)]
     watch::watch_repo(&app, Path::new(&info.repo_path));
     Ok(info)
 }
@@ -1015,11 +1024,31 @@ async fn force_unlock(
     app: AppHandle,
     gate: State<'_, gate::RepoGate>,
     path: String,
+    id: Option<String>,
 ) -> AppResult<()> {
     let root = current_repo(&app)?;
     let _tree = gate.exclusive().await;
-    lfs::unlock_file(&root, &path, true).await?;
+    lfs::drop_lock(&root, &path, id.as_deref(), true).await?;
     let _ = fsattr::set_readonly(&root.join(&path), true);
+    Ok(())
+}
+
+#[tauri::command]
+async fn drop_own_lock(
+    app: AppHandle,
+    gate: State<'_, gate::RepoGate>,
+    path: String,
+    id: Option<String>,
+) -> AppResult<()> {
+    let root = current_repo(&app)?;
+    let _tree = gate.exclusive().await;
+    lfs::drop_lock(&root, &path, id.as_deref(), false).await?;
+    // Nothing to set read-only when the lock was dangling; the file is gone.
+    let abs = root.join(&path);
+    if abs.exists() {
+        let _ = fsattr::set_readonly(&abs, true);
+    }
+    crate::logger::info(format!("unlocked own file {path} from the locks list"));
     Ok(())
 }
 
@@ -1255,143 +1284,9 @@ async fn tidy_and_sync(
     workflow::tidy_and_sync(&root, username_hint.as_deref()).await
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
-    logger::info(format!(
-        "SolidLocker {} starting on {} {}",
-        env!("CARGO_PKG_VERSION"),
-        std::env::consts::OS,
-        std::env::consts::ARCH
-    ));
-    // Keep the WebView2 cache in %LOCALAPPDATA%\SolidLocker\WebView2 rather than
-    // the bundle-identifier folder Tauri would use. WebView2 reads this env var
-    // when the webview is first created, so it must be set before the app builds.
-    #[cfg(windows)]
-    if let Some(local) = std::env::var_os("LOCALAPPDATA") {
-        let dir = std::path::PathBuf::from(local)
-            .join(PRODUCT_DIR)
-            .join("WebView2");
-        std::env::set_var("WEBVIEW2_USER_DATA_FOLDER", dir);
-    }
-
-    // Apps launched from Finder don't inherit the shell PATH, so Homebrew's
-    // git-lfs (and anything else outside /usr/bin) would be invisible.
-    #[cfg(target_os = "macos")]
-    {
-        let mut path = std::env::var("PATH").unwrap_or_default();
-        for extra in ["/opt/homebrew/bin", "/usr/local/bin"] {
-            if !path.split(':').any(|p| p == extra) {
-                path = format!("{extra}:{path}");
-            }
-        }
-        std::env::set_var("PATH", &path);
-    }
-
-/// Bring the window back, rebuilding it when it was destroyed on the way to
-/// the tray. Closing to the tray frees the whole webview (roughly 450 MB of
-/// Chromium processes), so there may be no window to show.
-fn open_main_window(app: &tauri::AppHandle) {
-    if let Some(w) = app.get_webview_window("main") {
-        let _ = w.show();
-        let _ = w.unminimize();
-        let _ = w.set_focus();
-        return;
-    }
-
-    let Some(cfg) = app
-        .config()
-        .app
-        .windows
-        .iter()
-        .find(|w| w.label == "main")
-        .cloned()
-    else {
-        report_window_failure(app, messages::WINDOW_CONFIG_MISSING);
-        return;
-    };
-
-    if let Err(e) = tauri::WebviewWindowBuilder::from_config(app, &cfg).and_then(|b| b.build()) {
-        report_window_failure(app, &e.to_string());
-    }
-}
-
-fn report_window_failure(app: &tauri::AppHandle, detail: &str) {
-    use tauri_plugin_notification::NotificationExt;
-
-    eprintln!("could not open the window: {detail}");
-    let _ = app
-        .notification()
-        .builder()
-        .title(messages::WINDOW_FAILED_TITLE)
-        .body(messages::window_failed_body(detail))
-        .show();
-}
-
-    let mut builder = tauri::Builder::default();
-
-    #[cfg(desktop)]
-    {
-        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            let handle = app.clone();
-            std::thread::spawn(move || {
-                let window_handle = handle.clone();
-                let _ = handle.run_on_main_thread(move || open_main_window(&window_handle));
-            });
-        }));
-    }
-
-    builder
-        .setup(|app| {
-            // Tray icon: closing the window can hide it instead of quitting,
-            // so protection keeps running in the background.
-            use tauri::menu::{Menu, MenuItem};
-            use tauri::tray::{TrayIconBuilder, TrayIconEvent};
-
-            let show = MenuItem::with_id(app, "show", "Open SolidLocker", true, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", "Quit SolidLocker", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show, &quit])?;
-
-            TrayIconBuilder::with_id("main")
-                .icon(app.default_window_icon().unwrap().clone())
-                .tooltip("SolidLocker")
-                .menu(&menu)
-                .show_menu_on_left_click(false)
-                .on_menu_event(|app, event| match event.id().as_ref() {
-                    "show" => open_main_window(app),
-                    "quit" => app.exit(0),
-                    _ => {}
-                })
-                .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::Click { button, .. } = event {
-                        if button == tauri::tray::MouseButton::Left {
-                            open_main_window(tray.app_handle());
-                        }
-                    }
-                })
-                .build(app)?;
-
-            // Pick up the project that was open last time.
-            if let Ok(Some(path)) = settings::get_string(app.handle(), KEY_REPO_PATH) {
-                let root = PathBuf::from(path);
-                if root.is_dir() {
-                    watch::watch_repo(app.handle(), &root);
-                }
-            }
-            Ok(())
-        })
-        // Remembers window size and position between runs.
-        .plugin(tauri_plugin_window_state::Builder::default().build())
-        .plugin(tauri_plugin_store::Builder::default().build())
-        .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_opener::init())
-        .manage(avatars::AvatarCache::default())
-        .manage(people::ProfileNames::default())
-        .manage(thumbs::ThumbCache::default())
-        .manage(gate::RepoGate::default())
-        .manage(watch::FolderWatch::default())
-        .manage(workflow::CancelFlag::default())
-        .invoke_handler(tauri::generate_handler![
+macro_rules! commands {
+    ($($extra:path),* $(,)?) => {
+        tauri::generate_handler![
             get_app_state,
             select_existing_repo,
             clone_repo,
@@ -1441,6 +1336,7 @@ fn report_window_failure(app: &tauri::AppHandle, detail: &str) {
             release_files,
             discard_sw_changes,
             force_unlock,
+            drop_own_lock,
             resolve_references,
             sync_attributes,
             get_repo_status,
@@ -1486,17 +1382,227 @@ fn report_window_failure(app: &tauri::AppHandle, detail: &str) {
             open_logs_folder,
             log_frontend,
             quit_app
-        ])
+            $(, $extra)*
+        ]
+    };
+}
+
+#[cfg(desktop)]
+fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
+    commands![]
+}
+
+#[cfg(mobile)]
+fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
+    commands![
+        cloud::commands::get_platform,
+        cloud::commands::cloud_state,
+        cloud::commands::cloud_device_start,
+        cloud::commands::cloud_device_poll,
+        cloud::commands::cloud_sign_in_token,
+        cloud::commands::cloud_sign_out,
+        cloud::commands::cloud_set_client_id,
+        cloud::commands::cloud_get_client_id,
+        cloud::commands::cloud_my_repos,
+        cloud::commands::cloud_choose_repo,
+        cloud::commands::cloud_repo,
+        cloud::commands::cloud_forget_repo,
+        cloud::commands::cloud_set_branch,
+        cloud::commands::cloud_files,
+        cloud::commands::cloud_locks,
+        cloud::commands::cloud_claim,
+        cloud::commands::cloud_release,
+        cloud::commands::cloud_force_unlock,
+        cloud::commands::cloud_branches,
+        cloud::commands::cloud_branch_standing,
+        cloud::commands::cloud_create_branch,
+        cloud::commands::cloud_activity,
+        cloud::commands::cloud_file_history,
+        cloud::commands::cloud_commit,
+        cloud::commands::cloud_commit_stats,
+        cloud::commands::cloud_graph,
+        cloud::commands::cloud_reworked,
+        cloud::commands::cloud_team,
+        cloud::commands::cloud_display_names,
+        cloud::commands::cloud_preview,
+        cloud::commands::cloud_previews,
+        cloud::commands::cloud_preview_cache,
+        cloud::commands::cloud_clear_previews,
+        cloud::commands::cloud_set_preview_mode,
+        cloud::commands::cloud_preview_mode,
+        cloud::commands::cloud_pulls,
+        cloud::commands::cloud_pull,
+        cloud::commands::cloud_review_pull,
+        cloud::commands::cloud_merge_pull,
+        cloud::commands::cloud_close_pull,
+        cloud::commands::cloud_create_pull,
+        cloud::commands::cloud_branch_protection,
+    ]
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    logger::info(format!(
+        "SolidLocker {} starting on {} {}",
+        env!("CARGO_PKG_VERSION"),
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    ));
+    // Keep the WebView2 cache in %LOCALAPPDATA%\SolidLocker\WebView2 rather than
+    // the bundle-identifier folder Tauri would use. WebView2 reads this env var
+    // when the webview is first created, so it must be set before the app builds.
+    #[cfg(windows)]
+    if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+        let dir = std::path::PathBuf::from(local)
+            .join(PRODUCT_DIR)
+            .join("WebView2");
+        std::env::set_var("WEBVIEW2_USER_DATA_FOLDER", dir);
+    }
+
+    // Apps launched from Finder don't inherit the shell PATH, so Homebrew's
+    // git-lfs (and anything else outside /usr/bin) would be invisible.
+    #[cfg(target_os = "macos")]
+    {
+        let mut path = std::env::var("PATH").unwrap_or_default();
+        for extra in ["/opt/homebrew/bin", "/usr/local/bin"] {
+            if !path.split(':').any(|p| p == extra) {
+                path = format!("{extra}:{path}");
+            }
+        }
+        std::env::set_var("PATH", &path);
+    }
+
+/// Bring the window back, rebuilding it when it was destroyed on the way to
+/// the tray. Closing to the tray frees the whole webview (roughly 450 MB of
+/// Chromium processes), so there may be no window to show.
+///
+/// Desktop only: on a phone the system owns the window, there is no tray to
+/// have hidden it, and `unminimize` does not exist there.
+#[cfg(desktop)]
+fn open_main_window(app: &tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.show();
+        let _ = w.unminimize();
+        let _ = w.set_focus();
+        return;
+    }
+
+    let Some(cfg) = app
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|w| w.label == "main")
+        .cloned()
+    else {
+        report_window_failure(app, messages::WINDOW_CONFIG_MISSING);
+        return;
+    };
+
+    if let Err(e) = tauri::WebviewWindowBuilder::from_config(app, &cfg).and_then(|b| b.build()) {
+        report_window_failure(app, &e.to_string());
+    }
+}
+
+#[cfg(desktop)]
+fn report_window_failure(app: &tauri::AppHandle, detail: &str) {
+    use tauri_plugin_notification::NotificationExt;
+
+    eprintln!("could not open the window: {detail}");
+    let _ = app
+        .notification()
+        .builder()
+        .title(messages::WINDOW_FAILED_TITLE)
+        .body(messages::window_failed_body(detail))
+        .show();
+}
+
+    #[cfg_attr(mobile, allow(unused_mut))]
+    let mut builder = tauri::Builder::default();
+
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            let handle = app.clone();
+            std::thread::spawn(move || {
+                let window_handle = handle.clone();
+                let _ = handle.run_on_main_thread(move || open_main_window(&window_handle));
+            });
+        }));
+        // Remembers window size and position between runs.
+        builder = builder.plugin(tauri_plugin_window_state::Builder::default().build());
+        builder = builder.manage(watch::FolderWatch::default());
+    }
+
+    builder
+        .setup(|app| {
+            #[cfg(desktop)]
+            {
+                // Tray icon: closing the window can hide it instead of
+                // quitting, so protection keeps running in the background.
+                use tauri::menu::{Menu, MenuItem};
+                use tauri::tray::{TrayIconBuilder, TrayIconEvent};
+
+                let show = MenuItem::with_id(app, "show", "Open SolidLocker", true, None::<&str>)?;
+                let quit = MenuItem::with_id(app, "quit", "Quit SolidLocker", true, None::<&str>)?;
+                let menu = Menu::with_items(app, &[&show, &quit])?;
+
+                TrayIconBuilder::with_id("main")
+                    .icon(app.default_window_icon().unwrap().clone())
+                    .tooltip("SolidLocker")
+                    .menu(&menu)
+                    .show_menu_on_left_click(false)
+                    .on_menu_event(|app, event| match event.id().as_ref() {
+                        "show" => open_main_window(app),
+                        "quit" => app.exit(0),
+                        _ => {}
+                    })
+                    .on_tray_icon_event(|tray, event| {
+                        if let TrayIconEvent::Click { button, .. } = event {
+                            if button == tauri::tray::MouseButton::Left {
+                                open_main_window(tray.app_handle());
+                            }
+                        }
+                    })
+                    .build(app)?;
+
+                // Pick up the project that was open last time.
+                if let Ok(Some(path)) = settings::get_string(app.handle(), KEY_REPO_PATH) {
+                    let root = PathBuf::from(path);
+                    if root.is_dir() {
+                        watch::watch_repo(app.handle(), &root);
+                    }
+                }
+            }
+            #[cfg(mobile)]
+            let _ = app;
+            Ok(())
+        })
+        .plugin(tauri_plugin_store::Builder::default().build())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_opener::init())
+        .manage(avatars::AvatarCache::default())
+        .manage(people::ProfileNames::default())
+        .manage(thumbs::ThumbCache::default())
+        .manage(gate::RepoGate::default())
+        .manage(workflow::CancelFlag::default())
+        .invoke_handler(handler())
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|_app, event| {
             // With no window left the app would normally quit. Closing to the
             // tray destroys the window on purpose, so keep the process alive.
             // An explicit exit (tray Quit) carries a code and is honoured.
+            // There is no tray on a phone, and the system decides when an app
+            // stops, so nothing is held open there.
+            #[cfg(desktop)]
             if let tauri::RunEvent::ExitRequested { code, api, .. } = &event {
                 if code.is_none() {
                     api.prevent_exit();
                 }
             }
+            #[cfg(mobile)]
+            let _ = event;
         });
 }
