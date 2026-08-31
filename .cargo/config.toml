@@ -1,0 +1,22 @@
+# The GitHub OAuth client id the phone app signs in with.
+#
+# auth.rs picks this up through option_env!, which reads the environment cargo
+# itself was given. An iOS build runs cargo from inside Xcode's build script,
+# and Xcode hands that script a sanitised environment, so exporting the
+# variable in a shell never reaches the compiler. Setting it here does, because
+# cargo reads its own config regardless of who invoked it.
+#
+# This lives at the repo root, not next to Cargo.toml, because cargo looks for
+# config by walking up from its working directory rather than from the
+# manifest. The iOS build runs cargo from the repo root, so a config under
+# src-tauri/ is never on that path and is silently ignored. From the root it
+# is found either way.
+#
+# force is left off, so a real environment variable still wins when there is
+# one (CI, or a different id for a test build).
+#
+# A device-flow client id is public by design: it ships inside every copy of
+# the app and cannot be kept secret. The client *secret* is not used here and
+# must never be added to this file.
+[env]
+SOLIDLOCKER_GH_CLIENT_ID = "Ov23liNHIBFZq5s5OGDP"

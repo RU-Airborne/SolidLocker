@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The companion is a portrait tab-bar app: a list of who holds which
+	     file, read one-handed away from the workstation. Landscape only
+	     stretched the rows, so it is not offered. -->
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<key>CFBundleDisplayName</key>
+	<string>SolidLocker</string>
+	<!-- Built against the iOS 27 SDK, where UIKit traps at launch for any app
+	     that has not adopted the UIScene lifecycle
+	     (UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption).
+	     Tauri's window layer still runs the older UIApplicationDelegate
+	     lifecycle, so declare a single-scene manifest: that satisfies the
+	     check while leaving UIKit to build the default scene around the
+	     delegate's window. -->
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+	</dict>
+</dict>
+</plist>

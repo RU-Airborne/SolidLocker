@@ -65,6 +65,10 @@
   flex: 1;
   min-height: 0;
   display: flex;
+  /* A pushed page is positioned against this, not the screen, so the tab bar
+     below it is never covered: going into a merge request should not take
+     away the way out of it. */
+  position: relative;
 }
 
 .m-screen {
@@ -155,8 +159,18 @@
   cursor: pointer;
 }
 
+.m-row {
+  transition:
+    background-color 0.18s ease,
+    opacity 0.16s ease,
+    transform 0.12s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
 .m-row:active {
   background: color-mix(in srgb, var(--border) 22%, transparent);
+  /* A shade smaller under the thumb: enough to feel pressed, not enough to
+     shift the words out from under where they were tapped. */
+  transform: scale(0.995);
 }
 
 .m-row:disabled {
@@ -194,6 +208,12 @@
 .m-chevron {
   color: var(--muted);
   flex: none;
+  transition: transform 0.22s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* A chevron on a row that opens out should point at what it did. */
+[aria-expanded="true"] > .m-chevron {
+  transform: rotate(90deg);
 }
 
 /* The same coloured chips the desktop uses, at a size a thumb can aim at.
@@ -497,8 +517,16 @@
   cursor: pointer;
 }
 
+.m-btn {
+  transition:
+    background-color 0.16s ease,
+    opacity 0.16s ease,
+    transform 0.12s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
 .m-btn:active {
   background: color-mix(in srgb, var(--border) 26%, transparent);
+  transform: scale(0.97);
 }
 
 .m-btn:disabled {
@@ -559,6 +587,19 @@
   font: inherit;
   padding: 6px 2px;
   cursor: pointer;
+  transition: color 0.18s ease;
+}
+
+.m-tab .m-tab-icon {
+  transition: transform 0.22s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.m-tab.active .m-tab-icon {
+  transform: translateY(-1px) scale(1.06);
+}
+
+.m-tab:active .m-tab-icon {
+  transform: scale(0.92);
 }
 
 .m-tab.active {
@@ -1438,6 +1479,61 @@
   }
 }
 
+/* A page pushed in from the right, the way iOS moves between places you go
+   and come back from. Used where there is too much to read for a panel over
+   the top of the list it came from. */
+.m-pagewrap {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  overflow: hidden;
+}
+
+.m-page {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--headbg);
+  animation: m-page-in 0.32s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@keyframes m-page-in {
+  from {
+    transform: translateX(100%);
+  }
+}
+
+.m-pullpage .m-sheet-foot {
+  padding-bottom: 12px;
+}
+
+/* Inside the More sheet the page does not own the screen, so it slides within
+   the sheet rather than over it. It has to carry the column layout the sheet
+   would otherwise give its children directly. */
+.m-subpage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.m-subpage.m-fromright {
+  animation: m-slide-right 0.24s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.m-subpage.m-fromleft {
+  animation: m-slide-left 0.24s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .m-page,
+  .m-subpage.m-fromright,
+  .m-subpage.m-fromleft {
+    animation: none;
+  }
+}
+
 /* ---- The railway tab ---- */
 
 .m-railhint {
@@ -1549,6 +1645,8 @@
 }
 
 .m-flash {
+  /* Something that just happened should arrive rather than appear. */
+  animation: m-drop-in 0.26s cubic-bezier(0.32, 0.72, 0, 1);
   margin: 8px var(--m-gap);
   padding: 10px 12px;
   border-radius: var(--m-radius);
@@ -1640,6 +1738,11 @@
   font-size: 0.82rem;
   font-weight: 600;
   cursor: pointer;
+  transition:
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease,
+    transform 0.12s cubic-bezier(0.32, 0.72, 0, 1);
   max-width: 46vw;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1650,6 +1753,10 @@
   border-color: var(--accent);
   background: var(--accent);
   color: #fff;
+}
+
+.m-pill:active {
+  transform: scale(0.95);
 }
 
 
@@ -1828,8 +1935,12 @@
 }
 
 /* The rail needs air on its left, or the first lane reads as a border stuck
-   to the edge of the screen. */
-.m-graph .gg-rails {
+   to the edge of the screen.
+
+   On the whole column, never on .gg-rails alone: the column is the station
+   bars plus the stretches of line running to the rows above and below, and
+   indenting only the middle of that puts a 10px kink in every lane. */
+.m-graph .gg-railcol {
   margin-left: 10px;
 }
 
@@ -1863,7 +1974,9 @@
 
 .m-grow-line {
   display: flex;
-  align-items: center;
+  /* Stretch, not centre: the rail column has to run the whole height of the
+     row, and an open row is as tall as its message. */
+  align-items: stretch;
   gap: 10px;
   width: 100%;
   padding: 0;
@@ -1880,6 +1993,7 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
+  justify-content: center;
   gap: 3px;
 }
 
@@ -1893,15 +2007,35 @@
 
 .m-grow-meta {
   font-size: 0.78rem;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.m-grow-who {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Open, the message is the thing being read, so it stops being one clipped
+   line. The rail column stretches with it, which is why the row may grow. */
+.m-grow.open .m-grow-subject {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+  font-weight: 600;
 }
 
 .m-grow-refs {
   flex: none;
   display: flex;
   flex-direction: column;
+  /* Centred, because the row stretches its children now: left to itself this
+     column filled the row and dropped its chips at the top of it. */
+  justify-content: center;
   gap: 3px;
   align-items: flex-end;
   max-width: 38%;
@@ -1919,8 +2053,145 @@
   white-space: nowrap;
 }
 
+/* An opened change sits under its own stop, with the rails carrying on down
+   the side of it. Covering the map with a sheet hid the one thing pressing a
+   stop is asking about: where on the line it happened.
+
+   No padding here. This is the flex parent of the rails, and padding on it
+   sits outside them, which left a rail-free band across the bottom of every
+   open row and broke the line at exactly the stop being read. Any breathing
+   room belongs to the text column beside them. */
+.m-grow-open {
+  animation: m-open-in 0.24s cubic-bezier(0.32, 0.72, 0, 1);
+  overflow: clip;
+}
+
+/* max-height only bounds the reveal. The animation does not hold its final
+   frame, so once it has run the height is its own again and a long file list
+   is not clipped. */
+@keyframes m-open-in {
+  from {
+    opacity: 0;
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    max-height: 40rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .m-grow-open {
+    animation: none;
+  }
+}
+
+/* A row that opens out under itself, on the pages that have no railway to
+   run alongside: files and held locks. Same idea as a change on the branches
+   page, so the two feel like one app. */
+.m-expander + .m-expander {
+  border-top: 1px solid color-mix(in srgb, var(--border) 38%, transparent);
+}
+
+.m-expander.open {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+.m-rowdetail {
+  animation: m-open-in 0.24s cubic-bezier(0.32, 0.72, 0, 1);
+  overflow: clip;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .m-rowdetail {
+    animation: none;
+  }
+}
+
+.m-fdetail {
+  padding: 0 var(--m-gap) 14px;
+}
+
+/* The buttons that act on the file sit at the end of what they act on. In a
+   sheet they had a footer of their own; opened out in a list there is no
+   footer, so they get a rule and some air instead. */
+.m-fdetail-actions {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 45%, transparent);
+}
+
+.m-grow.open {
+  background: color-mix(in srgb, var(--lane, var(--accent)) 8%, transparent);
+}
+
+/* The row rails are inset from the edge of the screen, so the detail rails
+   have to be inset by the same amount. A pixel out and the line visibly steps
+   sideways at the stop being read. */
+.m-graph .m-grow-open .gg-detailrails {
+  margin-left: 10px;
+}
+
+/* Overrides the desktop padding copied into railway.css: the phone has no
+   room to indent the detail that far from an already narrow rail. */
+.m-cdetail {
+  padding: 2px 0 12px 10px;
+}
+
+.m-cdetail-body {
+  margin: 0 0 7px;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  /* Commit bodies are written with their own line breaks and they carry
+     meaning, so they are kept rather than reflowed. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.m-cdetail-on {
+  margin: 5px 0 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .m-grow {
     transition: none;
+  }
+}
+
+
+/* ---- Motion used in more than one place ---- */
+
+@keyframes m-drop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+/* Anything that says "this is being fetched" fades rather than flickering,
+   which matters most on a phone where the network is the slow part. */
+.m-spin,
+.m-empty,
+.m-trouble {
+  animation: m-fade 0.2s ease;
+}
+
+/* One switch for the lot. Everything above is decoration on top of a layout
+   that already works, so turning it off costs nothing. */
+@media (prefers-reduced-motion: reduce) {
+  .m-row,
+  .m-btn,
+  .m-pill,
+  .m-tab,
+  .m-tab .m-tab-icon,
+  .m-chevron {
+    transition: none;
+  }
+
+  .m-flash,
+  .m-spin,
+  .m-empty,
+  .m-trouble {
+    animation: none;
   }
 }

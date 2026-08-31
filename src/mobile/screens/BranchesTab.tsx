@@ -6,7 +6,6 @@ import { useBranches, useGraph } from "../queries";
 import {
   Empty,
   FileTypeIcon,
-  Sheet,
   Spinner,
   Trouble,
   useBranchColors,
@@ -14,12 +13,17 @@ import {
 } from "../components";
 import {
   computeLaneSlots,
+  detailLanesOf,
+  DetailRails,
   layoutGraph,
+  lineOfRoute,
+  litThroughCommit,
   routeSets,
   RowRails,
 } from "../../components/history/HistoryPage";
 import type { GraphCommit as DesktopCommit } from "../../api";
 import { formatChanged, formatDateTime } from "../../dates";
+import { formatPerson } from "../../identity";
 
 /**
  * The railway, running down the page, zoomed in.
@@ -54,7 +58,11 @@ export function BranchesTab({ corner }: { corner: React.ReactNode }) {
   const branches = useBranches(true);
   const colorOf = useBranchColors();
   const [highlight, setHighlight] = useState<string | null>(null);
-  const [openCommit, setOpenCommit] = useState<string | null>(null);
+  // Which change is opened out in place. The desktop expands the row rather
+  // than covering the map with a sheet, because the point of pressing a stop
+  // is to see it in the context of the line it sits on. A sheet hid exactly
+  // the drawing you were asking about.
+  const [openSha, setOpenSha] = useState<string | null>(null);
 
 
   // `is_head` is deliberately false throughout: on a desktop it marks where
@@ -76,6 +84,24 @@ export function BranchesTab({ corner }: { corner: React.ReactNode }) {
     [graph.data],
   );
 
+  /** Who made each change. The commits handed to the layout carry a single
+      flattened name because that is all the drawing needs; the row wants the
+      display name, the login and the face, so they are kept alongside. */
+  const people = useMemo(
+    () =>
+      new Map(
+        (graph.data ?? []).map((c) => [
+          c.sha,
+          {
+            name: c.author_name,
+            login: c.author_login,
+            avatar: c.author_avatar,
+          },
+        ]),
+      ),
+    [graph.data],
+  );
+
   const { rows, laneCount } = useMemo(() => layoutGraph(commits), [commits]);
   const routes = useMemo(() => routeSets(commits), [commits]);
   const { slots, laneX, totalW } = useMemo(
@@ -83,31 +109,37 @@ export function BranchesTab({ corner }: { corner: React.ReactNode }) {
     [rows, routes, laneCount],
   );
 
-  /** Every commit the followed branch's line runs through; null lights all. */
+  /** The line the pills are following; null lights everything. */
+  const pillRoute = highlight ? (routes.repOf.get(highlight) ?? highlight) : null;
+
+  /** What stays bright.
+
+      An open change outranks a followed branch, the same way round as the
+      desktop: opening a stop asks "who came this way?", and every branch
+      whose history runs through it did, including ones that broke off further
+      along. Lighting the followed branch as well would answer a question
+      nobody asked. */
   const lit = useMemo(() => {
-    if (!highlight) return null;
-    const route = routes.repOf.get(highlight) ?? highlight;
-    const on = new Set<string>();
-    for (const row of rows) {
-      if ((routes.bySha.get(row.commit.sha) ?? []).includes(route)) {
-        on.add(row.commit.sha);
-      }
-    }
-    const from = routes.forkPoint.get(route);
-    if (from) on.add(from);
-    return on.size > 0 ? on : null;
-  }, [highlight, routes, rows]);
+    if (openSha) return litThroughCommit(rows, routes, openSha);
+    return lineOfRoute(rows, routes, pillRoute);
+  }, [openSha, pillRoute, routes, rows]);
 
-  const litRoutes = useMemo(
-    () => (highlight ? new Set([routes.repOf.get(highlight) ?? highlight]) : null),
-    [highlight, routes],
-  );
+  /** Which branches the highlight is actually about. A commit belongs to
+      every line running through it, so a shared trunk would otherwise light
+      branches that merely pass along it. */
+  const litRoutes = useMemo(() => {
+    if (openSha) return new Set(routes.containedIn.get(openSha) ?? []);
+    return pillRoute ? new Set([pillRoute]) : null;
+  }, [openSha, pillRoute, routes]);
 
-  /** The newest change on the followed line, which is where to look. */
+  /** The newest change on the followed line, which is where to look.
+
+      Only when a branch is being followed: scrolling because a row was opened
+      would pull the row out from under the thumb that just pressed it. */
   const firstLit = useMemo(() => {
-    if (!lit) return null;
+    if (openSha || !lit) return null;
     return rows.find((r) => lit.has(r.commit.sha))?.commit.sha ?? null;
-  }, [lit, rows]);
+  }, [openSha, lit, rows]);
 
   const listRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -130,7 +162,10 @@ export function BranchesTab({ corner }: { corner: React.ReactNode }) {
           role="tab"
           aria-selected={highlight === null}
           className={`m-pill${highlight === null ? " on" : ""}`}
-          onClick={() => setHighlight(null)}
+          onClick={() => {
+            setOpenSha(null);
+            setHighlight(null);
+          }}
         >
           All
         </button>
@@ -148,7 +183,13 @@ export function BranchesTab({ corner }: { corner: React.ReactNode }) {
                 background: on ? hue : undefined,
                 color: on ? "#fff" : hue,
               }}
-              onClick={() => setHighlight(on ? null : b.name)}
+              // Following a branch and reading one change are two different
+              // questions, and the answer to each is a different drawing. Ask
+              // one and the other is put away.
+              onClick={() => {
+                setOpenSha(null);
+                setHighlight(on ? null : b.name);
+              }}
             >
               {b.name}
             </button>
@@ -168,11 +209,12 @@ export function BranchesTab({ corner }: { corner: React.ReactNode }) {
           const its = routes.bySha.get(c.sha) ?? [];
           const tips = c.refs.filter((r) => r !== "HEAD");
           const quiet = lit !== null && !lit.has(c.sha);
+          const open = openSha === c.sha;
           return (
             <div
               key={c.sha}
               data-sha={c.sha}
-              className={`m-grow${quiet ? " quiet" : ""}`}
+              className={`m-grow${quiet ? " quiet" : ""}${open ? " open" : ""}`}
               style={
                 {
                   // The row takes the colour of the line it sits on, which is
@@ -184,32 +226,51 @@ export function BranchesTab({ corner }: { corner: React.ReactNode }) {
             >
               <button
                 className="m-grow-line"
-                style={{ height: ROW }}
+                style={{ minHeight: ROW }}
                 // Only opens the change. Following a line is what the pills
                 // are for: having a tap do both meant reading three commits
                 // re-lit the list three times, and only for the ones sitting
                 // on exactly one line, which looked like it happened at
                 // random.
-                onClick={() => setOpenCommit(c.sha)}
+                onClick={() => {
+                  setHighlight(null);
+                  setOpenSha(open ? null : c.sha);
+                }}
+                aria-expanded={open}
               >
                 <RowRails
                   row={row}
+                  open={open}
                   lit={lit}
                   routes={routes}
                   slots={slots[i] ?? new Map()}
                   laneX={laneX}
                   totalW={totalW}
                   rowHeight={ROW}
-                  focusRoute={
-                    highlight ? (routes.repOf.get(highlight) ?? null) : null
-                  }
+                  focusRoute={openSha ? null : pillRoute}
                   litRoutes={litRoutes}
                 />
                 <span className="m-grow-main">
                   <span className="m-grow-subject">{c.subject}</span>
                   <span className="m-grow-meta muted">
-                    {c.author_name}
-                    {c.date && ` · ${formatChanged(new Date(c.date).getTime())}`}
+                    {/* The face only appears once the change is open. Every
+                        row carrying one turned the list into a column of
+                        avatars with the history behind it. */}
+                    {open && (
+                      <UserAvatar
+                        url={people.get(c.sha)?.avatar || null}
+                        name={people.get(c.sha)?.name ?? c.author_name}
+                        size={20}
+                      />
+                    )}
+                    <span className="m-grow-who">
+                      {formatPerson(
+                        people.get(c.sha)?.name ?? c.author_name,
+                        people.get(c.sha)?.login ?? null,
+                      )}
+                      {c.date &&
+                        ` · ${formatChanged(new Date(c.date).getTime())}`}
+                    </span>
                   </span>
                 </span>
                 {tips.length > 0 && (
@@ -226,21 +287,55 @@ export function BranchesTab({ corner }: { corner: React.ReactNode }) {
                   </span>
                 )}
               </button>
+
+              {open && (
+                <div className="gg-open m-grow-open">
+                  {/* The rails keep going past the words. Stopping them at the
+                      detail broke the line in half at exactly the stop being
+                      read, which is the one place it has to stay joined. */}
+                  <DetailRails
+                    lanes={detailLanesOf(
+                      row,
+                      slots[i] ?? new Map(),
+                      routes,
+                      laneX,
+                      lit,
+                      highlight,
+                    )}
+                    totalW={totalW}
+                  />
+                  <CommitDetail
+                    sha={c.sha}
+                    onBranch={routes.containedIn.get(c.sha) ?? []}
+                    colorOf={colorOf}
+                  />
+                </div>
+              )}
             </div>
           );
         })}
       </div>
-
-      {openCommit && (
-        <CommitSheet sha={openCommit} onClose={() => setOpenCommit(null)} />
-      )}
     </div>
   );
 }
 
 
-/** One stop on the railway: what changed, who changed it, and when. */
-function CommitSheet({ sha, onClose }: { sha: string; onClose: () => void }) {
+/** The rest of a change, opened out under its own stop.
+
+    The row above already carries the face, the person and the message, so
+    none of that is repeated here: this is only what would not fit on a line. */
+function CommitDetail({
+  sha,
+  onBranch,
+  colorOf,
+}: {
+  sha: string;
+  /** Every branch holding this change, however it reached them. */
+  onBranch: string[];
+  /** Undefined for a branch with no line of its own, which leaves the name in
+      the inherited colour rather than inventing one for it. */
+  colorOf: (branch: string) => string | undefined;
+}) {
   const detail = useQuery({
     queryKey: ["cloud", "commit", sha],
     queryFn: () => api.getCommit(sha),
@@ -250,7 +345,7 @@ function CommitSheet({ sha, onClose }: { sha: string; onClose: () => void }) {
   const commit = detail.data;
 
   return (
-    <Sheet title={sha.slice(0, 8)} onClose={onClose}>
+    <div className="gg-detail m-cdetail">
       {detail.isLoading && <Spinner label="Reading the change..." />}
       {detail.isError && (
         <Trouble error={detail.error} onRetry={() => detail.refetch()} />
@@ -258,21 +353,28 @@ function CommitSheet({ sha, onClose }: { sha: string; onClose: () => void }) {
 
       {commit && (
         <>
-          <h3 className="m-pulltitle">{commit.message}</h3>
-          <p className="m-holder muted small">
-            <UserAvatar
-              url={commit.author_avatar || null}
-              name={commit.author_name || commit.author_login}
-              size={22}
-            />
-            {commit.author_login || commit.author_name}
-            {commit.date && ` · ${formatDateTime(commit.date)}`}
-          </p>
-          {commit.body && <p className="m-pullbody">{commit.body}</p>}
+          {commit.body && <p className="m-cdetail-body">{commit.body}</p>}
 
-          <h3 className="m-subhead">
+          <p className="muted small">
+            {commit.date && `${formatDateTime(commit.date)} · `}
+            {sha.slice(0, 8)}
+          </p>
+
+          {onBranch.length > 0 && (
+            <p className="muted small m-cdetail-on">
+              On{" "}
+              {onBranch.map((b, i) => (
+                <span key={b}>
+                  {i > 0 && ", "}
+                  <strong style={{ color: colorOf(b) }}>{b}</strong>
+                </span>
+              ))}
+            </p>
+          )}
+
+          <h4 className="m-subhead">
             Files <span className="m-count">{commit.files.length}</span>
-          </h3>
+          </h4>
           <ul className="m-pullfiles">
             {commit.files.slice(0, 80).map((file) => (
               <li key={file.path}>
@@ -286,6 +388,11 @@ function CommitSheet({ sha, onClose }: { sha: string; onClose: () => void }) {
               </li>
             ))}
           </ul>
+          {commit.files.length > 80 && (
+            <p className="muted small">
+              Showing the first 80 of {commit.files.length}.
+            </p>
+          )}
           {commit.files.some((f) => f.is_cad) && (
             <p className="muted small">
               CAD files have no readable diff. What changed is a question for
@@ -294,6 +401,6 @@ function CommitSheet({ sha, onClose }: { sha: string; onClose: () => void }) {
           )}
         </>
       )}
-    </Sheet>
+    </div>
   );
 }

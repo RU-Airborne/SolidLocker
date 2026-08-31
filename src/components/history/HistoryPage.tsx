@@ -34,7 +34,7 @@ import {
 
 const CAD_FILE = /\.(sldprt|sldasm|slddrw)$/i;
 
-interface LaidRow {
+export interface LaidRow {
   commit: GraphCommit;
   lane: number;
   hasTop: boolean;
@@ -594,6 +594,111 @@ function addMergePoint(set: Set<string>, rows: LaidRow[], topSha: string) {
   if (merger) set.add(merger.commit.sha);
 }
 
+/** Every commit drawn in one branch's colour, plus the point it forked from
+    and the merge that took it back in.
+
+    Shared with the phone app so the two cannot drift: what lights up when a
+    branch is followed has to be the same drawing on both. */
+export function lineOfRoute(
+  rows: LaidRow[],
+  routes: RouteMap,
+  route: string | null,
+): Set<string> | null {
+  if (!route) return null;
+  const set = new Set<string>();
+  for (const row of rows) {
+    // Exactly the commits drawn in this branch's colour, so what lights
+    // up and what is coloured can never disagree.
+    if ((routes.bySha.get(row.commit.sha) ?? []).includes(route)) {
+      set.add(row.commit.sha);
+    }
+  }
+  if (set.size === 0) return null;
+  // rows run newest first, so the line's tip is the first one in it.
+  const tip = rows.find((r) => set.has(r.commit.sha));
+  if (tip) addMergePoint(set, rows, tip.commit.sha);
+  const from = routes.forkPoint.get(route);
+  if (from) set.add(from);
+  return set;
+}
+
+/** Who came this way. Opening a commit asks that question, and every branch
+    whose history runs through it did, including ones that broke off further
+    along, so they all light; a branch that never reaches it goes quiet. */
+export function litThroughCommit(
+  rows: LaidRow[],
+  routes: RouteMap,
+  openSha: string,
+): Set<string> {
+  const on = routes.containedIn.get(openSha) ?? [];
+  if (on.length > 0) {
+    const all = new Set<string>([openSha]);
+    for (const r of on) {
+      for (const sha of lineOfRoute(rows, routes, r) ?? []) all.add(sha);
+    }
+    return all;
+  }
+  // No branch reaches it any more, history behind a branch someone
+  // deleted. Nothing to name it by, so follow its own first parents down
+  // and the same line back up, and light that.
+  const bySha = new Map(rows.map((r) => [r.commit.sha, r]));
+  const set = new Set<string>();
+  let sha: string | undefined = openSha;
+  while (sha && bySha.has(sha) && !set.has(sha)) {
+    set.add(sha);
+    sha = bySha.get(sha)!.commit.parents[0];
+  }
+  const openLane = bySha.get(openSha)?.lane;
+  let cur = openSha;
+  for (;;) {
+    const kids = rows.filter(
+      (r) => r.commit.parents[0] === cur && !set.has(r.commit.sha),
+    );
+    if (kids.length === 0) break;
+    const pick = kids.find((r) => r.lane === openLane) ?? kids[0];
+    set.add(pick.commit.sha);
+    cur = pick.commit.sha;
+  }
+  addMergePoint(set, rows, cur);
+  return set;
+}
+
+/** The stretch of rail drawn down the side of an expanded commit, so the
+    railway carries on past the detail instead of stopping at it. */
+export function detailLanesOf(
+  row: LaidRow,
+  rowSlots: LaneSlots,
+  routes: RouteMap,
+  laneX: number[],
+  quietSet: Set<string> | null,
+  focusBranch: string | null,
+): FillLane[] {
+  return row.below.map((j, k) => {
+    const rs = edgeRoutes(routes, row.belowChilds[k] ?? [], row.belowShas[k]);
+    const focusHere = focusBranch != null && rs.includes(focusBranch);
+    const cx = laneX[j] ?? j * COL_W + COL_W / 2;
+    const strands = rs.length
+      ? rs.map((r) => ({
+          x: cx + (rowSlots.get(j)?.get(r) ?? 0),
+          color: routeColor(routes, r),
+          dash: routeDash(routes, r),
+          cls:
+            focusHere && rs.length > 1 && r !== focusBranch
+              ? "gg-quiet"
+              : undefined,
+        }))
+      : [{ x: cx }];
+    return {
+      lane: j,
+      on:
+        !quietSet ||
+        (quietSet.has(row.belowShas[k]) &&
+          (row.belowChilds[k] ?? []).some((ch) => quietSet.has(ch))),
+      strands,
+    };
+  });
+}
+
 /** Every route keeps one colour everywhere it is drawn. */
 export function routeColor(routes: RouteMap, r: string): string {
   const line = routes.repOf.get(r) ?? r;
@@ -632,14 +737,14 @@ export function routeDash(routes: RouteMap, r: string): string | undefined {
 }
 
 /** One strand at an absolute x, optionally quieted (not the focused route). */
-interface Strand {
+export interface Strand {
   x: number;
   cls?: string;
   color?: string;
   dash?: string;
 }
 
-interface FillLane {
+export interface FillLane {
   lane: number;
   on: boolean;
   strands: Strand[];
@@ -1132,7 +1237,7 @@ export function RowRails({
   );
 }
 
-function DetailRails({ lanes, totalW }: { lanes: FillLane[]; totalW: number }) {
+export function DetailRails({ lanes, totalW }: { lanes: FillLane[]; totalW: number }) {
   const w = totalW + 4;
   return (
     <svg
@@ -1418,62 +1523,17 @@ export function HistoryPage({
       it merged into, so the connectors at either end light with it. Without
       those two a one-commit branch would light a dot and no line at all. */
   const lineOf = useMemo(
-    () => (route: string | null) => {
-      if (!route) return null;
-      const set = new Set<string>();
-      for (const row of laid.rows) {
-        // Exactly the commits drawn in this branch's colour, so what lights
-        // up and what is coloured can never disagree.
-        if ((routes.bySha.get(row.commit.sha) ?? []).includes(route)) {
-          set.add(row.commit.sha);
-        }
-      }
-      if (set.size === 0) return null;
-      // rows run newest first, so the line's tip is the first one in it.
-      const tip = laid.rows.find((r) => set.has(r.commit.sha));
-      if (tip) addMergePoint(set, laid.rows, tip.commit.sha);
-      const from = routes.forkPoint.get(route);
-      if (from) set.add(from);
-      return set;
-    },
+    () => (route: string | null) => lineOfRoute(laid.rows, routes, route),
     [laid, routes],
   );
 
   // Opening a commit asks "who came this way?". Every branch whose history
   // runs through it did, including ones that broke off further along, so
   // they all light; a branch that never reaches it goes quiet.
-  const litLine = useMemo(() => {
-    if (!openSha) return null;
-    const on = routes.containedIn.get(openSha) ?? [];
-    if (on.length > 0) {
-      const all = new Set<string>([openSha]);
-      for (const r of on) for (const sha of lineOf(r) ?? []) all.add(sha);
-      return all;
-    }
-    // No branch reaches it any more, history behind a branch someone
-    // deleted. Nothing to name it by, so follow its own first parents down
-    // and the same line back up, and light that.
-    const bySha = new Map(laid.rows.map((r) => [r.commit.sha, r]));
-    const set = new Set<string>();
-    let sha: string | undefined = openSha;
-    while (sha && bySha.has(sha) && !set.has(sha)) {
-      set.add(sha);
-      sha = bySha.get(sha)!.commit.parents[0];
-    }
-    const openLane = bySha.get(openSha)?.lane;
-    let cur = openSha;
-    for (;;) {
-      const kids = laid.rows.filter(
-        (r) => r.commit.parents[0] === cur && !set.has(r.commit.sha),
-      );
-      if (kids.length === 0) break;
-      const pick = kids.find((r) => r.lane === openLane) ?? kids[0];
-      set.add(pick.commit.sha);
-      cur = pick.commit.sha;
-    }
-    addMergePoint(set, laid.rows, cur);
-    return set;
-  }, [openSha, laid, routes, lineOf]);
+  const litLine = useMemo(
+    () => (openSha ? litThroughCommit(laid.rows, routes, openSha) : null),
+    [openSha, laid, routes],
+  );
 
   // Same idea for a hovered or picked branch card: its line stays lit.
   // A branch you actually clicked outranks one the pointer is merely passing
@@ -1871,37 +1931,14 @@ export function HistoryPage({
                 {open && (
                   <div className="gg-open">
                     <DetailRails
-                      lanes={row.below.map((j, k) => {
-                        const rs = edgeRoutes(
-                          routes,
-                          row.belowChilds[k] ?? [],
-                          row.belowShas[k],
-                        );
-                        const focusHere =
-                          focusBranch != null && rs.includes(focusBranch);
-                        const cx = laneX[j] ?? j * COL_W + COL_W / 2;
-                        const strands = rs.length
-                          ? rs.map((r) => ({
-                              x: cx + (rowSlots.get(j)?.get(r) ?? 0),
-                              color: routeColor(routes, r),
-                              dash: routeDash(routes, r),
-                              cls:
-                                focusHere && rs.length > 1 && r !== focusBranch
-                                  ? "gg-quiet"
-                                  : undefined,
-                            }))
-                          : [{ x: cx }];
-                        return {
-                          lane: j,
-                          on:
-                            !quietSet ||
-                            (quietSet.has(row.belowShas[k]) &&
-                              (row.belowChilds[k] ?? []).some((ch) =>
-                                quietSet.has(ch),
-                              )),
-                          strands,
-                        };
-                      })}
+                      lanes={detailLanesOf(
+                        row,
+                        rowSlots,
+                        routes,
+                        laneX,
+                        quietSet,
+                        focusBranch,
+                      )}
                       totalW={totalW}
                     />
                     <CommitDetail

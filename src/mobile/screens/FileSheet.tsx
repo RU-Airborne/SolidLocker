@@ -12,13 +12,12 @@ import {
 import {
   bytes,
   Confirm,
-  FileTypeIcon,
-  Sheet,
   Spinner,
   Trouble,
   UserAvatar,
 } from "../components";
 import { formatAgo, formatDateTime } from "../../dates";
+import { formatPerson } from "../../identity";
 import { isWatched, setWatched } from "../alerts";
 
 /**
@@ -26,19 +25,22 @@ import { isWatched, setWatched } from "../alerts";
  * matter. What is missing next to the desktop version is everything that
  * needs the file itself to be here: opening it, discarding changes, restoring
  * an old version over the top of it.
+ *
+ * This opens out under the row it belongs to rather than over the top of the
+ * list, the same way a change does on the branches page. A sheet covered the
+ * very list you were comparing the file against, and put the file's name in
+ * its header a second time when the row above already said it.
  */
-export function FileSheet({
+export function FileDetail({
   path,
   file,
   status,
   canPush,
-  onClose,
 }: {
   path: string;
   file: api.CloudFile | null;
   status: LockStatus;
   canPush: boolean;
-  onClose: () => void;
 }) {
   const claim = useClaim();
   const release = useRelease();
@@ -86,28 +88,7 @@ export function FileSheet({
   }
 
   return (
-    <Sheet
-      title={
-        <span className="m-sheet-title">
-          <span className={`m-filetype${file?.is_cad ? " cad" : ""}`}>
-            <FileTypeIcon path={path} size={18} />
-          </span>
-          {name}
-        </span>
-      }
-      onClose={onClose}
-      footer={
-        <Actions
-          status={status}
-          canPush={canPush}
-          lockable={file?.lockable ?? true}
-          working={working}
-          onTake={take}
-          onGiveBack={giveBack}
-          onForce={() => setAsking(true)}
-        />
-      }
-    >
+    <div className="m-fdetail">
       {preview.data && (
         <div className="m-preview">
           <img src={preview.data} alt={`Preview of ${name}`} />
@@ -192,13 +173,25 @@ export function FileSheet({
             <span className="m-history-main">
               <span>{commit.message}</span>
               <span className="muted small">
-                {commit.author_login || commit.author_name} ·{" "}
+                {formatPerson(commit.author_name, commit.author_login)} ·{" "}
                 {formatDateTime(commit.date)}
               </span>
             </span>
           </li>
         ))}
       </ul>
+
+      <div className="m-fdetail-actions">
+        <Actions
+          status={status}
+          canPush={canPush}
+          lockable={file?.lockable ?? true}
+          working={working}
+          onTake={take}
+          onGiveBack={giveBack}
+          onForce={() => setAsking(true)}
+        />
+      </div>
 
       {asking && (
         <Confirm
@@ -220,7 +213,7 @@ export function FileSheet({
           }}
         />
       )}
-    </Sheet>
+    </div>
   );
 }
 
