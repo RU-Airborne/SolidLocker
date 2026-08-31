@@ -1,0 +1,112 @@
+name: mobile
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  android:
+    name: Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r27c
+          add-to-path: false
+
+      - name: Point the build at the NDK
+        run: echo "NDK_HOME=${{ steps.ndk.outputs.ndk-path }}" >> "$GITHUB_ENV"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Sync app version from the tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          conf=src-tauri/tauri.conf.json
+          perl -0pi -e "s/(\"version\":\s*\")[^\"]*(\")/\${1}$version\${2}/" "$conf"
+          echo "Set app version to $version"
+
+      - name: Build the APK
+        run: npm run android:build -- --apk --debug
+
+      - name: Upload the APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: solidlocker-android-apk
+          path: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+
+  ios:
+    name: iOS build check
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build the frontend
+        run: npm run build
+
+      - name: Compile for iOS
+        working-directory: src-tauri
+        run: cargo build --target aarch64-apple-ios --lib
+
+      - name: Unsigned app bundle
+        id: appbundle
+        continue-on-error: true
+        run: |
+          xcodebuild build \
+            -project src-tauri/gen/apple/solidlocker.xcodeproj \
+            -scheme solidlocker_iOS \
+            -configuration debug \
+            -sdk iphoneos \
+            -derivedDataPath "$RUNNER_TEMP/iosbuild" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
+
+      - name: Upload the unsigned app bundle
+        if: steps.appbundle.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: solidlocker-ios-app-unsigned
+          path: ${{ runner.temp }}/iosbuild/Build/Products/debug-iphoneos/*.app
+          if-no-files-found: ignore

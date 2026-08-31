@@ -3628,7 +3628,7 @@ dependencies = [
 
 [[package]]
 name = "solidlocker"
-version = "0.8.1"
+version = "0.8.3"
 dependencies = [
  "base64 0.22.1",
  "cfb 0.10.0",
