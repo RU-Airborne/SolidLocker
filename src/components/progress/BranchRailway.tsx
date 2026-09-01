@@ -18,6 +18,9 @@ import {
   routeColor,
   routeDash,
   type RouteMap,
+  RAIL_W_THIN,
+  paint,
+  mergeStretchOf,
 } from "../history/HistoryPage";
 import type { BranchSummary } from "../../types";
 import { RailCard } from "../common/RailCard";
@@ -189,8 +192,15 @@ export function BranchRailway({
     }
     return all.size > 0 ? all : new Set([sel]);
   }, [sel, selRoutes, stopsOf]);
-  const line = selLine ?? hl;
-  const lineOwn = selOwn ?? hlOwn;
+  const mergeStretch = useMemo(
+    () =>
+      sel && (routes.bySha.get(sel) ?? []).length === 0
+        ? mergeStretchOf(rows, routes, sel)
+        : null,
+    [sel, routes, rows],
+  );
+  const line = mergeStretch ?? selLine ?? hl;
+  const lineOwn = mergeStretch ?? selOwn ?? hlOwn;
 
   // Scrolling the page to the railway is only half the job: the branch you
   // asked for is usually off to one side of a diagram wider than its box.
@@ -324,12 +334,52 @@ export function BranchRailway({
           const sl = slots[i] ?? new Map();
           const slotY = (lane: number, r: string) =>
             yOf(lane) + (sl.get(lane)?.get(r) ?? 0);
+          const belowY = (lane: number) => {
+            const bi = row.below.indexOf(lane);
+            const rs =
+              bi < 0
+                ? []
+                : edgeRoutesOf(
+                    routes,
+                    row.belowChilds[bi] ?? [],
+                    row.belowShas[bi],
+                  );
+            const ys = rs.map((r) => slotY(lane, r));
+            return ys.length
+              ? (Math.min(...ys) + Math.max(...ys)) / 2
+              : yOf(lane);
+          };
+          const towards = (sha: string | undefined) => {
+            const seen = new Set<string>();
+            let at = sha;
+            while (at && !seen.has(at)) {
+              seen.add(at);
+              const r = (routes.bySha.get(at) ?? [])[0];
+              if (r) return routeColor(routes, r);
+              at = routes.firstParent.get(at);
+            }
+            return undefined;
+          };
           const strands = (
             lane: number,
             rs: string[],
             fallback: number,
-          ): { y: number; color: string; dash?: string; cls?: string }[] => {
-            if (rs.length === 0) return [{ y: fallback, color: NO_ROUTE }];
+            toward?: string,
+          ): {
+            y: number;
+            color: string;
+            dash?: string;
+            cls?: string;
+            width?: number;
+          }[] => {
+            if (rs.length === 0)
+              return [
+                {
+                  y: fallback,
+                  color: towards(toward) ?? NO_ROUTE,
+                  width: RAIL_W_THIN,
+                },
+              ];
             // Where the followed lines share a lane, only their own strands
             // stay lit; the ones beside them step back.
             const litHere =
@@ -370,7 +420,11 @@ export function BranchRailway({
           const nMax = nodeYs.length ? Math.max(...nodeYs) : y;
           const ncy = (nMin + nMax) / 2;
           const nodeColor =
-            nodeRs.length === 1 ? routeColor(routes, nodeRs[0]) : NO_ROUTE;
+            nodeRs.length === 1
+              ? routeColor(routes, nodeRs[0])
+              : nodeRs.length === 0
+                ? (towards(c.sha) ?? NO_ROUTE)
+                : NO_ROUTE;
           const topRs = row.hasTop
             ? edgeRoutesOf(routes, row.topChilds, c.sha)
             : [];
@@ -383,13 +437,18 @@ export function BranchRailway({
           const forkRs = row.forks.map((_, k) =>
             edgeRoutesOf(routes, [c.sha], row.forkShas[k]),
           );
+          const contRs = row.continues
+            ? edgeRoutesOf(routes, [c.sha], c.parents[0] ?? "").filter((r) =>
+                sl.get(row.lane)?.has(r),
+              )
+            : nodeRs;
           const callingRs = [
             ...new Set(joinRs.flat()),
             ...restingRs,
           ].filter((r, i, a) => !nodeRs.includes(r) && a.indexOf(r) === i);
           const beads = [
             ...nodeRs.map((r) => ({ r, by: slotY(row.lane, r) })),
-            // Packed straight on, so the bar has no empty space in it.
+              // A line that ends here is packed outside the running ones.
             ...callingRs.map((r, k) => ({ r, by: nMax + (k + 1) * 5 })),
           ];
           const junction = beads.length > 1;
@@ -429,7 +488,7 @@ export function BranchRailway({
                       mergedOut(row.passChilds[k], row.passShas[k]),
                   )}
                 >
-                  {strands(j, passRs[k], yOf(j)).map((s) => (
+                  {strands(j, passRs[k], yOf(j), row.passShas[k]).map((s) => (
                     <line
                       key={s.y}
                       className={s.cls}
@@ -437,8 +496,8 @@ export function BranchRailway({
                       y1={s.y}
                       x2={xr}
                       y2={s.y}
-                      stroke={s.color}
-                      strokeWidth={3}
+                      stroke={paint(s.color)}
+                      strokeWidth={s.width ?? 3}
                       strokeDasharray={s.dash}
                     />
                   ))}
@@ -451,7 +510,7 @@ export function BranchRailway({
                       mergedOut(row.topChilds, c.sha),
                   )}
                 >
-                  {strands(row.lane, topRs, ncy).map((s) => (
+                  {strands(row.lane, topRs, ncy, c.sha).map((s) => (
                     <line
                       key={s.y}
                       className={s.cls}
@@ -459,8 +518,8 @@ export function BranchRailway({
                       y1={s.y}
                       x2={xr}
                       y2={s.y}
-                      stroke={s.color}
-                      strokeWidth={3}
+                      stroke={paint(s.color)}
+                      strokeWidth={s.width ?? 3}
                       strokeDasharray={s.dash}
                     />
                   ))}
@@ -495,8 +554,12 @@ export function BranchRailway({
                         }
                         d={sweep(x + run, y0, x, y1)}
                         fill="none"
-                        stroke={r ? routeColor(routes, r) : NO_ROUTE}
-                        strokeWidth={3}
+                        stroke={paint(
+                          r
+                            ? routeColor(routes, r)
+                            : (towards(c.sha) ?? NO_ROUTE)
+                        )}
+                        strokeWidth={r ? 3 : RAIL_W_THIN}
                         strokeDasharray={r ? routeDash(routes, r) : undefined}
                       />
                     );
@@ -505,7 +568,7 @@ export function BranchRailway({
               ))}
               {row.continues && (
                 <g className={dim(contLit)}>
-                  {strands(row.lane, nodeRs, ncy).map((s) => (
+                  {strands(row.lane, contRs, ncy, c.parents[0]).map((s) => (
                     <line
                       key={s.y}
                       className={s.cls}
@@ -513,8 +576,8 @@ export function BranchRailway({
                       y1={s.y}
                       x2={xl}
                       y2={s.y}
-                      stroke={s.color}
-                      strokeWidth={3}
+                      stroke={paint(s.color)}
+                      strokeWidth={s.width ?? 3}
                       strokeDasharray={s.dash}
                     />
                   ))}
@@ -524,7 +587,7 @@ export function BranchRailway({
                 // The stretch running into where a line ends belongs to that
                 // line, so the connector wears its colour to the tip.
                 const fr = forkRs[k][0];
-                const fy = fr ? slotY(m, fr) : yOf(m);
+                const fy = fr ? slotY(m, fr) : belowY(m);
                 const run = COL / 2;
                 return (
                   <path
@@ -539,8 +602,12 @@ export function BranchRailway({
                     )}
                     d={sweep(x, ncy, x - run, fy)}
                     fill="none"
-                    stroke={fr ? routeColor(routes, fr) : NO_ROUTE}
-                    strokeWidth={3}
+                    stroke={paint(
+                      fr
+                        ? routeColor(routes, fr)
+                        : (towards(row.forkShas[k]) ?? NO_ROUTE)
+                    )}
+                    strokeWidth={fr ? 3 : RAIL_W_THIN}
                     strokeDasharray={fr ? routeDash(routes, fr) : undefined}
                   />
                 );
@@ -586,7 +653,7 @@ export function BranchRailway({
                           height={bMax - bMin + 10}
                           rx={5}
                           fill="var(--headbg)"
-                          stroke={NO_ROUTE}
+                          stroke={paint(NO_ROUTE)}
                           strokeWidth={3}
                         />
                         {/* The lines sharing the stop stay in the bar,
@@ -600,7 +667,7 @@ export function BranchRailway({
                               cx={x}
                               cy={by}
                               r={2.2}
-                              fill={routeColor(routes, r)}
+                              fill={paint(routeColor(routes, r))}
                             />
                           ))}
                       </g>
@@ -611,14 +678,14 @@ export function BranchRailway({
                         cx={x}
                         cy={focusStop}
                         r={11}
-                        fill={routeColor(routes, focusLine!)}
+                        fill={paint(routeColor(routes, focusLine!))}
                       />
                     )}
                     <circle
                       cx={x}
                       cy={focusStop}
                       r={tipName ? 6 : 5}
-                      fill={routeColor(routes, focusLine!)}
+                      fill={paint(routeColor(routes, focusLine!))}
                     />
                   </g>
                 ) : junction ? (
@@ -634,7 +701,7 @@ export function BranchRailway({
                         width={16}
                         height={bMax - bMin + 16}
                         rx={8}
-                        fill={NO_ROUTE}
+                        fill={paint(NO_ROUTE)}
                       />
                     )}
                     <rect
@@ -644,7 +711,7 @@ export function BranchRailway({
                       height={bMax - bMin + 10}
                       rx={5}
                       fill="var(--headbg)"
-                      stroke={NO_ROUTE}
+                      stroke={paint(NO_ROUTE)}
                       strokeWidth={3}
                     />
                     {beads.map(({ r, by }) => (
@@ -659,7 +726,7 @@ export function BranchRailway({
                         cx={x}
                         cy={by}
                         r={2.2}
-                        fill={routeColor(routes, r)}
+                        fill={paint(routeColor(routes, r))}
                       />
                     ))}
                   </g>
@@ -668,9 +735,9 @@ export function BranchRailway({
                     {/* a roomier invisible target than the dot itself */}
                     <circle cx={x} cy={ncy} r={11} fill="transparent" />
                     {sel === c.sha && (
-                      <circle className="gg-halo" cx={x} cy={ncy} r={11} fill={nodeColor} />
+                      <circle className="gg-halo" cx={x} cy={ncy} r={11} fill={paint(nodeColor)} />
                     )}
-                    {terminus ? (
+                    {terminus && sel !== c.sha ? (
                       // Where the line you are following ends: hollow, so it
                       // reads as "change here", not as the line carrying on.
                       <circle
@@ -679,7 +746,7 @@ export function BranchRailway({
                         cy={ncy}
                         r={tipName ? 6 : 5}
                         fill="var(--headbg)"
-                        stroke={nodeColor}
+                        stroke={paint(nodeColor)}
                         strokeWidth={3}
                       />
                     ) : (
@@ -688,7 +755,7 @@ export function BranchRailway({
                         cx={x}
                         cy={ncy}
                         r={tipName ? 6 : 4.2}
-                        fill={nodeColor}
+                        fill={paint(nodeColor)}
                       />
                     )}
                   </>
@@ -718,7 +785,7 @@ export function BranchRailway({
                         className={cls}
                         x={lx}
                         y={labelY}
-                        fill={fill}
+                        fill={paint(fill)}
                         transform={`rotate(-72 ${lx} ${labelY})`}
                       >
                         {part}

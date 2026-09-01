@@ -1538,7 +1538,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
             className="notice-ok"
             onClick={handleInitLockable}
             disabled={settingUpLocking}
-            title="Adds the locking rules for .sldprt, .sldasm and .slddrw files and a .gitignore for temp files to this branch, and shares them with the team"
+            title="Adds the locking rules for .sldprt, .sldasm, .slddrw, .stl and .3mf files and a .gitignore for temp files to this branch, and shares them with the team"
           >
             {settingUpLocking
               ? "Setting up…"

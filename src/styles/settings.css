@@ -762,12 +762,12 @@
 
 .rr-date {
   font-size: 10.5px;
-  fill: var(--muted);
+  fill: color-mix(in srgb, var(--muted) var(--railmix, 100%), var(--headbg));
 }
 
 .rr-dim {
-  opacity: 0.22;
-  transition: opacity 0.12s ease;
+  --railmix: 22%;
+  transition: --railmix 0.12s ease;
 }
 
 .rr-hot .rr-label {
@@ -1431,6 +1431,32 @@
   min-width: 0;
 }
 
+.prpeople {
+  flex: 1 1 100%;
+  list-style: none;
+  margin: 0.15rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.prperson {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.prperson .avatar-img {
+  border-radius: 50%;
+  flex: none;
+}
+
+.prpersonwho {
+  overflow-wrap: anywhere;
+}
+
 .prwho .avatar-img {
   border-radius: 50%;
 }
@@ -1536,6 +1562,19 @@
   flex-direction: column;
   gap: 0.1rem;
   min-width: 0;
+}
+
+.pullhand {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  margin-top: 0.15rem;
+}
+
+.pullhand .avatar-img {
+  border-radius: 50%;
+  flex: none;
 }
 
 .modal.askmodal {

@@ -900,6 +900,14 @@ pub async fn get_latest(root: &Path) -> AppResult<GetLatestResult> {
         ));
     }
     if conflicted.is_empty() {
+        let held = repo::files_held_open(&[&ff.stderr, &merge.stderr]);
+        if !held.is_empty() {
+            return Err(AppError::with_detail(
+                "FILES_OPEN",
+                messages::files_block_update(&held.join(", ")),
+                serde_json::json!({ "files": held }),
+            ));
+        }
         // The merge refused without producing conflict entries
         return Err(AppError::git(messages::could_not_merge(
             merge.stderr.trim(),

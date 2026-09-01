@@ -1,3 +1,10 @@
+/* Registered so it interpolates. */
+@property --railmix {
+  syntax: "<percentage>";
+  inherits: true;
+  initial-value: 100%;
+}
+
 /* Colours and the reset.*/
 
 :root {

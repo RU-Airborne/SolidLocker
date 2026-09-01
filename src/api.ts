@@ -208,6 +208,12 @@ export const conflictSides = () => invoke<[string, string]>("conflict_sides");
 
 export const listConflicts = () => invoke<Conflict[]>("list_conflicts");
 
+export interface Approval {
+  author: string;
+  author_avatar: string;
+  created_at: string;
+}
+
 export interface PullSummary {
   number: number;
   title: string;
@@ -221,8 +227,14 @@ export interface PullSummary {
   /** "open" | "merged" | "closed" */
   state: string;
   merged_at: string;
+  closed_at: string;
   review_state: string;
   comments: number;
+  last_comment_at: string;
+  last_comment_by: string;
+  last_comment_by_avatar: string;
+  closed_by: string;
+  closed_by_avatar: string;
 }
 
 export interface PullFile {
@@ -259,6 +271,10 @@ export interface PullDetail {
   merged_at: string;
   merged_by: string;
   merged_by_avatar: string;
+  closed_by: string;
+  closed_by_avatar: string;
+  closed_at: string;
+  approvals: Approval[];
   merge_commit_sha: string;
   draft: boolean;
   created_at: string;

@@ -19,7 +19,7 @@ const STATUS_TITLE: Record<string, string> = {
   C: "Copied",
 };
 
-const CAD_FILE = /\.(sldprt|sldasm|slddrw)$/i;
+const CAD_FILE = /\.(sldprt|sldasm|slddrw|stl|3mf)$/i;
 
 function FileLine({
   status,

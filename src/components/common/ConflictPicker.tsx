@@ -72,7 +72,7 @@ function SideCell({
   const swIcon = useSwIcon();
   const swInstalled = useSwInstalled();
   const [opening, setOpening] = useState(false);
-  const isCad = /\.(sldprt|sldasm|slddrw)$/i.test(path);
+  const isCad = /\.(sldprt|sldasm|slddrw|stl|3mf)$/i.test(path);
 
   const who = person
     ? formatPerson(person.name, person.login)

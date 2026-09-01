@@ -904,10 +904,10 @@ button.linkish:hover {
 }
 
 .gg-quiet {
-  opacity: 0.22;
+  --railmix: 22%;
 }
 
-/* Show why this change's line is grey. */
+/* Unused */
 .gg-spurnote {
   margin: 0.35rem 0 0.5rem;
   padding: 0.4rem 0.6rem;

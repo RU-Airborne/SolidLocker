@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { RepoStatus } from "./api";
 import { fetchRemote, tidyAndSync } from "./api";
@@ -39,6 +39,8 @@ export interface SyncOptions {
 /** Never auto-pull more often than this */
 const AUTO_PULL_GAP_MS = 30_000;
 
+const PULL_RETRY_MS = 60_000;
+
 
 export function useSync(options: SyncOptions): SyncControls {
   const queryClient = useQueryClient();
@@ -51,6 +53,7 @@ export function useSync(options: SyncOptions): SyncControls {
   latest.current = options;
 
   const lastAutoPull = useRef(0);
+  const pulling = useRef(false);
 
   useEffect(() => {
     const doFetch = () => {
@@ -72,37 +75,54 @@ export function useSync(options: SyncOptions): SyncControls {
     return () => window.clearInterval(t);
   }, [queryClient, intervalS]);
 
-  // Auto-sync
-  const { paused, status, busy } = options;
-  useEffect(() => {
-    if (paused) return;
-    if (
-      !status ||
-      status.behind === 0 ||
-      status.dirty.some((p) => !isSwTemp(p)) ||
-      status.conflicted.length > 0
-    )
-      return;
-    if (busy) return;
-    if (Date.now() - lastAutoPull.current < AUTO_PULL_GAP_MS) return;
+  const attemptPull = useCallback((manual: boolean) => {
+    if (pulling.current) return Promise.resolve();
+    pulling.current = true;
     lastAutoPull.current = Date.now();
-    latest.current
+    const now = latest.current;
+    return now
       .pullLatest()
       .then((r) => {
-        if (r.merged) latest.current.onNotice(copy.syncedChanges(r.behind_before));
+        if (r.merged) now.onNotice(copy.syncedChanges(r.behind_before));
+        else if (manual) now.onNotice(copy.syncedOk);
       })
       .catch((e) => {
-        if (isAppError(e) && e.code === "CONFLICT") {
+        if (
+          isAppError(e) &&
+          (e.code === "CONFLICT" || e.code === "CAD_CONFLICT")
+        ) {
           const files = (e.detail as { files?: string[] } | undefined)?.files;
           // Never open the dialog with nothing to resolve.
           if (files && files.length > 0) {
             playMateFailed();
-            latest.current.onConflict(files);
+            now.onConflict(files);
+            return;
           }
         }
-        // Other failures stay quiet, the next cycle retries
+        now.onWarn(isAppError(e) ? e.message : copy.offlineRetry);
+      })
+      .finally(() => {
+        pulling.current = false;
       });
-  }, [paused, status, busy]);
+  }, []);
+
+  const { paused, status, busy } = options;
+  const behind = status?.behind ?? 0;
+  const blocked =
+    !status ||
+    status.dirty.some((p) => !isSwTemp(p)) ||
+    status.conflicted.length > 0;
+
+  useEffect(() => {
+    if (paused || busy || blocked || behind === 0) return;
+    const tick = () => {
+      if (Date.now() - lastAutoPull.current < AUTO_PULL_GAP_MS) return;
+      void attemptPull(false);
+    };
+    tick();
+    const t = window.setInterval(tick, PULL_RETRY_MS);
+    return () => window.clearInterval(t);
+  }, [paused, busy, blocked, behind, attemptPull]);
 
   return {
     lastFetchAt,
@@ -128,9 +148,8 @@ export function useSync(options: SyncOptions): SyncControls {
           for (const key of ["repoStatus", "locks", "files", "repoBranches"]) {
             queryClient.invalidateQueries({ queryKey: [key] });
           }
-          if ((latest.current.status?.behind ?? 0) === 0) {
-            latest.current.onNotice(copy.syncedOk);
-          }
+          // tidyAndSync only fetches; the button has to pull as well.
+          return attemptPull(true);
         })
         .catch((e) => {
           setFailed(true);

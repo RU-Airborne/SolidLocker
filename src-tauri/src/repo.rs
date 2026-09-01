@@ -439,6 +439,24 @@ async fn put_back_illusions(root: &Path, paths: &[String]) {
     }
 }
 
+pub fn files_held_open(stderrs: &[&str]) -> Vec<String> {
+    let mut found: Vec<String> = Vec::new();
+    for text in stderrs {
+        for tail in text.split("unable to unlink old ").skip(1) {
+            let Some(path) = tail
+                .strip_prefix('\'')
+                .and_then(|rest| rest.split('\'').next())
+            else {
+                continue;
+            };
+            if !path.is_empty() && !found.iter().any(|f| f == path) {
+                found.push(path.to_string());
+            }
+        }
+    }
+    found
+}
+
 /// Run a merge, and when the only thing in its way is files that merely look
 /// changed, move those aside and try once more. Whatever the merge decides,
 /// the files come back: the version it wrote, or the one they had before.
@@ -2236,7 +2254,7 @@ pub async fn commit_files(root: &Path, sha: &str) -> AppResult<Vec<CommitFileCha
 
 // ---- Locking setup (.gitattributes) ----
 
-const LOCKABLE_EXTENSIONS: [&str; 3] = ["sldprt", "sldasm", "slddrw"];
+const LOCKABLE_EXTENSIONS: [&str; 5] = ["sldprt", "sldasm", "slddrw", "stl", "3mf"];
 
 /// SolidWorks ~$ temp files and the usual OS litter, none of which belong in
 /// the project history.
@@ -2381,6 +2399,7 @@ pub async fn init_lockable(root: &Path) -> AppResult<InitLockableResult> {
 
 #[cfg(test)]
 mod tests {
+    use super::files_held_open;
     use super::get_repo_status;
     use super::parse_activity_log;
     use super::parse_slug_from_remote;
@@ -2394,6 +2413,22 @@ mod tests {
             .args(args)
             .output()
             .unwrap()
+    }
+
+    #[test]
+    fn names_the_file_solidworks_is_holding() {
+        let held = "error: unable to unlink old 'Wings/Rib One.SLDPRT': Invalid argument
+Filtering content: 100% (1/1), 200.00 KiB | 400.00 KiB/s, done.";
+        let dirty = "error: Your local changes to the following files would be overwritten by merge:
+	Wings/Rib Two.SLDPRT
+Aborting";
+        assert_eq!(
+            files_held_open(&[held, dirty]),
+            vec!["Wings/Rib One.SLDPRT".to_string()]
+        );
+        // The same file named twice is still one file to close.
+        assert_eq!(files_held_open(&[held, held]).len(), 1);
+        assert!(files_held_open(&[dirty]).is_empty());
     }
 
     /// Builds the situation that stranded a user: a CAD file committed whole,

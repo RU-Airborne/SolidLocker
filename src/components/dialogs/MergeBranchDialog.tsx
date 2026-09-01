@@ -32,7 +32,7 @@ function MergeGlyph() {
   );
 }
 
-const CAD_FILE = /\.(sldprt|sldasm|slddrw)$/i;
+const CAD_FILE = /\.(sldprt|sldasm|slddrw|stl|3mf)$/i;
 
 function IncomingThumb({ path, rev }: { path: string; rev: string }) {
   const thumb = useQuery({

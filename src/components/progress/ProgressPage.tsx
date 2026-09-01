@@ -186,8 +186,8 @@ export function ProgressPage({
     queryFn: getGraph,
     staleTime: 60_000,
   });
-  const laid = useMemo(() => layoutGraph(graph.data ?? []), [graph.data]);
   const routes = useMemo(() => routeSets(graph.data ?? []), [graph.data]);
+  const laid = useMemo(() => layoutGraph(graph.data ?? []), [graph.data]);
   const laneLayout = useMemo(
     () => computeLaneSlots(laid.rows, routes, laid.laneCount),
     [laid, routes],
@@ -455,7 +455,7 @@ export function ProgressPage({
     for (const commit of activity.data ?? []) {
       const when = new Date(commit.date).getTime();
       for (const f of commit.files) {
-        if (!/\.(sldprt|sldasm|slddrw)$/i.test(f.path)) continue;
+        if (!/\.(sldprt|sldasm|slddrw|stl|3mf)$/i.test(f.path)) continue;
         const entry = tally.get(f.path) ?? { path: f.path, edits: 0, last: 0 };
         entry.edits += 1;
         entry.last = Math.max(entry.last, when);

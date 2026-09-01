@@ -22,9 +22,15 @@ pub struct PullSummary {
     /// "open" | "merged" | "closed"
     pub state: String,
     pub merged_at: String,
+    pub closed_at: String,
     /// "approved" | "changes_requested" | "review_required" | "" when unknown.
     pub review_state: String,
     pub comments: u64,
+    pub last_comment_at: String,
+    pub last_comment_by: String,
+    pub last_comment_by_avatar: String,
+    pub closed_by: String,
+    pub closed_by_avatar: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -56,6 +62,13 @@ pub struct Pick {
     pub branch: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct Approval {
+    pub author: String,
+    pub author_avatar: String,
+    pub created_at: String,
+}
+
 /// Hidden marker on a proposal comment
 const PICK_MARK: &str = "<!-- solidlocker:pick branch=\"";
 
@@ -83,6 +96,10 @@ pub struct PullDetail {
     pub merged_at: String,
     pub merged_by: String,
     pub merged_by_avatar: String,
+    pub closed_by: String,
+    pub closed_by_avatar: String,
+    pub closed_at: String,
+    pub approvals: Vec<Approval>,
     pub merge_commit_sha: String,
     pub draft: bool,
     pub created_at: String,
@@ -97,7 +114,9 @@ pub struct PullDetail {
 
 fn is_cad(path: &str) -> bool {
     let l = path.to_lowercase();
-    l.ends_with(".sldprt") || l.ends_with(".sldasm") || l.ends_with(".slddrw")
+    [".sldprt", ".sldasm", ".slddrw", ".stl", ".3mf"]
+        .iter()
+        .any(|e| l.ends_with(e))
 }
 
 /// owner/repo from the origin remote.
@@ -174,6 +193,152 @@ fn person(v: &serde_json::Value) -> (String, String) {
     )
 }
 
+fn number_from_url(url: &str) -> Option<u64> {
+    url.rsplit('/').next().and_then(|n| n.parse().ok())
+}
+
+struct Act {
+    at: String,
+    by: String,
+    avatar: String,
+}
+
+fn keep_newest(seen: &mut HashMap<u64, Act>, number: u64, act: Act) {
+    if seen.get(&number).is_some_and(|prev| prev.at >= act.at) {
+        return;
+    }
+    seen.insert(number, act);
+}
+
+/// Last comment per request, off the two repo-wide feeds: two calls rather
+/// than one per request.
+async fn last_comments(api: &Api) -> HashMap<u64, Act> {
+    let mut newest: HashMap<u64, Act> = HashMap::new();
+    let feeds = [
+        (
+            "issue_url",
+            format!(
+                "https://api.github.com/repos/{}/issues/comments?sort=updated&direction=desc&per_page=100",
+                api.slug
+            ),
+        ),
+        (
+            "pull_request_url",
+            format!(
+                "https://api.github.com/repos/{}/pulls/comments?sort=updated&direction=desc&per_page=100",
+                api.slug
+            ),
+        ),
+    ];
+    for (field, url) in feeds {
+        let sent = api
+            .http
+            .get(url)
+            .header("Accept", "application/vnd.github+json")
+            .bearer_auth(&api.token)
+            .send()
+            .await;
+        let Ok(resp) = sent else { continue };
+        let Ok(body) = read_json(resp).await else { continue };
+        for c in body.as_array().unwrap_or(&Vec::new()) {
+            let Some(number) = c
+                .get(field)
+                .and_then(|v| v.as_str())
+                .and_then(number_from_url)
+            else {
+                continue;
+            };
+            let at = text(c, "created_at");
+            if at.is_empty() {
+                continue;
+            }
+            let (by, avatar) = person(c);
+            keep_newest(&mut newest, number, Act { at, by, avatar });
+        }
+    }
+    newest
+}
+
+/// Who closed each request, off the repo's event feed. The list of requests
+/// does not carry it and the per-request call would be one each.
+async fn closers(api: &Api) -> HashMap<u64, Act> {
+    let mut newest: HashMap<u64, Act> = HashMap::new();
+    let sent = api
+        .http
+        .get(format!(
+            "https://api.github.com/repos/{}/issues/events?per_page=100",
+            api.slug
+        ))
+        .header("Accept", "application/vnd.github+json")
+        .bearer_auth(&api.token)
+        .send()
+        .await;
+    let Ok(resp) = sent else { return newest };
+    let Ok(body) = read_json(resp).await else {
+        return newest;
+    };
+    for e in body.as_array().unwrap_or(&Vec::new()) {
+        // A merge closes a request too, and names the person who did it.
+        if !matches!(text(e, "event").as_str(), "closed" | "merged") {
+            continue;
+        }
+        let Some(number) = e
+            .get("issue")
+            .and_then(|i| i.get("number"))
+            .and_then(|n| n.as_u64())
+        else {
+            continue;
+        };
+        let at = text(e, "created_at");
+        if at.is_empty() {
+            continue;
+        }
+        let actor = e.get("actor");
+        keep_newest(
+            &mut newest,
+            number,
+            Act {
+                at,
+                by: actor.map(|a| text(a, "login")).unwrap_or_default(),
+                avatar: actor.map(|a| text(a, "avatar_url")).unwrap_or_default(),
+            },
+        );
+    }
+    newest
+}
+
+/// Who has approved a request.
+fn approvals(reviews: &serde_json::Value) -> Vec<Approval> {
+    let mut latest: HashMap<String, Approval> = HashMap::new();
+    for r in reviews.as_array().unwrap_or(&Vec::new()) {
+        if text(r, "state") != "APPROVED" {
+            continue;
+        }
+        let (author, author_avatar) = person(r);
+        if author.is_empty() {
+            continue;
+        }
+        let created_at = text(r, "submitted_at");
+        let newer = latest
+            .get(&author)
+            .map(|prev| prev.created_at <= created_at)
+            .unwrap_or(true);
+        if newer {
+            latest.insert(
+                author.clone(),
+                Approval {
+                    author,
+                    author_avatar,
+                    created_at,
+                },
+            );
+        }
+    }
+    let mut out: Vec<Approval> = latest.into_values().collect();
+    out.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+    out
+}
+
 pub async fn list(api: &Api) -> AppResult<Vec<PullSummary>> {
     let (client, slug, token) = (api.http.clone(), api.slug.clone(), api.token.clone());
     let resp = client
@@ -186,10 +351,15 @@ pub async fn list(api: &Api) -> AppResult<Vec<PullSummary>> {
         .await
         .map_err(|e| AppError::offline(e.to_string()))?;
     let body = read_json(resp).await?;
+    let said = last_comments(api).await;
+    let shut = closers(api).await;
 
     let mut found = Vec::new();
     for pr in body.as_array().unwrap_or(&Vec::new()) {
         let (author, avatar) = person(pr);
+        let number = pr.get("number").and_then(|n| n.as_u64()).unwrap_or(0);
+        let last = said.get(&number);
+        let shutter = shut.get(&number);
         found.push(PullSummary {
             number: pr.get("number").and_then(|n| n.as_u64()).unwrap_or(0),
             title: text(pr, "title"),
@@ -213,9 +383,15 @@ pub async fn list(api: &Api) -> AppResult<Vec<PullSummary>> {
                 text(pr, "state")
             },
             merged_at: text(pr, "merged_at"),
+            closed_at: text(pr, "closed_at"),
             // not in the list endpoint
             review_state: String::new(),
             comments: 0,
+            last_comment_at: last.map(|a| a.at.clone()).unwrap_or_default(),
+            last_comment_by: last.map(|a| a.by.clone()).unwrap_or_default(),
+            last_comment_by_avatar: last.map(|a| a.avatar.clone()).unwrap_or_default(),
+            closed_by: shutter.map(|a| a.by.clone()).unwrap_or_default(),
+            closed_by_avatar: shutter.map(|a| a.avatar.clone()).unwrap_or_default(),
         });
     }
     Ok(found)
@@ -257,6 +433,20 @@ pub async fn detail(api: &Api, number: u64) -> AppResult<PullDetail> {
     ))
     .await?;
 
+    let shut = if text(&pr, "state") != "open" && text(&pr, "merged_at").is_empty() {
+        get(format!(
+            "https://api.github.com/repos/{slug}/issues/{number}"
+        ))
+        .await
+        .ok()
+    } else {
+        None
+    };
+    let closer = shut
+        .as_ref()
+        .and_then(|issue| issue.get("closed_by"))
+        .filter(|who| !who.is_null());
+
     let (author, avatar) = person(&pr);
     Ok(PullDetail {
         number,
@@ -275,6 +465,10 @@ pub async fn detail(api: &Api, number: u64) -> AppResult<PullDetail> {
             .get("merged_by")
             .map(|u| text(u, "avatar_url"))
             .unwrap_or_default(),
+        closed_by: closer.map(|u| text(u, "login")).unwrap_or_default(),
+        closed_by_avatar: closer.map(|u| text(u, "avatar_url")).unwrap_or_default(),
+        closed_at: text(&pr, "closed_at"),
+        approvals: approvals(&reviews),
         merge_commit_sha: text(&pr, "merge_commit_sha"),
         draft: pr.get("draft").and_then(|d| d.as_bool()).unwrap_or(false),
         created_at: text(&pr, "created_at"),
@@ -739,13 +933,68 @@ pub async fn close(api: &Api, number: u64) -> AppResult<()> {
 
 #[cfg(test)]
 mod tests {
+    use super::approvals;
     use super::is_cad;
+    use super::number_from_url;
 
     #[test]
     fn knows_which_changes_have_no_text_diff() {
         assert!(is_cad("Wings/Rib.SLDPRT"));
         assert!(is_cad("Full Assembly/SA26.sldasm"));
         assert!(!is_cad("README.md"));
+    }
+
+    #[test]
+    fn reads_the_request_number_off_an_api_url() {
+        assert_eq!(
+            number_from_url("https://api.github.com/repos/o/r/issues/12"),
+            Some(12)
+        );
+        assert_eq!(
+            number_from_url("https://api.github.com/repos/o/r/pulls/7"),
+            Some(7)
+        );
+        assert_eq!(number_from_url("https://api.github.com/repos/o/r"), None);
+    }
+
+    #[test]
+    fn keeps_only_each_persons_latest_word() {
+        let reviews = serde_json::json!([
+            {
+                "state": "APPROVED",
+                "submitted_at": "2026-08-01T10:00:00Z",
+                "user": { "login": "het", "avatar_url": "het.png" }
+            },
+            {
+                "state": "CHANGES_REQUESTED",
+                "submitted_at": "2026-08-02T10:00:00Z",
+                "user": { "login": "het", "avatar_url": "het.png" }
+            },
+            {
+                "state": "APPROVED",
+                "submitted_at": "2026-08-03T10:00:00Z",
+                "user": { "login": "het", "avatar_url": "het.png" }
+            },
+            {
+                "state": "APPROVED",
+                "submitted_at": "2026-08-02T09:00:00Z",
+                "user": { "login": "andrew", "avatar_url": "andrew.png" }
+            },
+            {
+                "state": "COMMENTED",
+                "submitted_at": "2026-08-04T10:00:00Z",
+                "user": { "login": "soumita", "avatar_url": "s.png" }
+            }
+        ]);
+        let out = approvals(&reviews);
+        assert_eq!(
+            out.iter().map(|a| a.author.as_str()).collect::<Vec<_>>(),
+            vec!["andrew", "het"],
+            "oldest approval first, one line per person"
+        );
+        assert_eq!(out[1].created_at, "2026-08-03T10:00:00Z");
+        assert_eq!(out[1].author_avatar, "het.png");
+        assert!(approvals(&serde_json::json!([])).is_empty());
     }
 }
 

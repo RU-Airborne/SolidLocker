@@ -74,8 +74,8 @@ ${shortName(named[0])} is now held by ${heldBy.get(named[0])}.`
     `Locked ${claimed} of ${total}. Already taken: ${held}`,
   lockingSetUp: (pushed: boolean) =>
     pushed
-      ? "Locking is set up: SolidWorks files (.sldprt, .sldasm, .slddrw) on this branch now go through Git LFS and can be locked. The rules were shared with your team."
-      : "Locking is set up on this branch for SolidWorks files (.sldprt, .sldasm, .slddrw). Couldn't reach GitHub to share the rules yet. They will go up with your next Save & Share.",
+      ? "Locking is set up: model files (.sldprt, .sldasm, .slddrw, .stl, .3mf) on this branch now go through Git LFS and can be locked. The rules were shared with your team."
+      : "Locking is set up on this branch for model files (.sldprt, .sldasm, .slddrw, .stl, .3mf). Couldn't reach GitHub to share the rules yet. They will go up with your next Save & Share.",
   freshBranch: (name: string) =>
     `You are on the brand-new branch "${name}". An empty project with locking already set up. The rest of the repository is untouched on its other branches.`,
   branchedOff: (name: string) =>

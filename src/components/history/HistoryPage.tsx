@@ -32,7 +32,7 @@ import {
   useIdentities,
 } from "../../identity";
 
-const CAD_FILE = /\.(sldprt|sldasm|slddrw)$/i;
+const CAD_FILE = /\.(sldprt|sldasm|slddrw|stl|3mf)$/i;
 
 export interface LaidRow {
   commit: GraphCommit;
@@ -98,8 +98,15 @@ export function layoutGraph(commits: GraphCommit[]): {
         (laneChilds[existing] ??= []).push(c.sha);
         continue;
       }
-      const free = lanes.indexOf(null);
-      const m = free >= 0 ? free : (lanes.push(null), lanes.length - 1);
+      let m = -1;
+      for (let j = 0; j < lanes.length; j++) {
+        if (lanes[j] !== null) continue;
+        if (m < 0 || Math.abs(j - lane) < Math.abs(m - lane)) m = j;
+      }
+      if (m < 0) {
+        lanes.push(null);
+        m = lanes.length - 1;
+      }
       lanes[m] = parent;
       laneChilds[m] = [c.sha];
       forks.push(m);
@@ -169,6 +176,10 @@ const DASH_PATTERNS: (string | undefined)[] = [undefined, "7 4", "2 3"];
     the far side of a merge) is track without a line: neutral, never a hue
     that would read as somebody's branch. */
 const NO_ROUTE = "var(--muted)";
+export const RAIL_W_THIN = 2;
+export function paint(color: string): string {
+  return `color-mix(in srgb, ${color} var(--railmix, 100%), var(--headbg))`;
+}
 
 /** The routes riding the edges into `childs`, in stable order. */
 function routesForShas(routes: RouteMap, shas: string[]): string[] {
@@ -203,12 +214,15 @@ function edgeRoutes(
   const onParent = new Set(routes.bySha.get(parentSha) ?? []);
   const above = routesForShas(routes, childs);
   const shared = above.filter((r) => onParent.has(r));
-  if (shared.length > 0) return shared;
-  // The stretch where a line leaves the one it broke off from belongs to
-  // the line above, the same way the stretch into a tip belongs to the line
-  // ending there.
-  const leaving = above.filter((r) => routes.forkPoint.get(r) === parentSha);
-  if (leaving.length > 0) return leaving;
+  const leaving = above.filter(
+    (r) => !onParent.has(r) && routes.forkPoint.get(r) === parentSha,
+  );
+  const running = [...shared, ...leaving];
+  if (running.length > 0) {
+    return running.sort(
+      (a, b) => (routes.orderIndex.get(a) ?? 0) - (routes.orderIndex.get(b) ?? 0),
+    );
+  }
   return (routes.tipOf.get(parentSha) ?? []).slice(0, 1);
 }
 
@@ -234,6 +248,17 @@ export function computeLaneSlots(
   routes: RouteMap,
   laneCount: number,
 ): LaneLayout {
+  const lastRow = new Map<string, number>();
+  rows.forEach((row, i) => {
+    for (const r of routes.bySha.get(row.commit.sha) ?? []) lastRow.set(r, i);
+  });
+  const deepestFirst = (a: string, b: string) => {
+    const d = (lastRow.get(b) ?? -1) - (lastRow.get(a) ?? -1);
+    return d !== 0
+      ? d
+      : (routes.orderIndex.get(a) ?? 0) - (routes.orderIndex.get(b) ?? 0);
+  };
+
   // What each row draws in each lane, and which lanes it touches at all.
   const drawn: Map<number, Set<string>>[] = [];
   const touched: Set<number>[] = [];
@@ -319,10 +344,7 @@ export function computeLaneSlots(
   const widest = new Map<number, number>();
   for (const [key, set] of runRoutes) {
     const lane = Number(key.slice(0, key.indexOf(":")));
-    const ordered = [...set].sort(
-      (a, b) =>
-        (routes.orderIndex.get(a) ?? 0) - (routes.orderIndex.get(b) ?? 0),
-    );
+    const ordered = [...set].sort(deepestFirst);
     const m = new Map<string, number>();
     ordered.forEach((r, i) =>
       m.set(r, (i - (ordered.length - 1) / 2) * STRAND_GAP),
@@ -638,29 +660,52 @@ export function litThroughCommit(
     }
     return all;
   }
-  // No branch reaches it any more, history behind a branch someone
-  // deleted. Nothing to name it by, so follow its own first parents down
-  // and the same line back up, and light that.
-  const bySha = new Map(rows.map((r) => [r.commit.sha, r]));
-  const set = new Set<string>();
-  let sha: string | undefined = openSha;
-  while (sha && bySha.has(sha) && !set.has(sha)) {
-    set.add(sha);
-    sha = bySha.get(sha)!.commit.parents[0];
+  return mergeStretchOf(rows, routes, openSha);
+}
+
+export function mergeStretchOf(
+  rows: LaidRow[],
+  routes: RouteMap,
+  sha: string,
+): Set<string> {
+  const set = new Set<string>([sha]);
+  // down to the stop where it rejoins a line, that stop included, no further
+  let at = routes.firstParent.get(sha);
+  while (at && !set.has(at)) {
+    set.add(at);
+    if ((routes.bySha.get(at) ?? []).length > 0) break;
+    at = routes.firstParent.get(at);
   }
-  const openLane = bySha.get(openSha)?.lane;
-  let cur = openSha;
-  for (;;) {
-    const kids = rows.filter(
-      (r) => r.commit.parents[0] === cur && !set.has(r.commit.sha),
-    );
-    if (kids.length === 0) break;
-    const pick = kids.find((r) => r.lane === openLane) ?? kids[0];
-    set.add(pick.commit.sha);
-    cur = pick.commit.sha;
+  // up through whatever arrived with it, as far as the merge that took it in
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const r of rows) {
+      const c = r.commit;
+      if (set.has(c.sha)) continue;
+      const tookItIn = c.parents.slice(1).some((p) => set.has(p));
+      const arrivedWithIt =
+        c.parents[0] !== undefined &&
+        set.has(c.parents[0]) &&
+        (routes.bySha.get(c.sha) ?? []).length === 0;
+      if (tookItIn || arrivedWithIt) {
+        set.add(c.sha);
+        grew = true;
+      }
+    }
   }
-  addMergePoint(set, rows, cur);
   return set;
+}
+
+export function towardsColor(routes: RouteMap, sha: string | undefined): string {
+  const seen = new Set<string>();
+  let at = sha;
+  while (at && !seen.has(at)) {
+    seen.add(at);
+    const r = (routes.bySha.get(at) ?? [])[0];
+    if (r) return routeColor(routes, r);
+    at = routes.firstParent.get(at);
+  }
+  return NO_ROUTE;
 }
 
 /** The stretch of rail drawn down the side of an expanded commit, so the
@@ -687,7 +732,13 @@ export function detailLanesOf(
               ? "gg-quiet"
               : undefined,
         }))
-      : [{ x: cx }];
+      : [
+          {
+            x: cx,
+            color: towardsColor(routes, row.belowShas[k]),
+            width: RAIL_W_THIN,
+          },
+        ];
     return {
       lane: j,
       on:
@@ -742,6 +793,7 @@ export interface Strand {
   cls?: string;
   color?: string;
   dash?: string;
+  width?: number;
 }
 
 export interface FillLane {
@@ -760,18 +812,20 @@ function FillRails({ lanes, totalW }: { lanes: FillLane[]; totalW: number }) {
       preserveAspectRatio="none"
       aria-hidden="true"
     >
-      {lanes.map(({ lane: j, on, strands }) => (
-        <g key={j} className={on ? undefined : "gg-quiet"}>
-          {strands.map(({ x: sx, cls: sc, color: scol, dash: sd }) => (
+      {/* Keyed by position: a lane can appear twice, and keyed by lane
+          React dropped one of them. */}
+      {lanes.map(({ lane: j, on, strands }, li) => (
+        <g key={`${j}-${li}`} className={on ? undefined : "gg-quiet"}>
+          {strands.map(({ x: sx, cls: sc, color: scol, dash: sd, width: sw }, si) => (
             <line
-              key={sx}
+              key={`${sx}-${si}`}
               className={sc}
               x1={sx}
               y1={0}
               x2={sx}
               y2={10}
-              stroke={scol ?? NO_ROUTE}
-              strokeWidth={RAIL_W}
+              stroke={paint(scol ?? NO_ROUTE)}
+              strokeWidth={sw ?? RAIL_W}
               strokeDasharray={sd}
             />
           ))}
@@ -844,6 +898,15 @@ export function RowRails({
     const xs = rs.map((r) => slotX(lane, r));
     return xs.length ? (Math.min(...xs) + Math.max(...xs)) / 2 : x(lane);
   };
+  const belowAnchor = (lane: number) => {
+    const k = row.below.indexOf(lane);
+    return laneAnchor(
+      lane,
+      k < 0
+        ? []
+        : edgeRoutes(routes, row.belowChilds[k] ?? [], row.belowShas[k]),
+    );
+  };
   const allNodeRs = routes.bySha.get(c.sha) ?? [];
   const laneSlots = slots.get(row.lane);
   // Lines with a strand in this lane sit on it; ones that only call here
@@ -871,11 +934,15 @@ export function RowRails({
   const nMax = nodeXs.length ? Math.max(...nodeXs) : xl;
   const ncx = (nMin + nMax) / 2;
 
-  // A segment carrying no route of its own (a merge connector, or history
-  // no label points at) is a single line, drawn where its line sits rather
-  // than at the bare lane centre, so nothing jumps sideways.
-  const strandsFor = (lane: number, rs: string[], fallbackX: number): Strand[] => {
-    if (rs.length === 0) return [{ x: fallbackX }];
+  const towards = (sha: string | undefined) => towardsColor(routes, sha);
+  const strandsFor = (
+    lane: number,
+    rs: string[],
+    fallbackX: number,
+    toward?: string,
+  ): Strand[] => {
+    if (rs.length === 0)
+      return [{ x: fallbackX, color: towards(toward), width: RAIL_W_THIN }];
     const litHere = litRoutes != null && rs.some((r) => litRoutes.has(r));
     return rs.map((r) => ({
       x: slotX(lane, r),
@@ -887,7 +954,12 @@ export function RowRails({
   };
 
   const topRs = row.hasTop ? edgeRoutes(routes, row.topChilds, c.sha) : [];
-  const contRs = nodeRs;
+  // What carries on below the stop, not what calls at it.
+  const contRs = row.continues
+    ? edgeRoutes(routes, [c.sha], c.parents[0] ?? "").filter((r) =>
+        laneSlots?.has(r),
+      )
+    : nodeRs;
   const passRs = row.passes.map((_, k) =>
     edgeRoutes(routes, row.passChilds[k] ?? [], row.passShas[k]),
   );
@@ -912,10 +984,24 @@ export function RowRails({
     ...new Set(joinRs.flat()),
     ...restingRs,
   ].filter((r, i, a) => !nodeRs.includes(r) && a.indexOf(r) === i);
+  const sideOf = (r: string) => {
+    for (let k = 0; k < row.joins.length; k++) {
+      if (joinRs[k]?.includes(r)) return row.joins[k] - row.lane;
+    }
+    for (let k = 0; k < row.forks.length; k++) {
+      if (forkRs[k]?.includes(r)) return row.forks[k] - row.lane;
+    }
+    return 1;
+  };
+  const callLeft = callingRs.filter((r) => sideOf(r) < 0);
+  const callRight = callingRs.filter((r) => sideOf(r) >= 0);
   const beads = [
     ...nodeRs.map((r) => ({ r, bx: slotX(row.lane, r) })),
-    // Packed straight onto the end, so the bar has no empty space in it.
-    ...callingRs.map((r, i) => ({ r, bx: nMax + (i + 1) * STRAND_GAP })),
+    ...callLeft.map((r, i) => ({
+      r,
+      bx: nMin - (callLeft.length - i) * STRAND_GAP,
+    })),
+    ...callRight.map((r, i) => ({ r, bx: nMax + (i + 1) * STRAND_GAP })),
   ];
   const junction = beads.length > 1;
   /** Where a line's own bead sits, so its track runs into it and not into
@@ -928,7 +1014,10 @@ export function RowRails({
   const nodeColor =
     nodeRs.length === 1 && !junction
       ? routeColor(routes, nodeRs[0])
-      : NO_ROUTE;
+      : nodeRs.length === 0 && !junction
+        ? // Came in on a merge's second side: the colour it arrived with.
+          towards(c.sha)
+        : NO_ROUTE;
   // While a branch is picked out, its stops are drawn as its own dot instead
   // of hiding inside the interchange bar, on its own strand where it runs
   // through, and on its own bead where it only calls here. Either way the
@@ -959,34 +1048,37 @@ export function RowRails({
     ...row.passes.map((j, k) => ({
       lane: j,
       on: passOn(k),
-      strands: strandsFor(j, passRs[k], passFallback[k]),
+      strands: strandsFor(j, passRs[k], passFallback[k], row.passShas[k]),
     })),
     ...(row.hasTop
-      ? [{ lane: row.lane, on: topOn, strands: strandsFor(row.lane, topRs, ncx) }]
+      ? [{ lane: row.lane, on: topOn, strands: strandsFor(row.lane, topRs, ncx, c.sha) }]
       : []),
     ...row.joins.map((j, k) => ({
       lane: j,
       on: joinOn(k),
-      strands: strandsFor(j, joinRs[k], x(j)),
+      strands: strandsFor(j, joinRs[k], x(j), c.sha),
     })),
   ];
   const bottomLanes: FillLane[] = [
     ...row.passes.map((j, k) => ({
       lane: j,
       on: passOn(k),
-      strands: strandsFor(j, passRs[k], passFallback[k]),
+      strands: strandsFor(j, passRs[k], passFallback[k], row.passShas[k]),
     })),
     ...(row.continues
-      ? [{ lane: row.lane, on: contOn, strands: strandsFor(row.lane, contRs, ncx) }]
+      ? [{ lane: row.lane, on: contOn, strands: strandsFor(row.lane, contRs, ncx, c.parents[0]) }]
       : []),
     ...row.forks.map((m, k) => ({
       lane: m,
       on: forkOn(k),
       strands: [
         {
-          x: laneAnchor(m, forkRs[k]),
-          color: forkRs[k].length ? routeColor(routes, forkRs[k][0]) : undefined,
+          x: forkRs[k].length ? laneAnchor(m, forkRs[k]) : belowAnchor(m),
+          color: forkRs[k].length
+            ? routeColor(routes, forkRs[k][0])
+            : towards(row.forkShas[k]),
           dash: forkRs[k].length ? routeDash(routes, forkRs[k][0]) : undefined,
+          width: forkRs[k].length ? undefined : RAIL_W_THIN,
         },
       ],
     })),
@@ -1003,7 +1095,7 @@ export function RowRails({
     >
       {row.passes.map((j, k) => (
         <g key={`p${j}`} className={cls(passOn(k))}>
-          {strandsFor(j, passRs[k], passFallback[k]).map(({ x: sx, cls: sc, color: scol, dash: sd }) => (
+          {strandsFor(j, passRs[k], passFallback[k], row.passShas[k]).map(({ x: sx, cls: sc, color: scol, dash: sd, width: sw }) => (
             <line
               key={sx}
               className={sc}
@@ -1011,8 +1103,8 @@ export function RowRails({
               y1={0}
               x2={sx}
               y2={tall}
-              stroke={scol ?? NO_ROUTE}
-              strokeWidth={RAIL_W}
+              stroke={paint(scol ?? NO_ROUTE)}
+              strokeWidth={sw ?? RAIL_W}
               strokeDasharray={sd}
             />
           ))}
@@ -1020,7 +1112,7 @@ export function RowRails({
       ))}
       {row.hasTop && (
         <g className={cls(topOn)}>
-          {strandsFor(row.lane, topRs, ncx).map(({ x: sx, cls: sc, color: scol, dash: sd }) => (
+          {strandsFor(row.lane, topRs, ncx, c.sha).map(({ x: sx, cls: sc, color: scol, dash: sd, width: sw }) => (
             <line
               key={sx}
               className={sc}
@@ -1028,8 +1120,8 @@ export function RowRails({
               y1={0}
               x2={sx}
               y2={mid}
-              stroke={scol ?? NO_ROUTE}
-              strokeWidth={RAIL_W}
+              stroke={paint(scol ?? NO_ROUTE)}
+              strokeWidth={sw ?? RAIL_W}
               strokeDasharray={sd}
             />
           ))}
@@ -1052,8 +1144,8 @@ export function RowRails({
                 }
                 d={crossing(x0, 0, x1, mid)}
                 fill="none"
-                stroke={r ? routeColor(routes, r) : NO_ROUTE}
-                strokeWidth={RAIL_W}
+                stroke={paint(r ? routeColor(routes, r) : towards(c.sha))}
+                strokeWidth={r ? RAIL_W : RAIL_W_THIN}
                 strokeDasharray={r ? routeDash(routes, r) : undefined}
               />
             );
@@ -1062,7 +1154,7 @@ export function RowRails({
       ))}
       {row.continues && (
         <g className={cls(contOn)}>
-          {strandsFor(row.lane, contRs, ncx).map(({ x: sx, cls: sc, color: scol, dash: sd }) => (
+          {strandsFor(row.lane, contRs, ncx, c.parents[0]).map(({ x: sx, cls: sc, color: scol, dash: sd, width: sw }) => (
             <line
               key={sx}
               className={sc}
@@ -1070,8 +1162,8 @@ export function RowRails({
               y1={mid}
               x2={sx}
               y2={tall}
-              stroke={scol ?? NO_ROUTE}
-              strokeWidth={RAIL_W}
+              stroke={paint(scol ?? NO_ROUTE)}
+              strokeWidth={sw ?? RAIL_W}
               strokeDasharray={sd}
             />
           ))}
@@ -1082,15 +1174,21 @@ export function RowRails({
         // when it reaches that branch's tip, and lands on its strand rather
         // than the bare lane centre.
         const prs = forkRs[k];
-        const xm = laneAnchor(m, prs);
+        const xm = prs.length ? laneAnchor(m, prs) : belowAnchor(m);
+        // Leave from this line's own bead, not the middle of the bar.
+        const from = (prs.length ? beadAt.get(prs[0]) : undefined) ?? ncx;
         return (
           <path
             key={`f${m}`}
             className={cls(forkOn(k))}
-            d={crossing(ncx, mid, xm, tall)}
+            d={crossing(from, mid, xm, tall)}
             fill="none"
-            stroke={prs.length ? routeColor(routes, prs[0]) : NO_ROUTE}
-            strokeWidth={RAIL_W}
+            stroke={paint(
+              prs.length
+                ? routeColor(routes, prs[0])
+                : towards(row.forkShas[k])
+            )}
+            strokeWidth={prs.length ? RAIL_W : RAIL_W_THIN}
             strokeDasharray={prs.length ? routeDash(routes, prs[0]) : undefined}
           />
         );
@@ -1123,7 +1221,7 @@ export function RowRails({
                 height={10}
                 rx={5}
                 fill="var(--headbg)"
-                stroke={NO_ROUTE}
+                stroke={paint(NO_ROUTE)}
                 strokeWidth={RAIL_W}
               />
               {/* The lines sharing the stop stay in the bar, stepped back,
@@ -1136,7 +1234,7 @@ export function RowRails({
                     cx={bx}
                     cy={mid}
                     r={2}
-                    fill={routeColor(routes, r)}
+                    fill={paint(routeColor(routes, r))}
                   />
                 ))}
             </g>
@@ -1147,14 +1245,14 @@ export function RowRails({
               cx={focusStop}
               cy={mid}
               r={11}
-              fill={routeColor(routes, stopRoute!)}
+              fill={paint(routeColor(routes, stopRoute!))}
             />
           )}
           <circle
             cx={focusStop}
             cy={mid}
             r={open ? 6 : 5}
-            fill={routeColor(routes, stopRoute!)}
+            fill={paint(routeColor(routes, stopRoute!))}
           />
         </g>
       ) : junction ? (
@@ -1176,7 +1274,7 @@ export function RowRails({
                   width={sw + 6}
                   height={sh + 6}
                   rx={(sh + 6) / 2}
-                  fill={nodeColor}
+                  fill={paint(nodeColor)}
                 />
               )}
               <rect
@@ -1186,7 +1284,7 @@ export function RowRails({
                 height={sh}
                 rx={sh / 2}
                 fill="var(--headbg)"
-                stroke={nodeColor}
+                stroke={paint(nodeColor)}
                 strokeWidth={RAIL_W}
               />
               {/* Each line calling here keeps a bead of its own colour
@@ -1203,7 +1301,7 @@ export function RowRails({
                   cx={bx}
                   cy={mid}
                   r={open ? 2.4 : 2}
-                  fill={routeColor(routes, r)}
+                  fill={paint(routeColor(routes, r))}
                 />
               ))}
             </g>
@@ -1212,9 +1310,10 @@ export function RowRails({
       ) : (
         <g className={cls(nodeOn)}>
           {open && (
-            <circle className="gg-halo" cx={ncx} cy={mid} r={10} fill={nodeColor} />
+            <circle className="gg-halo" cx={ncx} cy={mid} r={10} fill={paint(nodeColor)} />
           )}
-          {terminus ? (
+          {/* The stop you have opened fills in. */}
+          {terminus && !open ? (
             // Where the line being followed ends. Hollow is the "change
             // here" marker: it keeps the stop's own colour while making
             // clear the followed line stops rather than carries on.
@@ -1223,11 +1322,11 @@ export function RowRails({
               cy={mid}
               r={open ? 6 : 5}
               fill="var(--headbg)"
-              stroke={nodeColor}
+              stroke={paint(nodeColor)}
               strokeWidth={RAIL_W}
             />
           ) : (
-            <circle cx={ncx} cy={mid} r={open ? 6 : 5} fill={nodeColor} />
+            <circle cx={ncx} cy={mid} r={open ? 6 : 5} fill={paint(nodeColor)} />
           )}
         </g>
       )}
@@ -1247,18 +1346,20 @@ export function DetailRails({ lanes, totalW }: { lanes: FillLane[]; totalW: numb
       preserveAspectRatio="none"
       aria-hidden="true"
     >
-      {lanes.map(({ lane: j, on, strands }) => (
-        <g key={j} className={on ? undefined : "gg-quiet"}>
-          {strands.map(({ x: sx, cls: sc, color: scol, dash: sd }) => (
+      {/* Keyed by position: a lane can appear twice, and keyed by lane
+          React dropped one of them. */}
+      {lanes.map(({ lane: j, on, strands }, li) => (
+        <g key={`${j}-${li}`} className={on ? undefined : "gg-quiet"}>
+          {strands.map(({ x: sx, cls: sc, color: scol, dash: sd, width: sw }, si) => (
             <line
-              key={sx}
+              key={`${sx}-${si}`}
               className={sc}
               x1={sx}
               y1={0}
               x2={sx}
               y2={10}
-              stroke={scol ?? NO_ROUTE}
-              strokeWidth={RAIL_W}
+              stroke={paint(scol ?? NO_ROUTE)}
+              strokeWidth={sw ?? RAIL_W}
               strokeDasharray={sd}
             />
           ))}
@@ -1288,14 +1389,11 @@ function CommitDetail({
   onPreviewCommit,
   onBranch,
   colorOf,
-  mergedBy,
 }: {
   commit: GraphCommit;
   /** Every branch holding this commit, however it reached them. */
   onBranch: string[];
   colorOf: (branch: string) => string;
-  /** Set when this change sits on a grey spur: the merge that took it in. */
-  mergedBy: GraphCommit | null;
   onBranchOff: (sha: string, label: string) => void;
   onViewVersion: (
     path: string,
@@ -1342,20 +1440,8 @@ function CommitDetail({
           ))}
         </p>
       )}
-      {mergedBy && (
-        <p className="gg-spurnote muted small">
-          Its line is grey because this change never sat on a branch of its
-          own.{" "}
-          {commit.author_name === mergedBy.author_name
-            ? "It was saved"
-            : `${commit.author_name} saved it`}{" "}
-          from the same starting point as someone else, and the two were
-          brought together by {mergedBy.author_name}
-          {"'"}s update
-          {mergedBy.date ? ` on ${formatDate(mergedBy.date)}` : ""}. Nobody
-          branched here. It is part of every branch listed above.
-        </p>
-      )}
+      {/* The two notes that explained the grey line are gone with it: a
+          merge's second side wears its branch's colour now. */}
       {files.isLoading && <p className="muted small">Reading what changed…</p>}
       {files.data && files.data.length > 0 && (
         <ul className="gg-files">
@@ -1509,11 +1595,11 @@ export function HistoryPage({
     return () => window.clearTimeout(t);
   }, [focusSha]);
 
+  const routes = useMemo(() => routeSets(graph.data ?? []), [graph.data]);
   const laid = useMemo(
     () => layoutGraph(graph.data ?? []),
     [graph.data],
   );
-  const routes = useMemo(() => routeSets(graph.data ?? []), [graph.data]);
   const { slots, laneX, totalW } = useMemo(
     () => computeLaneSlots(laid.rows, routes, laid.laneCount),
     [laid, routes],
@@ -1945,15 +2031,6 @@ export function HistoryPage({
                       commit={c}
                       onBranch={routes.containedIn.get(c.sha) ?? []}
                       colorOf={(b) => routeColor(routes, b)}
-                      mergedBy={
-                        // Only a change on a grey spur needs explaining:
-                        // no line runs along it, so say how it got here.
-                        (routes.bySha.get(c.sha) ?? []).length === 0
-                          ? (laid.rows.find(
-                              (r) => r.commit.parents.indexOf(c.sha) > 0,
-                            )?.commit ?? null)
-                          : null
-                      }
                       onBranchOff={onBranchOff}
                       onViewVersion={onViewVersion}
                       onRestoreFiles={onRestoreFiles}

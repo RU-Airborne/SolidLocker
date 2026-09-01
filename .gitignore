@@ -4,8 +4,5 @@ Thumbs.db
 node_modules/
 dist/
 src-tauri/target/
-# Tauri regenerates all of this. Its own .gitignore files in there are only
-# tracked on the mobile branch, so on a desktop branch nothing stopped a
-# `git add .` sweeping up a built .xcarchive. Files already tracked on
-# mobile-companion are unaffected, since .gitignore does not apply to those.
 src-tauri/gen/
+*.log

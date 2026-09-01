@@ -215,6 +215,12 @@ pub fn could_not_merge(stderr: &str) -> String {
     format!("Could not bring in the team's changes: {stderr}")
 }
 
+pub fn files_block_update(files: &str) -> String {
+    format!(
+        "The team's changes cannot be written while SolidWorks has these files open. Close them in SolidWorks and they will come down on the next check: {files}"
+    )
+}
+
 pub const MERGE_NEEDS_COMMIT: &str =
     "You have unsaved changes. Use Save & Share before merging branches.";
 

@@ -155,6 +155,27 @@ export function PullsPage({
   );
 }
 
+function latestHand(
+  p: PullSummary,
+): { what: string; login: string; avatar: string; when: string } | null {
+  if (p.state === "open") {
+    if (!p.last_comment_by) return null;
+    return {
+      what: "Last comment by",
+      login: p.last_comment_by,
+      avatar: p.last_comment_by_avatar,
+      when: p.last_comment_at,
+    };
+  }
+  if (!p.closed_by) return null;
+  return {
+    what: p.state === "merged" ? "Merged by" : "Closed by",
+    login: p.closed_by,
+    avatar: p.closed_by_avatar,
+    when: (p.state === "merged" ? p.merged_at : p.closed_at) || p.closed_at,
+  };
+}
+
 function PullList({
   items,
   empty,
@@ -172,7 +193,9 @@ function PullList({
   if (items.length === 0) return <p className="muted small">{empty}</p>;
   return (
     <ul className="pulllist">
-      {items.map((p) => (
+      {items.map((p) => {
+        const hand = latestHand(p);
+        return (
         <li key={p.number} className={`pullcard ${p.state}`}>
           <button className="pullopen" onClick={() => onOpen(p.number)}>
             <UserAvatar
@@ -194,10 +217,27 @@ function PullList({
                 Opened {formatDateTime(p.created_at)}
                 {p.state === "merged"
                   ? ` · merged ${formatDateTime(p.merged_at)}`
-                  : p.updated_at !== p.created_at
-                    ? ` · last updated ${formatDateTime(p.updated_at)}`
-                    : ""}
+                  : p.state !== "open" && p.closed_at
+                    ? ` · closed ${formatDateTime(p.closed_at)}`
+                    : p.updated_at !== p.created_at
+                      ? ` · last updated ${formatDateTime(p.updated_at)}`
+                      : ""}
               </span>
+              {hand && (
+                <span className="muted small pullhand">
+                  <UserAvatar
+                    url={hand.avatar}
+                    name={directory.nameFor(hand.login) ?? hand.login}
+                    size={18}
+                  />
+                  {hand.what}{" "}
+                  {formatPerson(
+                    directory.nameFor(hand.login) ?? hand.login,
+                    hand.login,
+                  )}
+                  {hand.when ? ` · ${formatDateTime(hand.when)}` : ""}
+                </span>
+              )}
             </span>
           </button>
           {p.state === "merged" && tidyable?.has(p.head) && onTidy && (
@@ -211,7 +251,8 @@ function PullList({
             </button>
           )}
         </li>
-      ))}
+        );
+      })}
     </ul>
   );
 }
@@ -427,7 +468,7 @@ function OpenPullDialog({
   );
 }
 
-const CAD_FILE = /\.(sldprt|sldasm|slddrw)$/i;
+const CAD_FILE = /\.(sldprt|sldasm|slddrw|stl|3mf)$/i;
 
 function AskThumb({ path, rev }: { path: string; rev: string }) {
   const thumb = useQuery({
@@ -482,6 +523,31 @@ function ChangedFile({ file, headRef }: { file: PullFile; headRef: string }) {
           {opening ? "Opening…" : "Open"}
         </button>
       )}
+    </li>
+  );
+}
+
+function PersonAction({
+  what,
+  login,
+  avatar,
+  when,
+}: {
+  what: string;
+  login: string;
+  avatar: string;
+  when: string;
+}) {
+  const directory = usePeople();
+  const name = directory.nameFor(login) ?? login;
+  return (
+    <li className="prperson">
+      <UserAvatar url={avatar} name={name} size={26} />
+      <span className="prpersonwho">
+        {what} <strong>{formatPerson(name, login)}</strong>
+      </span>
+      {/* An empty date formats as "Invalid Date". */}
+      {when && <span className="muted small">{formatDateTime(when)}</span>}
     </li>
   );
 }
@@ -769,6 +835,28 @@ function PullView({
                 keep and suggest it to the reviewer from here. To approve and
                 merge, switch to <BranchName name={d.base} /> first.
               </p>
+            )}
+
+            {(d.approvals.length > 0 || (d.closed_by && !d.merged)) && (
+              <ul className="prpeople">
+                {d.approvals.map((a) => (
+                  <PersonAction
+                    key={`approved-${a.author}`}
+                    what="Approved by"
+                    login={a.author}
+                    avatar={a.author_avatar}
+                    when={a.created_at}
+                  />
+                ))}
+                {d.closed_by && !d.merged && (
+                  <PersonAction
+                    what="Closed by"
+                    login={d.closed_by}
+                    avatar={d.closed_by_avatar}
+                    when={d.closed_at}
+                  />
+                )}
+              </ul>
             )}
           </section>
 
