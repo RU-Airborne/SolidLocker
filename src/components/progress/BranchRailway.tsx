@@ -62,7 +62,7 @@ function sweep(x0: number, y0: number, x1: number, y1: number): string {
 // }
 
 /** Gap between the stacked labels at a commit several branches stop at. */
-const LABEL_STEP = 13;
+const LABEL_STEP = 18;
 /** How many characters fit on one line of a slanted label. */
 const LABEL_CHARS = 14;
 
@@ -93,10 +93,26 @@ export function BranchRailway({
   // railway, where the lanes are 16 apart and the corner has 17 to turn in.
   // Push them further apart and the identical curve stands on end.
   const LANE = 20;
-  const TOP = 176;
+  const TOP = 224;
   const PAD = 36;
   const RIGHT = 80;
-  const W = PAD * 2 + rows.length * COL + RIGHT;
+  const positions = useMemo(() => {
+    const labelSlots = rows.map(({ commit: c }) =>
+      [...new Set(c.refs
+        .filter((r) => r !== "HEAD" && r !== "origin/HEAD")
+        .map((r) => r.startsWith("origin/") ? r.slice(7) : r))]
+        .filter((n) => !routes.repOf.has(n) || (routes.tipOf.get(c.sha) ?? []).includes(n))
+        .reduce((count, name) => count + wrapName(name, LABEL_CHARS).length, 0),
+    );
+    const xs = Array<number>(rows.length);
+    let nextX = PAD + COL / 2;
+    for (let i = rows.length - 1; i >= 0; i--) {
+      xs[i] = nextX;
+      nextX += Math.max(COL, labelSlots[i] * LABEL_STEP + 8);
+    }
+    return xs;
+  }, [rows, routes]);
+  const W = (positions[0] ?? PAD - COL / 2) + PAD + RIGHT + COL / 2;
   // extra room under the lanes for the timeline
   const H = TOP + laneCount * LANE + 46;
   const shortDate = (d: string | number) =>
@@ -106,7 +122,7 @@ export function BranchRailway({
     });
   const forkOf = new Map(branches.map((b) => [b.name, b.forked_at]));
   const yOf = (l: number) => TOP + l * LANE;
-  const xOf = (i: number) => W - PAD - RIGHT - i * COL - COL / 2;
+  const xOf = (i: number) => positions[i];
 
   // newest commits sit at the right edge, start the view there
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -217,15 +233,15 @@ export function BranchRailway({
     });
     if (!Number.isFinite(newest)) return;
     // xOf runs right to left: index 0 is the newest commit, at the far right.
-    const right = W - PAD - RIGHT - newest * COL - COL / 2;
-    const left = W - PAD - RIGHT - oldest * COL - COL / 2;
+    const right = positions[newest];
+    const left = positions[oldest];
     const middle = (left + right) / 2;
     const most = Math.max(0, el.scrollWidth - el.clientWidth);
     el.scrollTo({
       left: Math.min(most, Math.max(0, middle - el.clientWidth / 2)),
       behavior: "smooth",
     });
-  }, [highlight, hl, rows, W, PAD, RIGHT, COL]);
+  }, [highlight, hl, rows, positions]);
   // Picking out one line dims the strands beside it. Clicking a stop where
   // several lines meet picks out all of them, so none is singled out and
   // they all stay drawn as they are.
@@ -300,8 +316,8 @@ export function BranchRailway({
         {rows.map((row, i) => {
           const x = xOf(i);
           const y = yOf(row.lane);
-          const xr = x + COL / 2;
-          const xl = x - COL / 2;
+          const xr = i > 0 ? (x + xOf(i - 1)) / 2 : x + COL / 2;
+          const xl = i < rows.length - 1 ? (x + xOf(i + 1)) / 2 : x - COL / 2;
           const c = row.commit;
           // A branch is named once, at the stop its line ends at.
           const endsHere = routes.tipOf.get(c.sha) ?? [];
@@ -539,7 +555,7 @@ export function BranchRailway({
                     // Half a column: the connector's own side of this stop,
                     // and no further, so it never draws over the rails of
                     // the column next door.
-                    const run = COL / 2;
+                    const run = xr - x;
                     return (
                       <path
                         key={r ?? "-"}
@@ -588,7 +604,7 @@ export function BranchRailway({
                 // line, so the connector wears its colour to the tip.
                 const fr = forkRs[k][0];
                 const fy = fr ? slotY(m, fr) : belowY(m);
-                const run = COL / 2;
+                const run = x - xl;
                 return (
                   <path
                     key={`f${m}`}
@@ -629,9 +645,22 @@ export function BranchRailway({
                 </title>
                 {c.is_head ? (
                   <g className={`gg-head ${dim(on, c.sha) ?? ""}`}>
-                    <circle className="gg-halo" cx={x} cy={ncy} r={13} fill="var(--accent)" />
-                    <circle cx={x} cy={ncy} r={8} fill="none" stroke="var(--accent)" strokeWidth={3} />
-                    <circle cx={x} cy={ncy} r={4.2} fill="var(--accent)" />
+                    {junction ? (
+                      <>
+                        <rect className="gg-halo" x={x - 13} y={bMin - 13} width={26} height={bMax - bMin + 26} rx={13} fill="var(--accent)" />
+                        <rect x={x - 9} y={bMin - 9} width={18} height={bMax - bMin + 18} rx={9} fill="none" stroke="var(--accent)" strokeWidth={3} />
+                        <rect x={x - 5} y={bMin - 5} width={10} height={bMax - bMin + 10} rx={5} fill="var(--headbg)" stroke={paint(NO_ROUTE)} strokeWidth={3} />
+                        {beads.map(({ r, by }) => (
+                          <circle key={r} cx={x} cy={by} r={2.2} fill={paint(routeColor(routes, r))} />
+                        ))}
+                      </>
+                    ) : (
+                      <>
+                        <circle className="gg-halo" cx={x} cy={ncy} r={13} fill="var(--accent)" />
+                        <circle cx={x} cy={ncy} r={8} fill="none" stroke="var(--accent)" strokeWidth={3} />
+                        <circle cx={x} cy={ncy} r={4.2} fill="var(--accent)" />
+                      </>
+                    )}
                     {/* SVG text can't blur what's behind it, so the pill is HTML. */}
                     <foreignObject x={x - 50} y={ncy + 14} width={100} height={24}>
                       <div className="rr-herebox">

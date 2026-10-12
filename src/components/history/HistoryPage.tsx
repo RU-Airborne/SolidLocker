@@ -1194,19 +1194,23 @@ export function RowRails({
         );
       })}
       {row.commit.is_head ? (
-        // "You are here": a pulsing halo and a double ring, unmissable
-        // against the plain dots, centred on this commit's strands.
         <g className="gg-head">
-          <circle className="gg-halo" cx={ncx} cy={mid} r={12} fill="var(--accent)" />
-          <circle
-            cx={ncx}
-            cy={mid}
-            r={8}
-            fill="none"
-            stroke="var(--accent)"
-            strokeWidth={RAIL_W}
-          />
-          <circle cx={ncx} cy={mid} r={4} fill="var(--accent)" />
+          {junction ? (
+            <>
+              <rect className="gg-halo" x={bMin - 13} y={mid - 13} width={bMax - bMin + 26} height={26} rx={13} fill="var(--accent)" />
+              <rect x={bMin - 9} y={mid - 9} width={bMax - bMin + 18} height={18} rx={9} fill="none" stroke="var(--accent)" strokeWidth={RAIL_W} />
+              <rect x={bMin - 5} y={mid - 5} width={bMax - bMin + 10} height={10} rx={5} fill="var(--headbg)" stroke={paint(NO_ROUTE)} strokeWidth={RAIL_W} />
+              {beads.map(({ r, bx }) => (
+                <circle key={r} cx={bx} cy={mid} r={2} fill={paint(routeColor(routes, r))} />
+              ))}
+            </>
+          ) : (
+            <>
+              <circle className="gg-halo" cx={ncx} cy={mid} r={12} fill="var(--accent)" />
+              <circle cx={ncx} cy={mid} r={8} fill="none" stroke="var(--accent)" strokeWidth={RAIL_W} />
+              <circle cx={ncx} cy={mid} r={4} fill="var(--accent)" />
+            </>
+          )}
         </g>
       ) : focusStop !== null ? (
         // One line is picked out: its stops show as its own colour, and the
