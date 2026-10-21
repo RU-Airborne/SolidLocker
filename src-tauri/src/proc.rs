@@ -227,12 +227,27 @@ pub async fn run_program(
 pub async fn run_git_interactive(
     repo: &Path,
     args: &[&str],
+    stdin_data: Option<&[u8]>,
     timeout_secs: u64,
 ) -> AppResult<GitOutput> {
-    let mut cmd = base_command(resolved_git().await, repo);
-    cmd.env("GCM_INTERACTIVE", "auto").args(args);
+    use std::process::Stdio;
+    use tokio::io::AsyncWriteExt;
 
-    let output = tokio::time::timeout(Duration::from_secs(timeout_secs), cmd.output())
+    let mut cmd = base_command(resolved_git().await, repo);
+    cmd.env("GCM_INTERACTIVE", "auto")
+        .args(args)
+        .stdin(if stdin_data.is_some() { Stdio::piped() } else { Stdio::null() })
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let output = tokio::time::timeout(Duration::from_secs(timeout_secs), async {
+        let mut child = cmd.spawn()?;
+        if let Some(data) = stdin_data {
+            let mut stdin = child.stdin.take().expect("stdin piped");
+            stdin.write_all(data).await?;
+        }
+        child.wait_with_output().await
+    })
         .await
         .map_err(|_| AppError::new("TIMEOUT", "git timed out waiting for the sign in"))?
         .map_err(|e| AppError::new("SPAWN", format!("could not run git: {e}")))?;

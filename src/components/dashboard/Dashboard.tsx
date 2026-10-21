@@ -10,6 +10,7 @@ import {
   listRepoBranches,
   getOpenDocuments,
   openFile,
+  openRepoFolder,
   previewCommit,
   pushNow,
   checkForUpdate,
@@ -1430,6 +1431,11 @@ export function Dashboard({ appState }: { appState: AppState }) {
         switchingTo={switchingTo}
         onSwitchRepo={() => void handleSwitchRepo()}
         onOpenRepo={(dir) => void handleOpenRepo(dir)}
+        onOpenFolder={() =>
+          openRepoFolder().catch((e) =>
+            warn(isAppError(e) ? e.message : String(e)),
+          )
+        }
         status={repoStatus.data}
         lastFetchAt={sync.lastFetchAt}
         offline={offline}

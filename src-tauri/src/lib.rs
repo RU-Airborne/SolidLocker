@@ -1143,15 +1143,26 @@ async fn github_login(repo: &Path) -> Option<String> {
         })
 }
 
-/// Ask GitHub for the branch list with prompting allowed, so the credential
-/// manager opens its sign in window. Explicit user action only.
+/// Open Git Credential Manager's sign in flow when the user asks.
 #[tauri::command]
 async fn github_sign_in(app: AppHandle) -> AppResult<bool> {
-    let root = current_repo(&app)?;
-    let out = proc::run_git_interactive(&root, &["ls-remote", "--heads", "origin"], 300).await?;
+    let root = current_repo(&app).ok();
+    let fallback = std::env::temp_dir();
+    let dir = root.as_deref().unwrap_or(&fallback);
+    let out = if root.is_some() {
+        proc::run_git_interactive(dir, &["ls-remote", "--heads", "origin"], None, 300).await?
+    } else {
+        proc::run_git_interactive(
+            dir,
+            &["credential", "fill"],
+            Some(b"protocol=https\nhost=github.com\n\n"),
+            300,
+        )
+        .await?
+    };
     // Learn the login now so the profile fills in immediately, not at first lock.
     if out.ok() {
-        if let Some(login) = github_login(&root).await {
+        if let Some(login) = github_login(dir).await {
             let _ = settings::set_string(&app, KEY_GH_USERNAME, &login);
         }
     }

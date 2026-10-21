@@ -15,6 +15,7 @@ export function TopBar({
   switchingTo,
   onSwitchRepo,
   onOpenRepo,
+  onOpenFolder,
   status,
   lastFetchAt,
   offline,
@@ -36,6 +37,7 @@ export function TopBar({
   switchingTo: string | null;
   onSwitchRepo: () => void;
   onOpenRepo: (path: string) => void;
+  onOpenFolder: () => void;
   status: RepoStatus | undefined;
   lastFetchAt: number | null;
   offline: boolean;
@@ -74,6 +76,7 @@ export function TopBar({
           path={appState.repo!.repo_path}
           onPick={onOpenRepo}
           onBrowse={onSwitchRepo}
+          onOpenFolder={onOpenFolder}
         />
 
         <span className="crumbsep" aria-hidden="true">

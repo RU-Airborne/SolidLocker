@@ -16,8 +16,8 @@ export function SignInDialog({
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h2>Sign in to GitHub first</h2>
         <p>
-          This computer has not signed in to GitHub yet, so locking and sharing
-          will not work.
+          SolidLocker cannot access a GitHub sign-in for this repository yet, so
+          locking and sharing will not work.
         </p>
         <p>
           Click <strong>Sign in</strong> below and a browser window opens asking

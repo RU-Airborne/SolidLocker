@@ -7,11 +7,13 @@ export function RepoMenu({
   path,
   onPick,
   onBrowse,
+  onOpenFolder,
 }: {
   slug: string;
   path: string;
   onPick: (path: string) => void;
   onBrowse: () => void;
+  onOpenFolder: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [rect, setRect] = useState<DOMRect | null>(null);
@@ -146,9 +148,32 @@ export function RepoMenu({
                 <div className="repopop-rule" />
               </>
             )}
-            {/* Deliberately not shaped like the projects above it: this one
-                does something rather than takes you somewhere, so it gets a
-                mark, one line, and none of their weight. */}
+            <button
+              className="repopop-browse"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                onOpenFolder();
+              }}
+              title="Open the current project's root folder in your file explorer"
+            >
+              <span className="repopop-browseicon" aria-hidden="true">
+                <svg
+                  viewBox="0 0 24 24"
+                  width="17"
+                  height="17"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M13 5h6v6M19 5l-9 9" />
+                  <path d="M19 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h4" />
+                </svg>
+              </span>
+              Show in File Explorer
+            </button>
             <button
               className="repopop-browse"
               role="menuitem"

@@ -128,9 +128,8 @@ pub const PR_UNKNOWN_REVIEW: &str = "That is not one of the review options.";
 pub const PR_REVIEW_NEEDS_WORDS: &str = "Say what needs changing.";
 
 pub const NO_GITHUB_SIGN_IN: &str =
-    "SolidLocker could not find your GitHub sign-in on this computer. \
-Signing in with GitHub Desktop, or running `git credential fill`, puts it \
-where SolidLocker can find it.";
+    "SolidLocker can't access your GitHub sign-in yet. \
+Use SolidLocker's Sign in button to see your repositories.";
 
 pub fn repos_refused(code: u16) -> String {
     match code {

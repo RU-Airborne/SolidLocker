@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   cloneRepo,
+  githubSignIn,
   listMyRepos,
   selectExistingRepo,
   type RepoChoice,
@@ -26,6 +27,7 @@ export function RepoPicker({
   const [busy, setBusy] = useState<string | null>(null);
   const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [signingIn, setSigningIn] = useState(false);
 
   const repos = useQuery<RepoChoice[]>({
     queryKey: ["myRepos"],
@@ -88,6 +90,22 @@ export function RepoPicker({
     }
   }
 
+  async function signIn() {
+    setSigningIn(true);
+    setError(null);
+    try {
+      if (await githubSignIn()) {
+        await repos.refetch();
+      } else {
+        setError("GitHub sign-in did not finish. Please try again.");
+      }
+    } catch (e) {
+      setError(isAppError(e) ? e.message : String(e));
+    } finally {
+      setSigningIn(false);
+    }
+  }
+
   const busyRepo = shown.find((r) => r.slug === busy);
 
   return (
@@ -122,9 +140,18 @@ export function RepoPicker({
       {repos.isLoading && <Loading what="Reading your projects from GitHub…" />}
 
       {repos.isError && (
-        <p className="errdetail">
-          {isAppError(repos.error) ? repos.error.message : String(repos.error)}
-        </p>
+        isAppError(repos.error) && repos.error.code === "AUTH" ? (
+          <p className="muted small">
+            Sign in to GitHub to see your repositories.{" "}
+            <button className="linkish" onClick={signIn} disabled={signingIn}>
+              {signingIn ? "Waiting for GitHub…" : "Sign in"}
+            </button>
+          </p>
+        ) : (
+          <p className="errdetail">
+            {isAppError(repos.error) ? repos.error.message : String(repos.error)}
+          </p>
+        )
       )}
 
       {repos.data && shown.length === 0 && (

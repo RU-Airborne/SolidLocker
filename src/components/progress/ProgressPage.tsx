@@ -509,9 +509,6 @@ export function ProgressPage({
               half about the grid sat a chart away from the grid. */}
           <div className="actstack">
           <div className="actbars">
-            <p className="muted chartcap">
-              Each bar is one {RANGES[range].unit} of shared changes.
-            </p>
             {/* Sat in the panel heading, where it looked as though it drove
                 both charts. It only ever changed the bars. */}
             <div className="typefilter actrange">

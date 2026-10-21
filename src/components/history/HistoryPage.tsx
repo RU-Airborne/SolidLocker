@@ -1407,6 +1407,7 @@ function CommitDetail({
   onRestoreFiles: (paths: string[], commit: VersionRef) => void;
   onPreviewCommit: (sha: string, label: string) => void;
 }) {
+  const [confirmPreview, setConfirmPreview] = useState(false);
   const files = useQuery({
     queryKey: ["commitFiles", commit.sha],
     queryFn: () => getCommitFiles(commit.sha),
@@ -1481,16 +1482,11 @@ function CommitDetail({
         {!commit.is_head && (
         <button
           className="branchoffbtn"
-          onClick={() =>
-            onPreviewCommit(
-              commit.sha,
-              `${commit.subject} · ${formatDate(commit.date)}`,
-            )
-          }
+          onClick={() => setConfirmPreview(true)}
           title="Open the project as it was at this point, read-only. One click brings you back"
         >
           <EyeGlyph />
-          View this version (read-only)
+          View this version (read-only)…
         </button>
         )}
         {cadFiles.length > 0 && !commit.is_head && (
@@ -1524,6 +1520,37 @@ function CommitDetail({
           Branch off from here…
         </button>
       </div>
+      {confirmPreview &&
+        createPortal(
+          <div className="modal-backdrop" onClick={() => setConfirmPreview(false)}>
+            <div className="modal" onClick={(e) => e.stopPropagation()}>
+              <h2>View this version?</h2>
+              <p className="muted">
+                SolidLocker will switch the project folder to this earlier
+                version in read-only mode. You can return to your branch afterward.
+              </p>
+              <p>
+                <strong>{commit.subject}</strong> · {formatDate(commit.date)}
+              </p>
+              <div className="modal-actions">
+                <button onClick={() => setConfirmPreview(false)}>Cancel</button>
+                <button
+                  className="primary"
+                  onClick={() => {
+                    setConfirmPreview(false);
+                    onPreviewCommit(
+                      commit.sha,
+                      `${commit.subject} · ${formatDate(commit.date)}`,
+                    );
+                  }}
+                >
+                  View version
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
@@ -1702,10 +1729,6 @@ export function HistoryPage({
     <main className="settingspage historypage">
       <div className="pagehead">
         <h2>Branches</h2>
-        <p className="muted small">
-          Each branch is its own line of work. The railway shows where they
-          split off and where they join back up, newest at the top.
-        </p>
       </div>
 
       <div className="historybody">

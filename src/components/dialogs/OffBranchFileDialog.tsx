@@ -105,10 +105,9 @@ export function OffBranchFileDialog({
           })}
         </ul>
         <p className="muted small">
-          Switching swaps the files on disk for that branch&rsquo;s versions,
-          and the file gets highlighted once you arrive. Save &amp; Share any
-          work in progress first; documents open in SolidWorks stay open and go
-          stale until reopened.
+          Switching branches replaces your current files on the disk with the versions from the selected branch. 
+          Make sure to save and share your work before switching. Any files open in SolidWorks will need to be closed 
+          and reopened to show the updated versions.
         </p>
         <div className="modal-actions">
           <button onClick={onClose}>Stay here</button>
