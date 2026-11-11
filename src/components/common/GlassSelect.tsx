@@ -7,6 +7,8 @@ export interface GlassOption {
   label: string;
   /** A small dot in this colour before the label */
   color?: string;
+  /** Separate an action from the choices above it. */
+  separatorBefore?: boolean;
 }
 
 function Label({ o }: { o: GlassOption }) {
@@ -202,6 +204,9 @@ export function GlassSelect({
         >
           {options.map((o, i) => (
             <li key={o.value} data-i={i}>
+              {o.separatorBefore && i > 0 && (
+                <div className="repopop-rule" aria-hidden="true" />
+              )}
               <button
                 type="button"
                 role="option"

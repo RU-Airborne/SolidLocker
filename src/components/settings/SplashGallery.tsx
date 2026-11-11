@@ -5,7 +5,7 @@ import { NeedsGitSplash, StartingUpSplash } from "../setup/Splashes";
 import { SetupWizard } from "../setup/SetupWizard";
 
 /* ------------ NOT FOR RELEASE!!!!! -------------- */
-export const SPLASH_GALLERY = false;
+export const SPLASH_GALLERY = import.meta.env.DEV;
 
 type Which =
   | "theme"

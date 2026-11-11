@@ -1,6 +1,6 @@
 import { read, write } from "./persist";
 
-export const RELEASE = "0.8.7";
+export const RELEASE = "0.8.8";
 
 /**
  * Anyone who last ran a version older than this gets the opening questions

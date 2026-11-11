@@ -1486,7 +1486,7 @@ function CommitDetail({
           title="Open the project as it was at this point, read-only. One click brings you back"
         >
           <EyeGlyph />
-          View this version (read-only)…
+          View version…
         </button>
         )}
         {cadFiles.length > 0 && !commit.is_head && (
@@ -1496,7 +1496,7 @@ function CommitDetail({
             title="Bring a file back to how it was in this change"
           >
             <RestoreGlyph />
-            Restore this version…
+            Restore files…
           </button>
         )}
         {/* 
@@ -1517,14 +1517,14 @@ function CommitDetail({
           title="Start a new branch from this moment in time. Your current branch stays untouched"
         >
           <BranchGlyph />
-          Branch off from here…
+          Branch off…
         </button>
       </div>
       {confirmPreview &&
         createPortal(
           <div className="modal-backdrop" onClick={() => setConfirmPreview(false)}>
             <div className="modal" onClick={(e) => e.stopPropagation()}>
-              <h2>View this version?</h2>
+              <h2>View this version in read-only mode?</h2>
               <p className="muted">
                 SolidLocker will switch the project folder to this earlier
                 version in read-only mode. You can return to your branch afterward.

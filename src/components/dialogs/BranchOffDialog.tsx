@@ -91,7 +91,7 @@ export function BranchOffDialog({
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>Branch off from here</h2>
+        <h2>Branch off</h2>
         <p>
           Starting point: <strong>{label}</strong>
         </p>
@@ -103,7 +103,7 @@ export function BranchOffDialog({
         />
         <p className="muted small">
           A branch is a separate line of work. Your team&rsquo;s branch stays
-          exactly as it is. You continue from this older moment on a new branch,
+          exactly as it is. You continue from the selected version on a new branch,
           and the two can be compared or merged later. Locks still apply
           across all branches.
         </p>

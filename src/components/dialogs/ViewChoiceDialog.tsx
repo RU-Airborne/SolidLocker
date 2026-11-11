@@ -96,7 +96,7 @@ export function ViewChoiceDialog({ onDone }: { onDone: () => void }) {
         </span>
         <h2>How should your files look?</h2>
         <p className="muted">
-          Either way you can switch at the top of the Files page whenever you
+          You can switch at the top of the Files page whenever you
           like.
         </p>
         <div className="viewrow">

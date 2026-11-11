@@ -473,7 +473,7 @@ export function SettingsPage({
           <div className="settingtext">
           <h3>Appearance</h3>
           <p className="muted">
-            Follow Windows' light or dark setting, or pick one.
+            Automatically match your computer's theme, or set your own preference.
           </p>
           </div>
           <FilterBar
@@ -588,15 +588,13 @@ export function SettingsPage({
         </section>
 
         <section className="setupsection">
-          <h3>When something is wrong</h3>
+          <h3>Troubleshooting</h3>
           <div className="toollist">
             <div className="tool">
               <div className="settingtext">
                 <strong>Fix file permissions</strong>
                 <p className="muted">
                   Sets every file back to view-only except the ones you hold.
-                  Run it if a file is editable when it shouldn't be, or won't
-                  open when it should.
                 </p>
               </div>
               <div className="setuprow">
@@ -608,7 +606,7 @@ export function SettingsPage({
               <div className="settingtext">
                 <strong>Open log folder</strong>
                 <p className="muted">
-                  Errors and slow operations are recorded here. Attach this
+                  Attach this
                   when reporting a problem.
                 </p>
               </div>
@@ -624,7 +622,7 @@ export function SettingsPage({
                 <strong>Check this computer</strong>
                 <p className="muted">
                   Checks Git, Git LFS, locking, CAD files and previews on this
-                  machine. Run it after setup, or when something is off.
+                  machine.
                 </p>
               </div>
               <SetupChecks />

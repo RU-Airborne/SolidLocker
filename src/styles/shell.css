@@ -35,7 +35,7 @@
 .filespagehead {
   max-width: none;
   margin: 0;
-  padding: 0.7rem 1.5rem 0.4rem;
+  padding: 0.7rem var(--page-gutter) 0.4rem;
 }
 
 .filespagehead .panelbtn {
@@ -62,14 +62,14 @@
   overscroll-behavior: contain;
   /* No top padding since it would sit above the sticky header and let rows show
      through in the gap */
-  padding: 0 1.5rem 1rem;
+  padding: 0 var(--page-gutter) 1rem;
 }
 
 .branchpanel {
   width: 280px;
   flex-shrink: 0;
   border-left: 1px solid var(--border);
-  padding: 0.7rem 1rem 1rem;
+  padding: 0.7rem var(--page-gutter) 1rem;
   overflow: auto;
   overscroll-behavior: contain;
 }

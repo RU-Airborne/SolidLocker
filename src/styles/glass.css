@@ -683,6 +683,7 @@
 }
 
 .navrail:hover .railpane,
+.navrail:has(:focus-visible) .railpane,
 .navrail.open .railpane {
   background: color-mix(in srgb, var(--headbg) var(--glass-tint), transparent);
   backdrop-filter: blur(calc(var(--glass-blur) * 1.4)) saturate(150%);

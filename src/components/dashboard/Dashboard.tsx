@@ -112,6 +112,7 @@ import { isSwTemp } from "../../types";
 import { HistoryPage } from "../history/HistoryPage";
 import { ActivityPanel } from "./ActivityPanel";
 import { TopBar } from "./TopBar";
+import { RepoPicker } from "../common/RepoPicker";
 import { NavRail, type RailView } from "./NavRail";
 import { FileTree, type SortMode } from "./FileTree";
 import { rowDomId } from "./rowid";
@@ -308,6 +309,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
   } | null>(null);
   const [releaseDialogPath, setReleaseDialogPath] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [repoPickerOpen, setRepoPickerOpen] = useState(false);
   const [releaseAllOpen, setReleaseAllOpen] = useState(false);
   const [progressOpen, setProgressOpen] = useState(false);
   const [pullsOpen, setPullsOpen] = useState(false);
@@ -801,6 +803,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
       setNotice("Mate failed... Wait, what? This isn't SolidWorks.");
     },
     layers: [
+      [repoPickerOpen, () => setRepoPickerOpen(false)],
       [!!rowMenu, () => setRowMenu(null)],
       [offlineHelp, () => setOfflineHelp(false)],
       [!!openWarning, () => setOpenWarning(null)],
@@ -1430,6 +1433,7 @@ export function Dashboard({ appState }: { appState: AppState }) {
         onSwitchBranch={handleSwitchBranch}
         switchingTo={switchingTo}
         onSwitchRepo={() => void handleSwitchRepo()}
+        onBrowseGitHub={() => setRepoPickerOpen(true)}
         onOpenRepo={(dir) => void handleOpenRepo(dir)}
         onOpenFolder={() =>
           openRepoFolder().catch((e) =>
@@ -2294,6 +2298,33 @@ export function Dashboard({ appState }: { appState: AppState }) {
         </div>
       )}
       </div>
+      {repoPickerOpen && (
+        <div className="modal-backdrop" onClick={() => setRepoPickerOpen(false)}>
+          <div
+            className="modal repopickmodal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="repo-picker-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="repo-picker-title">Choose another repository from GitHub</h2>
+            <RepoPicker
+              browseTitle="Select the repository folder SolidLocker should manage"
+              onOpened={(info, cloned) => {
+                setRepoPickerOpen(false);
+                goTo("files");
+                setNotice(cloned
+                  ? copy.downloadedAndManaging(info.repo_slug)
+                  : copy.nowManaging(info.repo_slug));
+                forgetRepoData();
+              }}
+            />
+            <div className="modal-actions">
+              <button autoFocus onClick={() => setRepoPickerOpen(false)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
       {commitDialogOpen && (
         <CommitDialog
           dirtyFiles={[

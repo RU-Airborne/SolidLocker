@@ -5,6 +5,7 @@
   display: flex;
   flex-direction: row;
   --railw: 72px;
+  --page-gutter: 1rem;
 }
 
 .appmain {
@@ -44,6 +45,7 @@
 }
 
 .navrail:hover .railpane,
+.navrail:has(:focus-visible) .railpane,
 .navrail.open .railpane {
   width: 15rem;
 }
@@ -69,7 +71,6 @@
   background: transparent;
   color: inherit;
   font: inherit;
-  cursor: pointer;
   overflow: hidden;
   white-space: nowrap;
 }
@@ -81,6 +82,7 @@
 }
 
 .railwordmark {
+  flex: none;
   margin-left: 0.7rem;
   font-size: 1rem;
   font-weight: 600;
@@ -90,6 +92,7 @@
 }
 
 .navrail:hover .railwordmark,
+.navrail:has(:focus-visible) .railwordmark,
 .navrail.open .railwordmark {
   opacity: 1;
 }
@@ -101,21 +104,30 @@
   margin-left: auto;
   margin-right: 0.5rem;
   padding: 0.25rem;
+  border: 1px solid var(--border);
   border-radius: 6px;
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 20%, transparent);
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent),
-    0 0 14px color-mix(in srgb, var(--accent) 40%, transparent);
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
   flex: none;
 }
 
-.railbrand:hover .railpin {
-  color: var(--error);
-  background: color-mix(in srgb, var(--error) 20%, transparent);
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--error) 60%, transparent),
-    0 0 16px color-mix(in srgb, var(--error) 45%, transparent);
+.railpin[aria-pressed="true"] {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.railpin:hover {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: var(--accent);
+}
+
+.railpin:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .railitem {
@@ -173,6 +185,7 @@
 }
 
 .navrail:hover .railbadge,
+.navrail:has(:focus-visible) .railbadge,
 .navrail.open .railbadge {
   top: 50%;
   right: 12px;
@@ -190,6 +203,7 @@
 }
 
 .navrail:hover .raillabel,
+.navrail:has(:focus-visible) .raillabel,
 .navrail.open .raillabel {
   opacity: 1;
 }
@@ -284,7 +298,7 @@
   display: flex;
   align-items: center;
   gap: 0.45rem;
-  padding: 0 0.55rem;
+  padding: 0 var(--page-gutter) 0 0.55rem;
   border-bottom: 1px solid var(--border);
   background: color-mix(in srgb, var(--muted) 6%, transparent);
   position: relative;
@@ -882,7 +896,7 @@ select option:checked {
   border: none;
   border-radius: 8px;
   background: transparent;
-  color: var(--muted);
+  color: inherit;
   font: inherit;
   font-size: 0.9rem;
   text-align: left;

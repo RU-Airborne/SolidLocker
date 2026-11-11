@@ -80,7 +80,7 @@ export function NavRail({
   defaultBranch: string;
 }) {
   const directory = usePeople();
-  const [pinned, setPinned] = useFlag("railOpen", true);
+  const [pinned, setPinned] = useFlag("railPinned", false);
   const pulls = usePulls(!!appState.repo);
   const waiting = (pulls.data ?? []).filter((p) => p.state === "open").length;
 
@@ -91,38 +91,34 @@ export function NavRail({
   return (
     <nav className={`navrail${pinned ? " open" : ""}`} aria-label="Go to">
       <div className="railpane">
-        <button
-          className="railbrand"
-          onClick={() => setPinned(!pinned)}
-          title={pinned ? "Let the menu close again" : "Keep the menu open"}
-          aria-pressed={pinned}
-          aria-label={pinned ? "Let the menu close again" : "Keep the menu open"}
-        >
+        <div className="railbrand">
           <span className="logoglow">
             <DialLogo className="raillogo" label="" spinning={locking} />
           </span>
           <span className="railwordmark">SolidLocker</span>
-          {/* Only while pinned. It is the thing you press to let the menu go
-              back to closing on its own, so it has no business being there
-              when the menu is already doing that. */}
-          {pinned && (
-            <span className="railpin" aria-hidden="true">
-              <svg
-                viewBox="0 0 24 24"
-                width="14"
-                height="14"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M12 17.2V22" />
-                <path d="M8.6 3h6.8v7.4l2.4 3.6H6.2l2.4-3.6z" />
-              </svg>
-            </span>
-          )}
-        </button>
+          <button
+            className="railpin"
+            onClick={() => setPinned(!pinned)}
+            title={pinned ? "Unpin sidebar" : "Pin sidebar open"}
+            aria-label={pinned ? "Unpin sidebar" : "Pin sidebar open"}
+            aria-pressed={pinned}
+          >
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 24 24"
+              width="14"
+              height="14"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M12 17.2V22" />
+              <path d="M8.6 3h6.8v7.4l2.4 3.6H6.2l2.4-3.6z" />
+            </svg>
+          </button>
+        </div>
 
         <div className="railitems">
           <RailItem

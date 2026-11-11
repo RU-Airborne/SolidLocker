@@ -84,11 +84,7 @@ export function RestoreFilesDialog({
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal versionmodal" onClick={(e) => e.stopPropagation()}>
-        <h2>
-          {paths.length === 1
-            ? "Restore this file from this change"
-            : "Restore files from this change"}
-        </h2>
+        <h2>Restore files</h2>
         <p>
           As they were on <strong>{formatDateTime(commit.date)}</strong>, by{" "}
           {commit.author_name}
@@ -131,10 +127,13 @@ export function RestoreFilesDialog({
 
         <RestoreDiagram branchName={branchName} commitLabel={commitLabel} />
         <p className="muted small">
-          Nothing is rewritten: the old version{selected.length === 1 ? " is" : "s are"}{" "}
-          copied forward as your <em>next</em> change, and you can Undo until
-          you Save &amp; Share. You need{" "}
-          {selected.length === 1 ? "it" : "the selected files"} locked by you.
+          The previous version of {selected.length === 1
+          ? "the selected file will be"
+          : "each selected file will be"}{" "}
+          restored as a new change. You can Undo until you Save &amp; Share.
+          {selected.length === 1
+          ? " The file must be locked by you."
+          : " All selected files must be locked by you."}
         </p>
 
         {error && <p className="errdetail">{error}</p>}

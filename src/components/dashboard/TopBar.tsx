@@ -14,6 +14,7 @@ export function TopBar({
   onSwitchBranch,
   switchingTo,
   onSwitchRepo,
+  onBrowseGitHub,
   onOpenRepo,
   onOpenFolder,
   status,
@@ -36,6 +37,7 @@ export function TopBar({
   onSwitchBranch: (name: string) => void;
   switchingTo: string | null;
   onSwitchRepo: () => void;
+  onBrowseGitHub: () => void;
   onOpenRepo: (path: string) => void;
   onOpenFolder: () => void;
   status: RepoStatus | undefined;
@@ -76,6 +78,7 @@ export function TopBar({
           path={appState.repo!.repo_path}
           onPick={onOpenRepo}
           onBrowse={onSwitchRepo}
+          onBrowseGitHub={onBrowseGitHub}
           onOpenFolder={onOpenFolder}
         />
 
@@ -109,7 +112,7 @@ export function TopBar({
                 color: branchColorOf(b),
               })),
               // not a branch, intercepted upstream to open the create dialog
-              { value: "__create__", label: "＋ New branch…" },
+              { value: "__create__", label: "＋ Create a new branch…", separatorBefore: true },
             ]}
           />
         )}

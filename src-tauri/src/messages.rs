@@ -153,7 +153,10 @@ pub fn restore_files_open(files: &str) -> String {
 }
 
 pub fn could_not_fix_files(stderr: &str) -> String {
-    format!("Could not put the files back: SolidWorks is still holding one of them. A part stays held as long as an assembly using it is open, so close that assembly (or all of SolidWorks) and try again. ({stderr})")
+    if stderr.contains("index.lock") && stderr.contains("File exists") {
+        return format!("Could not put the files back because Git's index is locked. Wait for any other Git operation to finish, then try again. If this keeps happening, a previous Git operation may have left a stale lock. ({stderr})");
+    }
+    format!("Could not put the files back. Check the details below and try again. If a file is open in SolidWorks, close the assembly using it first. ({stderr})")
 }
 
 /// Names the files SolidWorks would not let go of.
